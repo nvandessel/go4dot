@@ -44,6 +44,7 @@ type Model struct {
 	selectedIdx  int
 	result       *Result
 	quitting     bool
+	hasBaseline  bool // True if we have stored symlink counts (synced before)
 }
 
 // keyMap defines the key bindings
@@ -89,7 +90,7 @@ var keys = keyMap{
 }
 
 // New creates a new dashboard model
-func New(p *platform.Platform, driftSummary *stow.DriftSummary, configs []config.ConfigItem, dotfilesPath string, updateMsg string) Model {
+func New(p *platform.Platform, driftSummary *stow.DriftSummary, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) Model {
 	return Model{
 		platform:     p,
 		driftSummary: driftSummary,
@@ -97,6 +98,7 @@ func New(p *platform.Platform, driftSummary *stow.DriftSummary, configs []config
 		dotfilesPath: dotfilesPath,
 		updateMsg:    updateMsg,
 		selectedIdx:  0,
+		hasBaseline:  hasBaseline,
 	}
 }
 
@@ -204,17 +206,27 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderStatus() string {
-	if m.driftSummary == nil || !m.driftSummary.HasDrift() {
+	// If we haven't synced before (no baseline), show that clearly
+	if !m.hasBaseline {
 		return lipgloss.NewStyle().
-			Foreground(ui.SecondaryColor).
+			Foreground(ui.WarningColor).
 			Bold(true).
-			Render("  System Healthy")
+			Render("  Not synced yet - press [s] to create symlinks")
 	}
 
+	// We have baseline - check for drift
+	if m.driftSummary != nil && m.driftSummary.HasDrift() {
+		return lipgloss.NewStyle().
+			Foreground(ui.WarningColor).
+			Bold(true).
+			Render(fmt.Sprintf("  %d config(s) need syncing", m.driftSummary.DriftedConfigs))
+	}
+
+	// Baseline exists and no drift
 	return lipgloss.NewStyle().
-		Foreground(ui.WarningColor).
+		Foreground(ui.SecondaryColor).
 		Bold(true).
-		Render(fmt.Sprintf("  %d config(s) need syncing", m.driftSummary.DriftedConfigs))
+		Render("  All synced")
 }
 
 func (m Model) renderConfigList() string {
@@ -311,8 +323,8 @@ func (m Model) GetResult() *Result {
 }
 
 // Run starts the dashboard and returns the selected action
-func Run(p *platform.Platform, driftSummary *stow.DriftSummary, configs []config.ConfigItem, dotfilesPath string, updateMsg string) (*Result, error) {
-	m := New(p, driftSummary, configs, dotfilesPath, updateMsg)
+func Run(p *platform.Platform, driftSummary *stow.DriftSummary, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) (*Result, error) {
+	m := New(p, driftSummary, configs, dotfilesPath, updateMsg, hasBaseline)
 
 	finalModel, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {

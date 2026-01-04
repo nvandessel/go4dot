@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/huh"
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
 	"github.com/nvandessel/go4dot/internal/state"
@@ -64,20 +65,27 @@ func runInteractive(cmd *cobra.Command, args []string) {
 		var result *dashboard.Result
 
 		if !hasConfig {
-			// No config found - show setup screen
-			result, err = dashboard.RunSetup(p, updateMsg)
+			// No config found - show polished init prompt
+			result = runNoConfigPrompt()
+			err = nil
 		} else {
 			// Config exists - show health dashboard
 			dotfilesPath := filepath.Dir(configPath)
 			st, _ := state.Load()
+			if st == nil {
+				st = state.New()
+			}
 
 			var driftSummary *stow.DriftSummary
+			hasBaseline := false
 			if st != nil {
 				driftSummary, _ = stow.QuickDriftCheck(cfg, dotfilesPath, st)
+				// Check if we have any stored symlink counts (indicates prior sync)
+				hasBaseline = len(st.SymlinkCounts) > 0
 			}
 
 			allConfigs := cfg.GetAllConfigs()
-			result, err = dashboard.Run(p, driftSummary, allConfigs, dotfilesPath, updateMsg)
+			result, err = dashboard.Run(p, driftSummary, allConfigs, dotfilesPath, updateMsg, hasBaseline)
 		}
 
 		if err != nil {
@@ -98,6 +106,35 @@ func runInteractive(cmd *cobra.Command, args []string) {
 	}
 }
 
+// runNoConfigPrompt shows a polished prompt when no config exists
+func runNoConfigPrompt() *dashboard.Result {
+	cwd, _ := os.Getwd()
+
+	ui.PrintBanner(Version)
+	fmt.Printf("\n  No .go4dot.yaml found in %s\n\n", filepath.Base(cwd))
+
+	var initHere bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Would you like to initialize go4dot here?").
+				Description("This will scan for configs and create a .go4dot.yaml file").
+				Affirmative("Yes, set up go4dot").
+				Negative("No, quit").
+				Value(&initHere),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return &dashboard.Result{Action: dashboard.ActionQuit}
+	}
+
+	if initHere {
+		return &dashboard.Result{Action: dashboard.ActionInit}
+	}
+	return &dashboard.Result{Action: dashboard.ActionQuit}
+}
+
 // handleAction processes the user's action and returns true if we should exit
 func handleAction(result *dashboard.Result, cfg *config.Config, configPath string) bool {
 	switch result.Action {
@@ -112,6 +149,9 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 		if cfg != nil && configPath != "" {
 			dotfilesPath := filepath.Dir(configPath)
 			st, _ := state.Load()
+			if st == nil {
+				st = state.New()
+			}
 			runStowRefresh(dotfilesPath, cfg, st)
 			waitForEnter()
 		}
@@ -120,6 +160,9 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 		if cfg != nil && configPath != "" {
 			dotfilesPath := filepath.Dir(configPath)
 			st, _ := state.Load()
+			if st == nil {
+				st = state.New()
+			}
 			runStowSingle(dotfilesPath, result.ConfigName, cfg, st)
 			waitForEnter()
 		}
@@ -138,7 +181,24 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 
 // runStowRefresh restows all configs
 func runStowRefresh(dotfilesPath string, cfg *config.Config, st *state.State) {
-	fmt.Println("\n  Syncing all configs...")
+	fmt.Println("\n  Checking for conflicts...")
+
+	// Check for conflicts first
+	conflicts, err := stow.DetectConflicts(cfg, dotfilesPath)
+	if err != nil {
+		ui.Error("Failed to check conflicts: %v", err)
+		return
+	}
+
+	if len(conflicts) > 0 {
+		// Show conflicts and ask how to handle
+		if !resolveConflicts(conflicts) {
+			fmt.Println("  Sync cancelled.")
+			return
+		}
+	}
+
+	fmt.Println("  Syncing all configs...")
 
 	allConfigs := cfg.GetAllConfigs()
 	result := stow.RestowConfigs(dotfilesPath, allConfigs, stow.StowOptions{
@@ -157,6 +217,83 @@ func runStowRefresh(dotfilesPath string, cfg *config.Config, st *state.State) {
 	} else {
 		ui.Success("Synced %d config(s)", len(result.Success))
 	}
+}
+
+// resolveConflicts prompts the user to handle conflicting files
+func resolveConflicts(conflicts []stow.ConflictFile) bool {
+	fmt.Printf("\n  Found %d conflicting file(s) that would be overwritten:\n\n", len(conflicts))
+
+	// Group by config
+	byConfig := make(map[string][]stow.ConflictFile)
+	for _, c := range conflicts {
+		byConfig[c.ConfigName] = append(byConfig[c.ConfigName], c)
+	}
+
+	for configName, files := range byConfig {
+		fmt.Printf("  %s:\n", configName)
+		for i, f := range files {
+			if i >= 5 {
+				fmt.Printf("    ... and %d more\n", len(files)-5)
+				break
+			}
+			// Show just the filename relative to home
+			home := os.Getenv("HOME")
+			relPath, _ := filepath.Rel(home, f.TargetPath)
+			fmt.Printf("    ~/%s\n", relPath)
+		}
+	}
+
+	fmt.Println()
+
+	var action string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("How would you like to handle these conflicts?").
+				Options(
+					huh.NewOption("Backup existing files (rename to .g4d-backup)", "backup"),
+					huh.NewOption("Delete existing files (use dotfiles version)", "delete"),
+					huh.NewOption("Cancel sync", "cancel"),
+				).
+				Value(&action),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return false
+	}
+
+	if action == "cancel" {
+		return false
+	}
+
+	// Process conflicts
+	for _, conflict := range conflicts {
+		var err error
+		if action == "backup" {
+			err = stow.BackupConflict(conflict)
+			if err == nil {
+				home := os.Getenv("HOME")
+				relPath, _ := filepath.Rel(home, conflict.TargetPath)
+				fmt.Printf("  Backed up ~/%s\n", relPath)
+			}
+		} else {
+			err = stow.RemoveConflict(conflict)
+			if err == nil {
+				home := os.Getenv("HOME")
+				relPath, _ := filepath.Rel(home, conflict.TargetPath)
+				fmt.Printf("  Removed ~/%s\n", relPath)
+			}
+		}
+
+		if err != nil {
+			ui.Error("Failed to handle %s: %v", conflict.TargetPath, err)
+			return false
+		}
+	}
+
+	fmt.Println()
+	return true
 }
 
 // runStowSingle restows a single config

@@ -1,6 +1,7 @@
 package stow
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -217,4 +218,103 @@ func GetDriftedConfigs(results []DriftResult) []DriftResult {
 		}
 	}
 	return drifted
+}
+
+// ConflictFile represents a file that would conflict with stow
+type ConflictFile struct {
+	ConfigName string // Which config this belongs to
+	SourcePath string // Path in dotfiles
+	TargetPath string // Path in home that has conflict
+	IsDir      bool   // True if the conflict is a directory
+}
+
+// DetectConflicts checks for existing files in home that would block stow
+func DetectConflicts(cfg *config.Config, dotfilesPath string) ([]ConflictFile, error) {
+	var conflicts []ConflictFile
+	home := os.Getenv("HOME")
+
+	allConfigs := cfg.GetAllConfigs()
+	for _, configItem := range allConfigs {
+		configPath := filepath.Join(dotfilesPath, configItem.Path)
+
+		// Check if config directory exists
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			continue
+		}
+
+		// Walk the config directory and check each file
+		err := filepath.Walk(configPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			// Calculate expected target path in home
+			relPath, _ := filepath.Rel(configPath, path)
+			targetPath := filepath.Join(home, relPath)
+
+			// Check if target exists
+			targetInfo, err := os.Lstat(targetPath)
+			if os.IsNotExist(err) {
+				// No conflict - file doesn't exist
+				return nil
+			}
+			if err != nil {
+				return nil
+			}
+
+			// If it's already a symlink pointing to the right place, no conflict
+			if targetInfo.Mode()&os.ModeSymlink != 0 {
+				linkDest, err := os.Readlink(targetPath)
+				if err == nil {
+					if !filepath.IsAbs(linkDest) {
+						linkDest = filepath.Join(filepath.Dir(targetPath), linkDest)
+					}
+					linkDest = filepath.Clean(linkDest)
+					if linkDest == path {
+						// Already correctly symlinked
+						return nil
+					}
+				}
+			}
+
+			// This is a conflict - file exists but isn't the right symlink
+			conflicts = append(conflicts, ConflictFile{
+				ConfigName: configItem.Name,
+				SourcePath: path,
+				TargetPath: targetPath,
+				IsDir:      targetInfo.IsDir(),
+			})
+
+			return nil
+		})
+
+		if err != nil {
+			continue
+		}
+	}
+
+	return conflicts, nil
+}
+
+// BackupConflict moves a conflicting file to a backup location
+func BackupConflict(conflict ConflictFile) error {
+	backupPath := conflict.TargetPath + ".g4d-backup"
+
+	// If backup already exists, add timestamp
+	if _, err := os.Stat(backupPath); err == nil {
+		backupPath = fmt.Sprintf("%s.g4d-backup-%d", conflict.TargetPath, os.Getpid())
+	}
+
+	return os.Rename(conflict.TargetPath, backupPath)
+}
+
+// RemoveConflict deletes a conflicting file
+func RemoveConflict(conflict ConflictFile) error {
+	if conflict.IsDir {
+		return os.RemoveAll(conflict.TargetPath)
+	}
+	return os.Remove(conflict.TargetPath)
 }
