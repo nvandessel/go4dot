@@ -82,10 +82,10 @@ Use flags to customize the installation:
 
 					switch prefix {
 					case "✓ ":
-						ui.Success(content)
+						ui.Success("%s", content)
 						return
 					case "⚠ ":
-						ui.Warning(content)
+						ui.Warning("%s", content)
 						return
 					case "⊘ ":
 						// Skip symbol, print as info/subtle
@@ -110,7 +110,7 @@ Use flags to customize the installation:
 
 		result, err := setup.Install(cfg, dotfilesPath, opts)
 		if err != nil {
-			ui.Error(err.Error())
+			ui.Error("%s", err.Error())
 			os.Exit(1)
 		}
 

@@ -86,6 +86,6 @@ func RunSpinner(msg string, action func() error) error {
 	// Print success (replace spinner line)
 	// We rely on the caller or the model view logic for this,
 	// but usually we want to keep the success message
-	Success(msg + " Done")
+	Success("%s Done", msg)
 	return nil
 }

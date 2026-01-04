@@ -1,13 +1,12 @@
 package config
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/charmbracelet/huh"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,16 +23,21 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
 
-	// Create a single reader for the entire session
-	reader := bufio.NewReader(in)
-
 	configFile := filepath.Join(absPath, ConfigFileName)
 	if _, err := os.Stat(configFile); err == nil {
-		confirm, err := promptYesNo(reader, out, fmt.Sprintf("%s already exists. Overwrite?", ConfigFileName), false)
+		var overwrite bool
+		err := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title(fmt.Sprintf("%s already exists. Overwrite?", ConfigFileName)).
+					Value(&overwrite),
+			),
+		).WithInput(in).WithOutput(out).Run()
+
 		if err != nil {
 			return err
 		}
-		if !confirm {
+		if !overwrite {
 			fmt.Fprintln(out, "Aborted.")
 			return nil
 		}
@@ -53,24 +57,74 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 	}
 
 	defaultName := filepath.Base(absPath)
-	meta.Name = promptString(reader, out, "Project Name", defaultName)
-	
-	// Try to get git user/email if available, but keep it simple for now
-	meta.Author = promptString(reader, out, "Author", os.Getenv("USER"))
-	meta.Description = promptString(reader, out, "Description", "My personal dotfiles")
-	meta.Repository = promptString(reader, out, "Repository URL", "")
+	defaultAuthor := os.Getenv("USER")
 
-	// Filter Configs
+	// Metadata Form
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Project Name").
+				Value(&meta.Name).
+				Placeholder(defaultName),
+			huh.NewInput().
+				Title("Author").
+				Value(&meta.Author).
+				Placeholder(defaultAuthor),
+			huh.NewInput().
+				Title("Description").
+				Value(&meta.Description).
+				Placeholder("My personal dotfiles"),
+			huh.NewInput().
+				Title("Repository URL").
+				Value(&meta.Repository),
+		),
+	).WithInput(in).WithOutput(out).Run()
+
+	if err != nil {
+		return err
+	}
+
+	// Apply defaults if empty
+	if meta.Name == "" {
+		meta.Name = defaultName
+	}
+	if meta.Author == "" {
+		meta.Author = defaultAuthor
+	}
+	if meta.Description == "" {
+		meta.Description = "My personal dotfiles"
+	}
+
+	// Filter Configs using MultiSelect
 	var selectedConfigs []ConfigItem
 	if len(configs) > 0 {
-		fmt.Fprintln(out, "\nSelect configurations to manage:")
+		var selectedNames []string
+		var options []huh.Option[string]
+
 		for _, c := range configs {
-			add, err := promptYesNo(reader, out, fmt.Sprintf("Add '%s'?", c.Name), true)
-			if err != nil {
-				return err
-			}
-			if add {
-				c.Description = promptString(reader, out, fmt.Sprintf("  Description for %s", c.Name), fmt.Sprintf("%s configuration", c.Name))
+			options = append(options, huh.NewOption(c.Name, c.Name).Selected(true))
+		}
+
+		err = huh.NewForm(
+			huh.NewGroup(
+				huh.NewMultiSelect[string]().
+					Title("Select configurations to manage").
+					Options(options...).
+					Value(&selectedNames),
+			),
+		).WithInput(in).WithOutput(out).Run()
+
+		if err != nil {
+			return err
+		}
+
+		configMap := make(map[string]ConfigItem)
+		for _, c := range configs {
+			configMap[c.Name] = c
+		}
+
+		for _, name := range selectedNames {
+			if c, ok := configMap[name]; ok {
 				selectedConfigs = append(selectedConfigs, c)
 			}
 		}
@@ -119,17 +173,17 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 
 	var items []ConfigItem
 	ignored := map[string]bool{
-		".git":          true,
-		".github":       true,
-		".idea":         true,
-		".vscode":       true,
-		"bin":           true,
-		ConfigFileName:  true,
-		"README.md":     true,
-		"LICENSE":       true,
-		"Makefile":      true,
-		"go.mod":        true,
-		"go.sum":        true,
+		".git":         true,
+		".github":      true,
+		".idea":        true,
+		".vscode":      true,
+		"bin":          true,
+		ConfigFileName: true,
+		"README.md":    true,
+		"LICENSE":      true,
+		"Makefile":     true,
+		"go.mod":       true,
+		"go.sum":       true,
 	}
 
 	for _, entry := range entries {
@@ -152,44 +206,4 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 	}
 
 	return items, nil
-}
-
-func promptString(reader *bufio.Reader, out io.Writer, label, defaultValue string) string {
-	prompt := label
-	if defaultValue != "" {
-		prompt = fmt.Sprintf("%s [%s]", label, defaultValue)
-	}
-	fmt.Fprint(out, prompt + ": ")
-	
-	text, _ := reader.ReadString('\n')
-	text = strings.TrimSpace(text)
-	
-	if text == "" {
-		return defaultValue
-	}
-	return text
-}
-
-func promptYesNo(reader *bufio.Reader, out io.Writer, label string, defaultYes bool) (bool, error) {
-	choices := "Y/n"
-	if !defaultYes {
-		choices = "y/N"
-	}
-	
-	fmt.Fprintf(out, "%s [%s]: ", label, choices)
-	
-	text, err := reader.ReadString('\n')
-	if err != nil {
-		return false, err
-	}
-	text = strings.TrimSpace(strings.ToLower(text))
-	
-	if text == "" {
-		return defaultYes, nil
-	}
-	
-	if text == "y" || text == "yes" {
-		return true, nil
-	}
-	return false, nil
 }

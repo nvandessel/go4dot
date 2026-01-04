@@ -1,12 +1,12 @@
 package machine
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"strconv"
 
+	"github.com/charmbracelet/huh"
 	"github.com/nvandessel/go4dot/internal/config"
 )
 
@@ -26,6 +26,7 @@ type PromptOptions struct {
 
 // CollectMachineConfig prompts the user for all machine-specific values
 func CollectMachineConfig(cfg *config.Config, opts PromptOptions) ([]PromptResult, error) {
+	// Set defaults if nil
 	if opts.In == nil {
 		opts.In = os.Stdin
 	}
@@ -75,7 +76,7 @@ func CollectSingleConfig(cfg *config.Config, id string, opts PromptOptions) (*Pr
 	return &result, nil
 }
 
-// collectPrompts collects values for a single MachinePrompt
+// collectPrompts collects values for a single MachinePrompt using Huh forms
 func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, error) {
 	result := PromptResult{
 		ID:     mc.ID,
@@ -86,100 +87,109 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 		opts.ProgressFunc(fmt.Sprintf("Configuring %s...", mc.Description))
 	}
 
-	reader := bufio.NewReader(opts.In)
+	// Prepare fields for the form
+	var groups []*huh.Group
+	var fields []huh.Field
+	valuePointers := make(map[string]interface{})
 
 	for _, prompt := range mc.Prompts {
-		value, err := collectSinglePrompt(prompt, reader, opts)
-		if err != nil {
-			return result, err
+		// If skipping prompts, just use default/validate
+		if opts.SkipPrompts {
+			if prompt.Required && prompt.Default == "" {
+				return result, fmt.Errorf("required field '%s' has no default value", prompt.ID)
+			}
+			result.Values[prompt.ID] = prompt.Default
+			continue
 		}
-		result.Values[prompt.ID] = value
+
+		switch prompt.Type {
+		case "password":
+			var val string = prompt.Default
+			valuePointers[prompt.ID] = &val
+
+			f := huh.NewInput().
+				Title(prompt.Prompt).
+				Value(&val).
+				EchoMode(huh.EchoModePassword)
+			if prompt.Required {
+				f.Validate(requiredValidator)
+			}
+			fields = append(fields, f)
+
+		case "confirm":
+			var val bool
+			if prompt.Default == "true" || prompt.Default == "yes" || prompt.Default == "y" {
+				val = true
+			}
+			valuePointers[prompt.ID] = &val
+
+			fields = append(fields, huh.NewConfirm().
+				Title(prompt.Prompt).
+				Value(&val))
+
+		case "select":
+			// Fallback to text input for now as schema doesn't support options list yet
+			var val string = prompt.Default
+			valuePointers[prompt.ID] = &val
+
+			f := huh.NewInput().
+				Title(prompt.Prompt).
+				Value(&val)
+			if prompt.Required {
+				f.Validate(requiredValidator)
+			}
+			fields = append(fields, f)
+
+		default: // text
+			var val string = prompt.Default
+			valuePointers[prompt.ID] = &val
+
+			f := huh.NewInput().
+				Title(prompt.Prompt).
+				Value(&val)
+			if prompt.Required {
+				f.Validate(requiredValidator)
+			}
+			fields = append(fields, f)
+		}
+	}
+
+	// If we skipped everything (or no prompts), return
+	if opts.SkipPrompts || len(fields) == 0 {
+		return result, nil
+	}
+
+	// Run the form
+	// We put all fields in one group for now
+	groups = append(groups, huh.NewGroup(fields...))
+
+	form := huh.NewForm(groups...).
+		WithInput(opts.In).
+		WithOutput(opts.Out)
+
+	err := form.Run()
+	if err != nil {
+		return result, err
+	}
+
+	// Extract values
+	for id, ptr := range valuePointers {
+		switch v := ptr.(type) {
+		case *string:
+			result.Values[id] = *v
+		case *bool:
+			result.Values[id] = strconv.FormatBool(*v)
+		}
 	}
 
 	return result, nil
 }
 
-// collectSinglePrompt collects a single prompt value
-func collectSinglePrompt(prompt config.PromptField, reader *bufio.Reader, opts PromptOptions) (string, error) {
-	// If skipping prompts, use default
-	if opts.SkipPrompts {
-		if prompt.Required && prompt.Default == "" {
-			return "", fmt.Errorf("required field '%s' has no default value", prompt.ID)
-		}
-		return prompt.Default, nil
+func requiredValidator(s string) error {
+	if s == "" {
+		return fmt.Errorf("this field is required")
 	}
-
-	// Build prompt string
-	promptStr := prompt.Prompt
-	if prompt.Default != "" {
-		promptStr = fmt.Sprintf("%s [%s]", prompt.Prompt, prompt.Default)
-	}
-	if prompt.Required {
-		promptStr = promptStr + " (required)"
-	}
-	promptStr = promptStr + ": "
-
-	for {
-		fmt.Fprint(opts.Out, promptStr)
-
-		var input string
-		var err error
-
-		switch prompt.Type {
-		case "password":
-			// For password, we'd ideally hide input, but for now just read normally
-			// TODO: Use terminal.ReadPassword or similar
-			input, err = reader.ReadString('\n')
-		case "confirm":
-			input, err = reader.ReadString('\n')
-			if err == nil {
-				input = strings.TrimSpace(strings.ToLower(input))
-				if input == "y" || input == "yes" || input == "true" || input == "1" {
-					input = "true"
-				} else if input == "n" || input == "no" || input == "false" || input == "0" || input == "" {
-					input = "false"
-				} else {
-					fmt.Fprintln(opts.Out, "Please enter yes or no")
-					continue
-				}
-			}
-		case "select":
-			// For select, we'd show options - for now just accept text
-			// TODO: Implement proper select with options
-			input, err = reader.ReadString('\n')
-		default: // "text" or unspecified
-			input, err = reader.ReadString('\n')
-		}
-
-		if err != nil {
-			if err == io.EOF {
-				// Use default if available
-				if prompt.Default != "" {
-					return prompt.Default, nil
-				}
-				if prompt.Required {
-					return "", fmt.Errorf("required field '%s' not provided", prompt.ID)
-				}
-				return "", nil
-			}
-			return "", fmt.Errorf("failed to read input: %w", err)
-		}
-
-		input = strings.TrimSpace(input)
-
-		// Use default if empty
-		if input == "" && prompt.Default != "" {
-			input = prompt.Default
-		}
-
-		// Check required
-		if prompt.Required && input == "" {
-			fmt.Fprintln(opts.Out, "This field is required. Please enter a value.")
-			continue
-		}
-
-		return input, nil
-	}
+	return nil
 }
 
 // GetMachineConfigByID returns a machine config by its ID
