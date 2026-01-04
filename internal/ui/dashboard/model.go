@@ -321,3 +321,156 @@ func Run(p *platform.Platform, driftSummary *stow.DriftSummary, configs []config
 
 	return finalModel.(Model).GetResult(), nil
 }
+
+// SetupModel is the Bubbletea model for the setup screen (no config)
+type SetupModel struct {
+	width      int
+	height     int
+	platform   *platform.Platform
+	updateMsg  string
+	result     *Result
+	quitting   bool
+	selectedIdx int
+}
+
+// NewSetup creates a new setup model
+func NewSetup(p *platform.Platform, updateMsg string) SetupModel {
+	return SetupModel{
+		platform:  p,
+		updateMsg: updateMsg,
+	}
+}
+
+func (m SetupModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "esc", "ctrl+c":
+			m.result = &Result{Action: ActionQuit}
+			m.quitting = true
+			return m, tea.Quit
+
+		case "i", "enter":
+			m.result = &Result{Action: ActionInit}
+			return m, tea.Quit
+
+		case "up", "k":
+			if m.selectedIdx > 0 {
+				m.selectedIdx--
+			}
+
+		case "down", "j":
+			if m.selectedIdx < 1 {
+				m.selectedIdx++
+			}
+		}
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	}
+
+	return m, nil
+}
+
+func (m SetupModel) View() string {
+	if m.quitting {
+		return ""
+	}
+
+	var b strings.Builder
+
+	// Header - same style as dashboard
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ui.PrimaryColor).
+		Bold(true)
+	subtitleStyle := lipgloss.NewStyle().
+		Foreground(ui.SubtleColor)
+
+	title := titleStyle.Render("go4dot")
+	platformInfo := ""
+	if m.platform != nil {
+		platformInfo = fmt.Sprintf(" %s (%s)", m.platform.OS, m.platform.PackageManager)
+	}
+	subtitle := subtitleStyle.Render(platformInfo)
+	updateInfo := ""
+	if m.updateMsg != "" {
+		updateInfo = subtitleStyle.Render(" " + m.updateMsg)
+	}
+
+	b.WriteString(title + subtitle + updateInfo)
+	b.WriteString("\n\n")
+
+	// Status
+	statusStyle := lipgloss.NewStyle().
+		Foreground(ui.WarningColor).
+		Bold(true)
+	b.WriteString(statusStyle.Render("  No configuration found"))
+	b.WriteString("\n\n")
+
+	// Message
+	messageStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	b.WriteString(messageStyle.Render("  No .go4dot.yaml found in current directory."))
+	b.WriteString("\n")
+	b.WriteString(subtitleStyle.Render("  Initialize go4dot to start managing your dotfiles."))
+	b.WriteString("\n\n")
+
+	// Options
+	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	selectedStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
+
+	options := []struct {
+		label string
+		desc  string
+	}{
+		{"Initialize go4dot", "Set up a new .go4dot.yaml config"},
+		{"Quit", "Exit go4dot"},
+	}
+
+	for i, opt := range options {
+		prefix := "  "
+		style := normalStyle
+		if i == m.selectedIdx {
+			prefix = "> "
+			style = selectedStyle
+		}
+		b.WriteString(fmt.Sprintf("%s%s\n", prefix, style.Render(opt.label)))
+		if i == m.selectedIdx {
+			b.WriteString(subtitleStyle.Render(fmt.Sprintf("    %s", opt.desc)))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+
+	// Action bar - same style as dashboard
+	keyStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
+	actions := []string{
+		keyStyle.Render("[i]") + subtitleStyle.Render(" Initialize"),
+		keyStyle.Render("[q]") + subtitleStyle.Render(" Quit"),
+	}
+	b.WriteString(strings.Join(actions, "   "))
+
+	return b.String()
+}
+
+// GetResult returns the action result after the model exits
+func (m SetupModel) GetResult() *Result {
+	return m.result
+}
+
+// RunSetup starts the setup screen and returns the selected action
+func RunSetup(p *platform.Platform, updateMsg string) (*Result, error) {
+	m := NewSetup(p, updateMsg)
+
+	finalModel, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	if err != nil {
+		return nil, err
+	}
+
+	return finalModel.(SetupModel).GetResult(), nil
+}

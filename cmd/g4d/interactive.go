@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/huh"
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
 	"github.com/nvandessel/go4dot/internal/state"
@@ -30,8 +29,6 @@ func runInteractive(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	ui.PrintBanner(Version)
-
 	// Check for updates in background
 	updateMsgChan := make(chan string, 1)
 	go func() {
@@ -43,68 +40,15 @@ func runInteractive(cmd *cobra.Command, args []string) {
 		}
 	}()
 
-	// Try to load config to determine context
-	cfg, configPath, err := config.LoadFromDiscovery()
-	hasConfig := err == nil && cfg != nil
-
 	// Get update message (non-blocking)
 	updateMsg := ""
-	select {
-	case msg := <-updateMsgChan:
-		updateMsg = msg
-	default:
-	}
 
-	if !hasConfig {
-		// No config found - prompt to init
-		runNoConfigFlow()
-		return
-	}
-
-	// Config exists - run the new dashboard
-	runDashboardFlow(cfg, configPath, updateMsg, updateMsgChan)
-}
-
-// runNoConfigFlow handles the case when no .go4dot.yaml is found
-func runNoConfigFlow() {
-	cwd, _ := os.Getwd()
-	fmt.Printf("\n  No .go4dot.yaml found in %s\n\n", filepath.Base(cwd))
-
-	var initHere bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Would you like to initialize go4dot here?").
-				Affirmative("Yes, set up go4dot").
-				Negative("No thanks").
-				Value(&initHere),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return
-	}
-
-	if initHere {
-		initCmd.Run(initCmd, nil)
-	} else {
-		fmt.Println("\nRun 'g4d init' when you're ready to set up your dotfiles.")
-	}
-}
-
-// runDashboardFlow runs the main dashboard when a config exists
-func runDashboardFlow(cfg *config.Config, configPath string, updateMsg string, updateMsgChan chan string) {
-	// Get dotfiles path from config path
-	dotfilesPath := filepath.Dir(configPath)
-
-	// Detect platform
+	// Detect platform once
 	p, _ := platform.Detect()
 
-	// Load state for drift detection
-	st, _ := state.Load()
-
+	// Main application loop - stays in the app until user quits
 	for {
-		// Check for update message if we looped back
+		// Check for update message
 		select {
 		case msg := <-updateMsgChan:
 			if msg != "" {
@@ -113,19 +57,31 @@ func runDashboardFlow(cfg *config.Config, configPath string, updateMsg string, u
 		default:
 		}
 
-		// Quick drift check
-		var driftSummary *stow.DriftSummary
-		if st != nil {
-			driftSummary, _ = stow.QuickDriftCheck(cfg, dotfilesPath, st)
+		// Try to load config to determine context
+		cfg, configPath, err := config.LoadFromDiscovery()
+		hasConfig := err == nil && cfg != nil
+
+		var result *dashboard.Result
+
+		if !hasConfig {
+			// No config found - show setup screen
+			result, err = dashboard.RunSetup(p, updateMsg)
+		} else {
+			// Config exists - show health dashboard
+			dotfilesPath := filepath.Dir(configPath)
+			st, _ := state.Load()
+
+			var driftSummary *stow.DriftSummary
+			if st != nil {
+				driftSummary, _ = stow.QuickDriftCheck(cfg, dotfilesPath, st)
+			}
+
+			allConfigs := cfg.GetAllConfigs()
+			result, err = dashboard.Run(p, driftSummary, allConfigs, dotfilesPath, updateMsg)
 		}
 
-		// Get all configs for display
-		allConfigs := cfg.GetAllConfigs()
-
-		// Run the dashboard
-		result, err := dashboard.Run(p, driftSummary, allConfigs, dotfilesPath, updateMsg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error running dashboard: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -133,34 +89,51 @@ func runDashboardFlow(cfg *config.Config, configPath string, updateMsg string, u
 			return
 		}
 
-		switch result.Action {
-		case dashboard.ActionQuit:
+		// Handle the action
+		shouldExit := handleAction(result, cfg, configPath)
+		if shouldExit {
 			fmt.Println("Bye!")
 			return
-
-		case dashboard.ActionSync:
-			// Sync all configs (restow)
-			runStowRefresh(dotfilesPath, cfg, st)
-			pause()
-
-		case dashboard.ActionSyncConfig:
-			// Sync specific config
-			runStowSingle(dotfilesPath, result.ConfigName, cfg, st)
-			pause()
-
-		case dashboard.ActionDoctor:
-			doctorCmd.Run(doctorCmd, nil)
-			pause()
-
-		case dashboard.ActionInstall:
-			installCmd.Run(installCmd, nil)
-			pause()
-
-		case dashboard.ActionInit:
-			initCmd.Run(initCmd, nil)
-			pause()
 		}
 	}
+}
+
+// handleAction processes the user's action and returns true if we should exit
+func handleAction(result *dashboard.Result, cfg *config.Config, configPath string) bool {
+	switch result.Action {
+	case dashboard.ActionQuit:
+		return true
+
+	case dashboard.ActionInit:
+		initCmd.Run(initCmd, nil)
+		waitForEnter()
+
+	case dashboard.ActionSync:
+		if cfg != nil && configPath != "" {
+			dotfilesPath := filepath.Dir(configPath)
+			st, _ := state.Load()
+			runStowRefresh(dotfilesPath, cfg, st)
+			waitForEnter()
+		}
+
+	case dashboard.ActionSyncConfig:
+		if cfg != nil && configPath != "" {
+			dotfilesPath := filepath.Dir(configPath)
+			st, _ := state.Load()
+			runStowSingle(dotfilesPath, result.ConfigName, cfg, st)
+			waitForEnter()
+		}
+
+	case dashboard.ActionDoctor:
+		doctorCmd.Run(doctorCmd, nil)
+		waitForEnter()
+
+	case dashboard.ActionInstall:
+		installCmd.Run(installCmd, nil)
+		waitForEnter()
+	}
+
+	return false
 }
 
 // runStowRefresh restows all configs
@@ -222,7 +195,7 @@ func runStowSingle(dotfilesPath string, configName string, cfg *config.Config, s
 	}
 }
 
-func pause() {
+func waitForEnter() {
 	fmt.Println("\nPress Enter to continue...")
 	fmt.Scanln()
 }
