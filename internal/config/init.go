@@ -5,9 +5,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	subtle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
 )
 
 // InitConfig scans the directory and interactively generates a configuration
@@ -130,6 +137,92 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 		}
 	}
 
+	// External Dependencies
+	var externalDeps []ExternalDep
+	var addExternal bool
+
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Would you like to add external dependencies (e.g. plugins, themes)?").
+				Value(&addExternal),
+		),
+	).WithInput(in).WithOutput(out).Run()
+
+	if err != nil {
+		return err
+	}
+
+	for addExternal {
+		var name, url, dest, method, strategy string
+
+		// Default values
+		method = "clone"
+		strategy = "overwrite"
+
+		err = huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Name").
+					Placeholder("My Plugin").
+					Value(&name),
+				huh.NewInput().
+					Title("Git URL").
+					Placeholder("https://github.com/example/plugin").
+					Value(&url),
+				huh.NewInput().
+					Title("Destination").
+					Description("Use @repoRoot/path to clone inside dotfiles").
+					Placeholder("@repoRoot/plugins/my-plugin").
+					Value(&dest),
+				huh.NewSelect[string]().
+					Title("Method").
+					Options(
+						huh.NewOption(fmt.Sprintf("Clone\n%s", subtle.Render("Standard git clone to destination.")), "clone"),
+						huh.NewOption(fmt.Sprintf("Copy\n%s", subtle.Render("Clones to temp dir, then copies to destination.")), "copy"),
+					).
+					Value(&method),
+				huh.NewSelect[string]().
+					Title("Merge Strategy").
+					Description("Only applies if files conflict").
+					Options(
+						huh.NewOption(fmt.Sprintf("Overwrite\n%s", subtle.Render("Hard Reset: Overwrites YOUR files with theirs.")), "overwrite"),
+						huh.NewOption(fmt.Sprintf("Keep Existing\n%s", subtle.Render("Safe Merge: Keeps YOUR files, adds missing ones.")), "keep_existing"),
+					).
+					Value(&strategy),
+			),
+		).WithInput(in).WithOutput(out).Run()
+
+		if err != nil {
+			return err
+		}
+
+		if name != "" && url != "" && dest != "" {
+			ext := ExternalDep{
+				Name:          name,
+				ID:            slugify(name),
+				URL:           url,
+				Destination:   dest,
+				Method:        method,
+				MergeStrategy: strategy,
+			}
+			externalDeps = append(externalDeps, ext)
+		}
+
+		// Ask to add another
+		err = huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Add another external dependency?").
+					Value(&addExternal),
+			),
+		).WithInput(in).WithOutput(out).Run()
+
+		if err != nil {
+			return err
+		}
+	}
+
 	// Create Config
 	cfg := Config{
 		SchemaVersion: "1.0",
@@ -143,6 +236,7 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 		Configs: ConfigGroups{
 			Core: selectedConfigs,
 		},
+		External:      externalDeps,
 		MachineConfig: []MachinePrompt{}, // Initialize empty
 	}
 
@@ -230,18 +324,18 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 		if len(name) > 1 && name[0] == '.' {
 			// Common hidden dotfile configs to include
 			validHiddenDirs := map[string]bool{
-				".config":    true,
-				".local":     true,
-				".vim":       true,
-				".nvim":      true,
-				".emacs.d":   true,
-				".tmux":      true,
-				".ssh":       true,
-				".gnupg":     true,
-				".fonts":     true,
-				".themes":    true,
-				".icons":     true,
-				".mozilla":   true,
+				".config":      true,
+				".local":       true,
+				".vim":         true,
+				".nvim":        true,
+				".emacs.d":     true,
+				".tmux":        true,
+				".ssh":         true,
+				".gnupg":       true,
+				".fonts":       true,
+				".themes":      true,
+				".icons":       true,
+				".mozilla":     true,
 				".thunderbird": true,
 			}
 			if !validHiddenDirs[name] {
@@ -258,4 +352,14 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 	}
 
 	return items, nil
+}
+
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	// Replace non-alphanumeric chars with hyphens
+	reg := regexp.MustCompile("[^a-z0-9]+")
+	s = reg.ReplaceAllString(s, "-")
+	// Trim hyphens
+	s = strings.Trim(s, "-")
+	return s
 }
