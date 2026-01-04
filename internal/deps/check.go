@@ -38,19 +38,19 @@ func Check(cfg *config.Config, p *platform.Platform) (*CheckResult, error) {
 
 	// Check critical dependencies
 	for _, dep := range cfg.Dependencies.Critical {
-		check := checkDependency(dep, p)
+		check := checkDependency(dep)
 		result.Critical = append(result.Critical, check)
 	}
 
 	// Check core dependencies
 	for _, dep := range cfg.Dependencies.Core {
-		check := checkDependency(dep, p)
+		check := checkDependency(dep)
 		result.Core = append(result.Core, check)
 	}
 
 	// Check optional dependencies
 	for _, dep := range cfg.Dependencies.Optional {
-		check := checkDependency(dep, p)
+		check := checkDependency(dep)
 		result.Optional = append(result.Optional, check)
 	}
 
@@ -58,7 +58,7 @@ func Check(cfg *config.Config, p *platform.Platform) (*CheckResult, error) {
 }
 
 // checkDependency checks if a single dependency is installed
-func checkDependency(dep config.DependencyItem, p *platform.Platform) DependencyCheck {
+func checkDependency(dep config.DependencyItem) DependencyCheck {
 	check := DependencyCheck{
 		Item: dep,
 	}

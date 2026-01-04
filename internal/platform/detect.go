@@ -36,10 +36,23 @@ func Detect() (*Platform, error) {
 	case "darwin":
 		detectMacOSPackageManager(p)
 	case "windows":
-		// TODO: Windows detection
+		detectWindowsPackageManager(p)
 	}
 
 	return p, nil
+}
+
+// detectWindowsPackageManager checks for winget, choco, or scoop
+func detectWindowsPackageManager(p *Platform) {
+	if _, err := exec.LookPath("winget"); err == nil {
+		p.PackageManager = "winget"
+	} else if _, err := exec.LookPath("choco"); err == nil {
+		p.PackageManager = "choco"
+	} else if _, err := exec.LookPath("scoop"); err == nil {
+		p.PackageManager = "scoop"
+	} else {
+		p.PackageManager = "none"
+	}
 }
 
 // detectWSL checks if we're running under Windows Subsystem for Linux

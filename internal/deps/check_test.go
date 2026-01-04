@@ -53,11 +53,6 @@ func TestCheck(t *testing.T) {
 }
 
 func TestCheckDependency(t *testing.T) {
-	p, err := platform.Detect()
-	if err != nil {
-		t.Fatalf("Detect() failed: %v", err)
-	}
-
 	tests := []struct {
 		name       string
 		dep        config.DependencyItem
@@ -90,7 +85,7 @@ func TestCheckDependency(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			check := checkDependency(tt.dep, p)
+			check := checkDependency(tt.dep)
 
 			if check.Status != tt.wantStatus {
 				t.Errorf("Status = %v, want %v", check.Status, tt.wantStatus)
