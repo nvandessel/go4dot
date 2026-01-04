@@ -30,6 +30,13 @@ external:
 machine_config:
   # Prompts and templates for machine-specific files
   ...
+
+archived:
+  # Old configs kept for documentation
+  ...
+
+post_install: |
+  # Message shown after successful install
 ```
 
 ## detailed Reference
@@ -114,9 +121,22 @@ external:
     url: https://github.com/sindresorhus/pure.git
     destination: ~/.zsh/pure
     method: clone             # "clone" (default) or "copy"
+    merge_strategy: overwrite # "overwrite" (default) or "keep_existing"
     condition:                # Optional conditions
       os: linux
+      distro: fedora
+      wsl: true
+      architecture: amd64
 ```
+
+**Fields:**
+- `name`: Display name for the dependency.
+- `id`: Unique identifier used in commands.
+- `url`: Git repository URL.
+- `destination`: Where to clone/copy (supports `~` expansion).
+- `method`: `clone` (default, keeps `.git`) or `copy` (removes `.git` for owned files).
+- `merge_strategy`: `overwrite` (default) replaces existing, `keep_existing` skips if present.
+- `condition`: Optional platform conditions (all must match if specified).
 
 ### Machine Config
 
@@ -130,8 +150,9 @@ machine_config:
     prompts:
       - id: user_name
         prompt: Full name for git commits
-        type: text            # text, password, confirm
+        type: text            # text, confirm, or select
         required: true
+        default: ""           # Optional default value
       - id: user_email
         prompt: Email for git commits
         type: text
@@ -140,6 +161,35 @@ machine_config:
       [user]
           name = {{ .user_name }}
           email = {{ .user_email }}
+```
+
+**Prompt Types:**
+- `text`: Free-form text input (default).
+- `confirm`: Yes/no boolean prompt.
+- `select`: Selection from predefined options (falls back to text input).
+
+### Post Install
+
+Optional message displayed after successful installation.
+
+```yaml
+post_install: |
+  Installation complete!
+
+  Don't forget to:
+  - Source your shell config: source ~/.zshrc
+  - Install your preferred fonts
+```
+
+### Archived
+
+Configs that are no longer actively installed but kept for documentation. These won't appear in the install wizard.
+
+```yaml
+archived:
+  - name: old-vim
+    path: vim
+    description: Legacy vim config (replaced by nvim)
 ```
 
 ## Example File

@@ -27,21 +27,43 @@ go4dot is a CLI tool for managing dotfiles using GNU Stow, with platform detecti
 ### Package Structure
 
 ```
-cmd/g4d/main.go           # CLI entry point, all Cobra commands
+cmd/g4d/                  # CLI entry point with Cobra commands
+  main.go                 # Root command setup
+  install.go, init.go...  # Subcommand implementations
 internal/
   platform/               # OS/distro detection + package manager abstraction
     detect.go             # Platform struct with Detect() method
-    packages.go           # PackageManager interface
-    packages_{dnf,apt,brew}.go  # Strategy implementations
+    packages.go           # PackageManager interface + GetPackageManager factory
+    packages_{dnf,apt,brew,pacman,yum}.go  # Strategy implementations
   config/                 # YAML config loading from .go4dot.yaml
     schema.go             # Config, Dependencies, ConfigItem structs
     loader.go             # LoadFromFile, Discover functions
     validator.go          # Validation logic
+    init.go               # Directory scanning for g4d init
   deps/                   # Dependency checking/installation
     check.go              # CheckDependencies using platform detection
     install.go            # InstallDependencies using package managers
+    external.go           # Git clone external deps (plugins, themes)
   stow/                   # GNU stow wrapper for symlink management
     manager.go            # Stow, Unstow, RestowConfigs functions
+    drift.go              # Detect symlink drift/changes
+  machine/                # Machine-specific config generation
+    prompts.go            # Interactive prompts for machine values
+    templates.go          # Go template rendering
+    git.go                # GPG/SSH key detection
+  doctor/                 # Health checking
+    check.go              # Run health checks
+    report.go             # Generate health report
+  state/                  # Installation state tracking
+    state.go              # Load/Save ~/.config/gopherdot/state.json
+  setup/                  # Install orchestration
+    setup.go              # Full install flow coordination
+  ui/                     # TUI components (Charm libraries)
+    styles.go             # Lipgloss styles and colors
+    spinner.go, menu.go   # Interactive components
+    banner.go             # ASCII art banner
+  version/                # Version management
+    check.go              # Version checking logic
 ```
 
 ### Key Design Patterns
@@ -62,10 +84,19 @@ type PackageManager interface {
 
 ### CLI Command Groups
 
+- `g4d install [path]` - Full interactive installation (main command)
+- `g4d init [path]` - Generate .go4dot.yaml from existing dotfiles
 - `g4d detect` - Show platform info
 - `g4d config {validate,show}` - Config operations
 - `g4d deps {check,install}` - Dependency management
 - `g4d stow {add,remove,refresh}` - Symlink management
+- `g4d external {status,clone,update,remove}` - External dependency management
+- `g4d machine {info,status,configure,show,remove}` - Machine-specific config
+- `g4d doctor` - Health check with fix suggestions
+- `g4d list` - Show installed/available configs
+- `g4d update` - Pull latest and restow
+- `g4d reconfigure` - Re-run machine config prompts
+- `g4d uninstall` - Remove symlinks and state
 
 ## Testing Patterns
 
@@ -89,5 +120,11 @@ func TestSomething(t *testing.T) {
 - Config files are discovered from: `.`, `~/dotfiles`, `~/.dotfiles`
 - Package names may differ across distros - use `MapPackageName()` in `platform/packages.go`
 - Error wrapping: use `fmt.Errorf("context: %w", err)`
-- See PLAN.md for the 14-phase implementation roadmap and current progress
-- Don't attribute CLAUDE Code in commits
+- State is stored in `~/.config/go4dot/state.json`
+- TUI uses Charm libraries: Bubbletea, Huh, Bubbles, Lipgloss
+
+## Sandbox Testing
+
+```bash
+make sandbox   # Run Docker/Podman container for isolated testing
+```

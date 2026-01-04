@@ -1,5 +1,15 @@
 # Command Reference
 
+## Global Flags
+
+These flags can be used with any command:
+- `--non-interactive`: Run without interactive prompts.
+- `-y, --yes`: Alias for `--non-interactive`.
+
+Environment variables:
+- `GO4DOT_NON_INTERACTIVE=1`: Enable non-interactive mode.
+- `CI=true`: Automatically enables non-interactive mode.
+
 ## `g4d install`
 The main entry point. Orchestrates the full setup process.
 - **Usage**: `g4d install [path]`
@@ -18,7 +28,9 @@ Bootstrap a new configuration from existing dotfiles.
 
 ## `g4d doctor`
 Check the health of your installation.
-- **Usage**: `g4d doctor`
+- **Usage**: `g4d doctor [path]`
+- **Flags**:
+  - `-v, --verbose`: Show detailed output including fix suggestions.
 - **Checks**:
   - System dependencies
   - Broken symlinks
@@ -27,11 +39,15 @@ Check the health of your installation.
 
 ## `g4d update`
 Update dotfiles and external dependencies.
-- **Usage**: `g4d update`
+- **Usage**: `g4d update [path]`
+- **Flags**:
+  - `--external`: Also update external dependencies (plugins, themes).
+  - `--skip-restow`: Skip restowing configs after pull.
 - **Actions**:
-  - `git pull` in dotfiles repo
-  - Restow configs
-  - Update external git repos
+  - `git pull --rebase` in dotfiles repo
+  - Show what changed
+  - Restow configs to apply changes
+  - Update external git repos (if `--external` is set)
 
 ## `g4d list`
 List all available and installed configurations.
@@ -71,6 +87,15 @@ Manage external dependencies manually.
 
 ## `g4d machine`
 Manage machine configuration manually.
-- `g4d machine status`: Show status of machine configs.
-- `g4d machine show <id>`: Preview generated config.
-- `g4d machine configure [id]`: Run prompts for specific config.
+- `g4d machine info`: Show system information (git config, GPG/SSH keys).
+- `g4d machine status [path]`: Show status of machine configs.
+- `g4d machine configure [id] [path]`: Run prompts for specific config.
+  - `--defaults`: Use default values without prompting.
+  - `--overwrite`: Overwrite existing configuration files.
+- `g4d machine show <id> [path]`: Preview generated config.
+- `g4d machine remove <id> [path]`: Remove a generated config file.
+
+## `g4d version`
+Display version information.
+- **Usage**: `g4d version`
+- **Output**: Version, build time, and Go version.

@@ -103,19 +103,6 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 		}
 
 		switch prompt.Type {
-		case "password":
-			var val string = prompt.Default
-			valuePointers[prompt.ID] = &val
-
-			f := huh.NewInput().
-				Title(prompt.Prompt).
-				Value(&val).
-				EchoMode(huh.EchoModePassword)
-			if prompt.Required {
-				f.Validate(requiredValidator)
-			}
-			fields = append(fields, f)
-
 		case "confirm":
 			var val bool
 			if prompt.Default == "true" || prompt.Default == "yes" || prompt.Default == "y" {
