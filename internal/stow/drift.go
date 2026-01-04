@@ -34,54 +34,9 @@ func (s *DriftSummary) HasDrift() bool {
 	return s.DriftedConfigs > 0
 }
 
-// QuickDriftCheck performs a fast heuristic check by comparing file counts.
-// It returns true if drift is detected (counts don't match stored values).
-// This is designed to be fast for dashboard startup.
-func QuickDriftCheck(cfg *config.Config, dotfilesPath string, st *state.State) (*DriftSummary, error) {
-	summary := &DriftSummary{}
-
-	allConfigs := cfg.GetAllConfigs()
-	summary.TotalConfigs = len(allConfigs)
-
-	for _, configItem := range allConfigs {
-		configPath := filepath.Join(dotfilesPath, configItem.Path)
-
-		// Count files in the config directory
-		currentCount, err := countFiles(configPath)
-		if err != nil {
-			// Config dir doesn't exist or error - skip
-			continue
-		}
-
-		result := DriftResult{
-			ConfigName:   configItem.Name,
-			ConfigPath:   configItem.Path,
-			CurrentCount: currentCount,
-		}
-
-		// Compare to stored count
-		if st != nil {
-			storedCount, ok := st.GetSymlinkCount(configItem.Name)
-			result.StoredCount = storedCount
-			if ok && currentCount != storedCount {
-				result.HasDrift = true
-				summary.DriftedConfigs++
-				summary.TotalNewFiles += currentCount - storedCount
-			} else if !ok {
-				// No stored count - first run, no drift detected
-				result.HasDrift = false
-			}
-		}
-
-		summary.Results = append(summary.Results, result)
-	}
-
-	return summary, nil
-}
-
 // FullDriftCheck performs a complete analysis of all configs.
 // It identifies exactly which files are new, missing, or in conflict.
-func FullDriftCheck(cfg *config.Config, dotfilesPath string) ([]DriftResult, error) {
+func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, error) {
 	var results []DriftResult
 	home := os.Getenv("HOME")
 
@@ -128,6 +83,13 @@ func FullDriftCheck(cfg *config.Config, dotfilesPath string) ([]DriftResult, err
 
 			// Check if it's a symlink
 			if targetInfo.Mode()&os.ModeSymlink == 0 {
+				// If not a symlink, check if it's the same file (handles directory folding)
+				sourceInfo, err := os.Stat(path)
+				if err == nil && os.SameFile(sourceInfo, targetInfo) {
+					// It's the same file (synced via parent directory symlink) - OK
+					return nil
+				}
+
 				// File exists but is not a symlink - conflict
 				result.ConflictFiles = append(result.ConflictFiles, relPath)
 				return nil
@@ -165,7 +127,19 @@ func FullDriftCheck(cfg *config.Config, dotfilesPath string) ([]DriftResult, err
 		results = append(results, result)
 	}
 
-	return results, nil
+	summary := &DriftSummary{
+		TotalConfigs: len(results),
+		Results:      results,
+	}
+
+	for _, r := range results {
+		if r.HasDrift {
+			summary.DriftedConfigs++
+			summary.TotalNewFiles += len(r.NewFiles)
+		}
+	}
+
+	return summary, nil
 }
 
 // UpdateSymlinkCounts updates the stored file counts for all configs

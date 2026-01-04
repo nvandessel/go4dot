@@ -47,6 +47,9 @@ func runSync(cmd *cobra.Command, args []string) {
 
 	// Load state
 	st, _ := state.Load()
+	if st == nil {
+		st = state.New()
+	}
 
 	// If a specific config is specified, sync just that one
 	if len(args) > 0 {
@@ -74,14 +77,14 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 	}
 
 	// Check what will be synced
-	results, err := stow.FullDriftCheck(cfg, dotfilesPath)
+	summary, err := stow.FullDriftCheck(cfg, dotfilesPath)
 	if err != nil {
 		ui.Error("Failed to check drift: %v", err)
 		os.Exit(1)
 	}
 
 	var drift *stow.DriftResult
-	for _, r := range results {
+	for _, r := range summary.Results {
 		if r.ConfigName == configName {
 			drift = &r
 			break
@@ -140,13 +143,13 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 
 func syncAllConfigs(cfg *config.Config, dotfilesPath string, st *state.State) {
 	// Check what will be synced
-	results, err := stow.FullDriftCheck(cfg, dotfilesPath)
+	summary, err := stow.FullDriftCheck(cfg, dotfilesPath)
 	if err != nil {
 		ui.Error("Failed to check drift: %v", err)
 		os.Exit(1)
 	}
 
-	drifted := stow.GetDriftedConfigs(results)
+	drifted := stow.GetDriftedConfigs(summary.Results)
 
 	// Show what will be synced
 	if len(drifted) > 0 {

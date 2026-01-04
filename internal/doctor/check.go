@@ -259,6 +259,16 @@ func checkSymlinks(cfg *config.Config, dotfilesPath string) []SymlinkCheck {
 
 			// Check if it's a symlink
 			if targetInfo.Mode()&os.ModeSymlink == 0 {
+				// If not a symlink, check if it's the same file (handles directory folding)
+				sourceInfo, err := os.Stat(path)
+				if err == nil && os.SameFile(sourceInfo, targetInfo) {
+					// It's the same file (synced via parent directory symlink) - OK
+					check.Status = StatusOK
+					check.Message = "Valid (via directory fold)"
+					checks = append(checks, check)
+					return nil
+				}
+
 				check.Status = StatusWarning
 				check.Message = "Not a symlink (conflict)"
 				checks = append(checks, check)

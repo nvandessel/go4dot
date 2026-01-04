@@ -79,7 +79,7 @@ func runInteractive(cmd *cobra.Command, args []string) {
 			var driftSummary *stow.DriftSummary
 			hasBaseline := false
 			if st != nil {
-				driftSummary, _ = stow.QuickDriftCheck(cfg, dotfilesPath, st)
+				driftSummary, _ = stow.FullDriftCheck(cfg, dotfilesPath)
 				// Check if we have any stored symlink counts (indicates prior sync)
 				hasBaseline = len(st.SymlinkCounts) > 0
 			}
