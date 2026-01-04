@@ -25,11 +25,19 @@ var externalStatusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		var cfg *config.Config
 		var err error
+		var repoRoot string
 
 		if len(args) > 0 {
 			cfg, err = config.LoadFromPath(args[0])
+			if err == nil {
+				repoRoot, _ = resolveRepoRoot(args[0])
+			}
 		} else {
-			cfg, _, err = config.LoadFromDiscovery()
+			var configPath string
+			cfg, configPath, err = config.LoadFromDiscovery()
+			if err == nil {
+				repoRoot = filepath.Dir(configPath)
+			}
 		}
 
 		if err != nil {
@@ -48,7 +56,7 @@ var externalStatusCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		statuses := deps.CheckExternalStatus(cfg, p)
+		statuses := deps.CheckExternalStatus(cfg, p, repoRoot)
 
 		fmt.Println("External Dependencies Status")
 		fmt.Println("----------------------------")
@@ -99,6 +107,7 @@ With an ID argument, clones only that specific dependency.`,
 		var cfg *config.Config
 		var err error
 		var specificID string
+		var repoRoot string
 
 		// Parse arguments
 		configPathArg := ""
@@ -117,8 +126,15 @@ With an ID argument, clones only that specific dependency.`,
 
 		if configPathArg != "" {
 			cfg, err = config.LoadFromPath(configPathArg)
+			if err == nil {
+				repoRoot, _ = resolveRepoRoot(configPathArg)
+			}
 		} else {
-			cfg, _, err = config.LoadFromDiscovery()
+			var configPath string
+			cfg, configPath, err = config.LoadFromDiscovery()
+			if err == nil {
+				repoRoot = filepath.Dir(configPath)
+			}
 		}
 
 		if err != nil {
@@ -138,6 +154,7 @@ With an ID argument, clones only that specific dependency.`,
 		}
 
 		opts := deps.ExternalOptions{
+			RepoRoot: repoRoot,
 			ProgressFunc: func(msg string) {
 				fmt.Println(msg)
 			},
@@ -195,6 +212,7 @@ With an ID argument, updates only that specific dependency.`,
 		var cfg *config.Config
 		var err error
 		var specificID string
+		var repoRoot string
 
 		configPathArg := ""
 		if len(args) >= 1 {
@@ -210,8 +228,15 @@ With an ID argument, updates only that specific dependency.`,
 
 		if configPathArg != "" {
 			cfg, err = config.LoadFromPath(configPathArg)
+			if err == nil {
+				repoRoot, _ = resolveRepoRoot(configPathArg)
+			}
 		} else {
-			cfg, _, err = config.LoadFromDiscovery()
+			var configPath string
+			cfg, configPath, err = config.LoadFromDiscovery()
+			if err == nil {
+				repoRoot = filepath.Dir(configPath)
+			}
 		}
 
 		if err != nil {
@@ -231,7 +256,8 @@ With an ID argument, updates only that specific dependency.`,
 		}
 
 		opts := deps.ExternalOptions{
-			Update: true,
+			Update:   true,
+			RepoRoot: repoRoot,
 			ProgressFunc: func(msg string) {
 				fmt.Println(msg)
 			},
@@ -287,11 +313,19 @@ var externalRemoveCmd = &cobra.Command{
 
 		var cfg *config.Config
 		var err error
+		var repoRoot string
 
 		if len(args) > 1 {
 			cfg, err = config.LoadFromPath(args[1])
+			if err == nil {
+				repoRoot, _ = resolveRepoRoot(args[1])
+			}
 		} else {
-			cfg, _, err = config.LoadFromDiscovery()
+			var configPath string
+			cfg, configPath, err = config.LoadFromDiscovery()
+			if err == nil {
+				repoRoot = filepath.Dir(configPath)
+			}
 		}
 
 		if err != nil {
@@ -300,6 +334,7 @@ var externalRemoveCmd = &cobra.Command{
 		}
 
 		opts := deps.ExternalOptions{
+			RepoRoot: repoRoot,
 			ProgressFunc: func(msg string) {
 				fmt.Println(msg)
 			},
@@ -311,6 +346,22 @@ var externalRemoveCmd = &cobra.Command{
 			os.Exit(1)
 		}
 	},
+}
+
+// resolveRepoRoot determines the repository root from a path argument
+func resolveRepoRoot(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	stat, err := os.Stat(absPath)
+	if err != nil {
+		return "", err
+	}
+	if stat.IsDir() {
+		return absPath, nil
+	}
+	return filepath.Dir(absPath), nil
 }
 
 func init() {

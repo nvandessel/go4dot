@@ -119,7 +119,7 @@ func RunChecks(cfg *config.Config, opts CheckOptions) (*CheckResult, error) {
 	// Step 6: Check external dependencies
 	progress(opts, "Checking external dependencies...")
 	if len(cfg.External) > 0 {
-		extStatus := deps.CheckExternalStatus(cfg, p)
+		extStatus := deps.CheckExternalStatus(cfg, p, opts.DotfilesPath)
 		result.ExternalStatus = extStatus
 		extCheck := summarizeExternalCheck(extStatus)
 		result.Checks = append(result.Checks, extCheck)

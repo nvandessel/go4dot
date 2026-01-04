@@ -35,6 +35,7 @@ type ExternalSkipped struct {
 type ExternalOptions struct {
 	DryRun       bool             // Don't actually clone, just report
 	Update       bool             // Pull updates for existing repos
+	RepoRoot     string           // Path to dotfiles root for @repoRoot expansion
 	ProgressFunc func(msg string) // Called for progress updates
 }
 
@@ -65,7 +66,7 @@ func CloneExternal(cfg *config.Config, p *platform.Platform, opts ExternalOption
 		}
 
 		// Expand destination path
-		destPath, err := expandPath(ext.Destination)
+		destPath, err := expandPath(ext.Destination, opts.RepoRoot)
 		if err != nil {
 			result.Failed = append(result.Failed, ExternalError{
 				Dep:   ext,
@@ -78,6 +79,29 @@ func CloneExternal(cfg *config.Config, p *platform.Platform, opts ExternalOption
 		exists, isGit := checkDestination(destPath)
 
 		if exists {
+			// If method is copy and merge strategy is keep_existing, we might still want to proceed
+			// to copy new files, but checkDestination returns true if directory exists.
+			// However, the main logic for updates usually assumes git repo.
+			// For "copy" method, "exists" usually means we skip or overwrite.
+
+			if ext.Method == "copy" {
+				// For copy method, we re-run to handle potential new files or updates
+				// unless it's strictly an update of a git repo which this is not.
+				// We proceed to copy logic below, which handles merge strategy.
+				// BUT, if we blindly proceed, we might be redundant.
+				// However, standard logic below for "exists" handles git updates.
+				// Let's refine:
+
+				// If it's a copy method, we don't treat directory existence as "skip" if we want to merge.
+				// But we also don't want to re-clone if everything is there.
+				// For now, let's treat "copy" as always needing execution if we want to support "updates" via copy,
+				// but the original code skipped if exists.
+
+				// If we want to support "keep_existing" merge strategy, we imply we are running it to fill gaps.
+				// So we should NOT skip if it exists.
+				goto Execute
+			}
+
 			if opts.Update && isGit {
 				// Update existing repo
 				if opts.ProgressFunc != nil {
@@ -111,6 +135,7 @@ func CloneExternal(cfg *config.Config, p *platform.Platform, opts ExternalOption
 			continue
 		}
 
+	Execute:
 		// Clone the repository
 		if opts.ProgressFunc != nil {
 			opts.ProgressFunc(fmt.Sprintf("⬇ Cloning %s...", ext.Name))
@@ -135,7 +160,7 @@ func CloneExternal(cfg *config.Config, p *platform.Platform, opts ExternalOption
 		case "clone":
 			cloneErr = gitClone(ext.URL, destPath)
 		case "copy":
-			cloneErr = gitCloneThenCopy(ext.URL, destPath)
+			cloneErr = gitCloneThenCopy(ext.URL, destPath, ext.MergeStrategy)
 		default:
 			cloneErr = fmt.Errorf("unknown method: %s", method)
 		}
@@ -178,7 +203,7 @@ func CloneSingle(cfg *config.Config, p *platform.Platform, id string, opts Exter
 		return fmt.Errorf("condition not met for '%s'", id)
 	}
 
-	destPath, err := expandPath(found.Destination)
+	destPath, err := expandPath(found.Destination, opts.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("failed to expand path: %w", err)
 	}
@@ -186,6 +211,11 @@ func CloneSingle(cfg *config.Config, p *platform.Platform, id string, opts Exter
 	exists, isGit := checkDestination(destPath)
 
 	if exists {
+		// Special handling for copy method with merge strategy
+		if found.Method == "copy" {
+			goto Execute
+		}
+
 		if opts.Update && isGit {
 			if opts.ProgressFunc != nil {
 				opts.ProgressFunc(fmt.Sprintf("↻ Updating %s...", found.Name))
@@ -203,6 +233,7 @@ func CloneSingle(cfg *config.Config, p *platform.Platform, id string, opts Exter
 		return fmt.Errorf("destination already exists: %s", destPath)
 	}
 
+Execute:
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(fmt.Sprintf("⬇ Cloning %s...", found.Name))
 	}
@@ -223,14 +254,14 @@ func CloneSingle(cfg *config.Config, p *platform.Platform, id string, opts Exter
 	case "clone":
 		return gitClone(found.URL, destPath)
 	case "copy":
-		return gitCloneThenCopy(found.URL, destPath)
+		return gitCloneThenCopy(found.URL, destPath, found.MergeStrategy)
 	default:
 		return fmt.Errorf("unknown method: %s", method)
 	}
 }
 
 // CheckExternalStatus returns the status of all external dependencies
-func CheckExternalStatus(cfg *config.Config, p *platform.Platform) []ExternalStatus {
+func CheckExternalStatus(cfg *config.Config, p *platform.Platform, repoRoot string) []ExternalStatus {
 	var statuses []ExternalStatus
 
 	for _, ext := range cfg.External {
@@ -246,7 +277,7 @@ func CheckExternalStatus(cfg *config.Config, p *platform.Platform) []ExternalSta
 			continue
 		}
 
-		destPath, err := expandPath(ext.Destination)
+		destPath, err := expandPath(ext.Destination, repoRoot)
 		if err != nil {
 			status.Status = "error"
 			status.Reason = fmt.Sprintf("invalid path: %v", err)
@@ -260,7 +291,11 @@ func CheckExternalStatus(cfg *config.Config, p *platform.Platform) []ExternalSta
 				status.Status = "installed"
 			} else {
 				status.Status = "installed"
-				status.Reason = "not a git repo"
+				if ext.Method == "copy" {
+					status.Reason = "copied"
+				} else {
+					status.Reason = "not a git repo"
+				}
 			}
 		} else {
 			status.Status = "missing"
@@ -281,14 +316,19 @@ type ExternalStatus struct {
 	Path   string
 }
 
-// expandPath expands ~ to home directory and resolves the path
-func expandPath(path string) (string, error) {
+// expandPath expands ~ to home directory and resolves @repoRoot
+func expandPath(path, repoRoot string) (string, error) {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", fmt.Errorf("failed to get home directory: %w", err)
 		}
 		path = filepath.Join(home, path[2:])
+	} else if strings.HasPrefix(path, "@repoRoot/") {
+		if repoRoot == "" {
+			return "", fmt.Errorf("repoRoot is not set, cannot expand @repoRoot")
+		}
+		path = filepath.Join(repoRoot, path[10:]) // 10 is length of "@repoRoot/"
 	}
 	return filepath.Clean(path), nil
 }
@@ -397,7 +437,7 @@ func gitPull(path string) error {
 
 // gitCloneThenCopy clones to a temp directory and copies content (removes .git)
 // This is useful for dependencies where you want to own the files
-func gitCloneThenCopy(url, dest string) error {
+func gitCloneThenCopy(url, dest, mergeStrategy string) error {
 	// Create a temp directory for cloning
 	tmpDir, err := os.MkdirTemp("", "go4dot-clone-*")
 	if err != nil {
@@ -423,17 +463,12 @@ func gitCloneThenCopy(url, dest string) error {
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	// Move content to destination
-	if err := os.Rename(tmpDest, dest); err != nil {
-		// If rename fails (different filesystem), try copy
-		return copyDir(tmpDest, dest)
-	}
-
-	return nil
+	// Try to copy (copyDir handles merge strategy)
+	return copyDir(tmpDest, dest, mergeStrategy)
 }
 
 // copyDir recursively copies a directory
-func copyDir(src, dst string) error {
+func copyDir(src, dst, mergeStrategy string) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -453,11 +488,11 @@ func copyDir(src, dst string) error {
 		dstPath := filepath.Join(dst, entry.Name())
 
 		if entry.IsDir() {
-			if err := copyDir(srcPath, dstPath); err != nil {
+			if err := copyDir(srcPath, dstPath, mergeStrategy); err != nil {
 				return err
 			}
 		} else {
-			if err := copyFile(srcPath, dstPath); err != nil {
+			if err := copyFile(srcPath, dstPath, mergeStrategy); err != nil {
 				return err
 			}
 		}
@@ -467,7 +502,15 @@ func copyDir(src, dst string) error {
 }
 
 // copyFile copies a single file
-func copyFile(src, dst string) error {
+func copyFile(src, dst, mergeStrategy string) error {
+	// Check merge strategy
+	if mergeStrategy == "keep_existing" {
+		if _, err := os.Stat(dst); err == nil {
+			// File exists, skip
+			return nil
+		}
+	}
+
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -518,7 +561,7 @@ func RemoveExternal(cfg *config.Config, id string, opts ExternalOptions) error {
 		return fmt.Errorf("external dependency '%s' not found", id)
 	}
 
-	destPath, err := expandPath(found.Destination)
+	destPath, err := expandPath(found.Destination, opts.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("failed to expand path: %w", err)
 	}

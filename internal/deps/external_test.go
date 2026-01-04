@@ -15,36 +15,49 @@ func TestExpandPath(t *testing.T) {
 		t.Fatalf("Failed to get home directory: %v", err)
 	}
 
+	repoRoot := "/tmp/repo"
+
 	tests := []struct {
 		name     string
 		input    string
+		repoRoot string
 		expected string
 	}{
 		{
 			name:     "Home directory expansion",
 			input:    "~/.config/test",
+			repoRoot: "",
 			expected: filepath.Join(home, ".config/test"),
 		},
 		{
 			name:     "Absolute path unchanged",
 			input:    "/usr/local/bin",
+			repoRoot: "",
 			expected: "/usr/local/bin",
 		},
 		{
 			name:     "Relative path cleaned",
 			input:    "./foo/../bar",
+			repoRoot: "",
 			expected: "bar",
 		},
 		{
 			name:     "Home only",
 			input:    "~/",
+			repoRoot: "",
 			expected: home,
+		},
+		{
+			name:     "RepoRoot expansion",
+			input:    "@repoRoot/config",
+			repoRoot: repoRoot,
+			expected: filepath.Join(repoRoot, "config"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expandPath(tt.input)
+			result, err := expandPath(tt.input, tt.repoRoot)
 			if err != nil {
 				t.Fatalf("expandPath() error = %v", err)
 			}
@@ -321,7 +334,7 @@ func TestCheckExternalStatus(t *testing.T) {
 		PackageManager: "dnf",
 	}
 
-	statuses := CheckExternalStatus(cfg, p)
+	statuses := CheckExternalStatus(cfg, p, "")
 
 	if len(statuses) != 3 {
 		t.Fatalf("len(statuses) = %d, want 3", len(statuses))
@@ -592,7 +605,7 @@ func TestCopyDir(t *testing.T) {
 
 	// Copy to destination
 	dstDir := filepath.Join(tmpDir, "dst")
-	if err := copyDir(srcDir, dstDir); err != nil {
+	if err := copyDir(srcDir, dstDir, ""); err != nil {
 		t.Fatalf("copyDir() error = %v", err)
 	}
 
@@ -611,6 +624,57 @@ func TestCopyDir(t *testing.T) {
 	}
 	if string(content2) != "content2" {
 		t.Errorf("file2 content = %q, want 'content2'", content2)
+	}
+}
+
+func TestCopyDirKeepExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create source directory
+	srcDir := filepath.Join(tmpDir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("Failed to create src dir: %v", err)
+	}
+	// New file in source
+	if err := os.WriteFile(filepath.Join(srcDir, "new.txt"), []byte("new"), 0644); err != nil {
+		t.Fatalf("Failed to create new file: %v", err)
+	}
+	// Conflicting file in source
+	if err := os.WriteFile(filepath.Join(srcDir, "conflict.txt"), []byte("source_conflict"), 0644); err != nil {
+		t.Fatalf("Failed to create source conflict file: %v", err)
+	}
+
+	// Create destination directory
+	dstDir := filepath.Join(tmpDir, "dst")
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		t.Fatalf("Failed to create dst dir: %v", err)
+	}
+	// Existing conflicting file in destination
+	if err := os.WriteFile(filepath.Join(dstDir, "conflict.txt"), []byte("dest_conflict"), 0644); err != nil {
+		t.Fatalf("Failed to create dest conflict file: %v", err)
+	}
+
+	// Copy with keep_existing
+	if err := copyDir(srcDir, dstDir, "keep_existing"); err != nil {
+		t.Fatalf("copyDir() error = %v", err)
+	}
+
+	// Verify "new.txt" was copied
+	newContent, err := os.ReadFile(filepath.Join(dstDir, "new.txt"))
+	if err != nil {
+		t.Fatalf("Failed to read new.txt: %v", err)
+	}
+	if string(newContent) != "new" {
+		t.Errorf("new.txt content = %q, want 'new'", newContent)
+	}
+
+	// Verify "conflict.txt" was NOT overwritten
+	conflictContent, err := os.ReadFile(filepath.Join(dstDir, "conflict.txt"))
+	if err != nil {
+		t.Fatalf("Failed to read conflict.txt: %v", err)
+	}
+	if string(conflictContent) != "dest_conflict" {
+		t.Errorf("conflict.txt content = %q, want 'dest_conflict' (should have been preserved)", conflictContent)
 	}
 }
 

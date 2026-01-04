@@ -69,12 +69,13 @@ type ConfigItem struct {
 
 // ExternalDep represents an external dependency to clone (plugins, themes, etc.)
 type ExternalDep struct {
-	Name        string            `yaml:"name"`
-	ID          string            `yaml:"id"`
-	URL         string            `yaml:"url"`
-	Destination string            `yaml:"destination"`
-	Method      string            `yaml:"method"` // "clone" or "copy"
-	Condition   map[string]string `yaml:"condition"`
+	Name          string            `yaml:"name"`
+	ID            string            `yaml:"id"`
+	URL           string            `yaml:"url"`
+	Destination   string            `yaml:"destination"`
+	Method        string            `yaml:"method"`         // "clone" or "copy"
+	MergeStrategy string            `yaml:"merge_strategy"` // "overwrite" (default) or "keep_existing"
+	Condition     map[string]string `yaml:"condition"`
 }
 
 // MachinePrompt represents machine-specific configuration prompts
