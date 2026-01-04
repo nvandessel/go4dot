@@ -66,6 +66,8 @@ clean:
 	@echo "Cleaning..."
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out coverage.html
+	-docker rmi g4d-sandbox 2>/dev/null || true
+	-podman rmi g4d-sandbox 2>/dev/null || true
 	go clean
 
 # Format code
@@ -123,3 +125,9 @@ help:
 	@echo "  VERSION=$(VERSION)"
 	@echo "  BUILD_TIME=$(BUILD_TIME)"
 	@echo "  GO_VERSION=$(GO_VERSION)"
+
+# Run the Docker sandbox
+.PHONY: sandbox
+sandbox:
+	@chmod +x test/run.sh
+	@./test/run.sh
