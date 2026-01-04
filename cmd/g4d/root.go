@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nvandessel/go4dot/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -12,6 +13,9 @@ var (
 	Version   = "dev"
 	BuildTime = "unknown"
 	GoVersion = "unknown"
+
+	// Global flags
+	nonInteractive bool
 )
 
 var rootCmd = &cobra.Command{
@@ -44,6 +48,26 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
+	// Global persistent flags
+	rootCmd.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false, "Run without interactive prompts")
+	rootCmd.PersistentFlags().BoolP("yes", "y", false, "Alias for --non-interactive")
+
+	// Set up PersistentPreRun to handle env vars and flag aliases
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		// Check environment variables for non-interactive mode
+		if os.Getenv("GO4DOT_NON_INTERACTIVE") == "1" || os.Getenv("CI") == "true" {
+			nonInteractive = true
+		}
+
+		// Handle -y as alias for --non-interactive
+		if yes, _ := cmd.Flags().GetBool("yes"); yes {
+			nonInteractive = true
+		}
+
+		// Propagate to ui package for use throughout the codebase
+		ui.SetNonInteractive(nonInteractive)
+	}
+
 	rootCmd.AddCommand(versionCmd)
 }
 

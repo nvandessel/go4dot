@@ -172,29 +172,81 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 	}
 
 	var items []ConfigItem
+
+	// Directories to always ignore (not dotfiles-related)
 	ignored := map[string]bool{
-		".git":         true,
-		".github":      true,
-		".idea":        true,
-		".vscode":      true,
+		// Version control
+		".git":    true,
+		".github": true,
+		".gitlab": true,
+		".svn":    true,
+
+		// IDE/Editor
+		".idea":   true,
+		".vscode": true,
+		".vim":    false, // This IS a dotfile config
+		".nvim":   false, // This IS a dotfile config
+
+		// Build/Output
 		"bin":          true,
+		"build":        true,
+		"dist":         true,
+		"node_modules": true,
+		"vendor":       true,
+		"target":       true,
+		"__pycache__":  true,
+		".cache":       true,
+
+		// Project files (not dotfiles)
 		ConfigFileName: true,
 		"README.md":    true,
 		"LICENSE":      true,
 		"Makefile":     true,
 		"go.mod":       true,
 		"go.sum":       true,
+		"package.json": true,
+		"Cargo.toml":   true,
+
+		// go4dot internal
+		"test":    true,
+		"sandbox": true,
 	}
 
 	for _, entry := range entries {
 		name := entry.Name()
+
+		// Check explicit ignore list
 		if ignored[name] {
 			continue
 		}
 
-		// Skip hidden files/dirs unless explicitly dotfiles
+		// Only include directories (dotfiles are usually directories for stow)
 		if !entry.IsDir() {
 			continue
+		}
+
+		// Skip hidden directories that start with . unless they look like dotfile configs
+		// (e.g., .config is OK, .cache is not)
+		if len(name) > 1 && name[0] == '.' {
+			// Common hidden dotfile configs to include
+			validHiddenDirs := map[string]bool{
+				".config":    true,
+				".local":     true,
+				".vim":       true,
+				".nvim":      true,
+				".emacs.d":   true,
+				".tmux":      true,
+				".ssh":       true,
+				".gnupg":     true,
+				".fonts":     true,
+				".themes":    true,
+				".icons":     true,
+				".mozilla":   true,
+				".thunderbird": true,
+			}
+			if !validHiddenDirs[name] {
+				continue
+			}
 		}
 
 		items = append(items, ConfigItem{

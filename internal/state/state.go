@@ -27,6 +27,7 @@ type State struct {
 	Configs       []ConfigState            `json:"configs"`
 	MachineConfig map[string]MachineState  `json:"machine_config"`
 	ExternalDeps  map[string]ExternalState `json:"external_deps"`
+	SymlinkCounts map[string]int           `json:"symlink_counts,omitempty"` // File count per config for quick drift detection
 }
 
 // PlatformState stores detected platform information
@@ -250,4 +251,28 @@ func (s *State) SetMachineConfig(id string, configPath string, hasGPG, hasSSH bo
 // RemoveMachineConfig removes a machine config from state
 func (s *State) RemoveMachineConfig(id string) {
 	delete(s.MachineConfig, id)
+}
+
+// SetSymlinkCount updates the file count for a config (for drift detection)
+func (s *State) SetSymlinkCount(configName string, count int) {
+	if s.SymlinkCounts == nil {
+		s.SymlinkCounts = make(map[string]int)
+	}
+	s.SymlinkCounts[configName] = count
+}
+
+// GetSymlinkCount returns the stored file count for a config
+func (s *State) GetSymlinkCount(configName string) (int, bool) {
+	if s.SymlinkCounts == nil {
+		return 0, false
+	}
+	count, ok := s.SymlinkCounts[configName]
+	return count, ok
+}
+
+// RemoveSymlinkCount removes the file count for a config
+func (s *State) RemoveSymlinkCount(configName string) {
+	if s.SymlinkCounts != nil {
+		delete(s.SymlinkCounts, configName)
+	}
 }
