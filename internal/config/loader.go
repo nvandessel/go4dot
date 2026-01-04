@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	ConfigFileName = ".gopherdot.yaml"
+	ConfigFileName = ".go4dot.yaml"
 )
 
-// Load reads and parses a .gopherdot.yaml file
+// Load reads and parses a .go4dot.yaml file
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -27,7 +27,7 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// FindConfig searches for .gopherdot.yaml in common locations
+// FindConfig searches for .go4dot.yaml in common locations
 func FindConfig() (string, error) {
 	// Search locations in order of priority
 	searchPaths := []string{

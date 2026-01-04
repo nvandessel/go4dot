@@ -27,7 +27,7 @@
 # Commands available:
 g4d install [path]                  # Full installation (main command!)
 g4d detect                          # Show platform info
-g4d config validate [path]          # Validate .gopherdot.yaml
+g4d config validate [path]          # Validate .go4dot.yaml
 g4d config show [path]              # Display config
 g4d deps check [path]               # Check dependency status
 g4d deps install [path]             # Install missing deps
@@ -86,7 +86,7 @@ A **standalone CLI tool** (go4dot) that manages dotfiles repositories with the f
 - ✅ **Stow management** - Safely symlink configs with conflict detection
 - ✅ **External dependencies** - Clone plugin managers, themes, etc. from GitHub
 - ✅ **Health checking** - Doctor command to validate installation
-- ✅ **Universal** - Works with ANY dotfiles repo that has a `.gopherdot.yaml` config file
+- ✅ **Universal** - Works with ANY dotfiles repo that has a `.go4dot.yaml` config file
 
 ### Key Design Decisions
 
@@ -96,7 +96,7 @@ A **standalone CLI tool** (go4dot) that manages dotfiles repositories with the f
 - **Versioning:** Semantic versioning (v1.0.0, v1.1.0, etc.)
 - **Testing:** Unit tests, integration tests, and example dotfiles
 - **Distribution:** Bootstrap script (`curl | bash`), GitHub Releases, and `go install`
-- **Init command:** Generate `.gopherdot.yaml` by scanning existing dotfiles
+- **Init command:** Generate `.go4dot.yaml` by scanning existing dotfiles
 
 ### User Experience Flow
 
@@ -120,11 +120,11 @@ g4d install
 ```bash
 cd ~/my-dotfiles
 
-# Initialize go4dot config (scans your dotfiles, generates .gopherdot.yaml)
+# Initialize go4dot config (scans your dotfiles, generates .go4dot.yaml)
 g4d init
 
-# Edit .gopherdot.yaml to customize
-vim .gopherdot.yaml
+# Edit .go4dot.yaml to customize
+vim .go4dot.yaml
 
 # Run setup
 g4d install
@@ -150,7 +150,7 @@ g4d install
 │  (and anyone else's dotfiles!)             │
 │                                             │
 │  • Config files (git, nvim, tmux, etc.)    │
-│  • .gopherdot.yaml (manifest)              │
+│  • .go4dot.yaml (manifest)              │
 │  • install.sh (bootstraps go4dot)       │
 └─────────────────────────────────────────────┘
 ```
@@ -168,12 +168,12 @@ g4d install
 ### How They Integrate
 
 1. **go4dot discovers dotfiles:**
-   - Checks current directory for `.gopherdot.yaml`
+   - Checks current directory for `.go4dot.yaml`
    - Checks `~/dotfiles`
    - Checks `~/.dotfiles`
    - Prompts if not found
 
-2. **go4dot reads `.gopherdot.yaml`** from your dotfiles repo
+2. **go4dot reads `.go4dot.yaml`** from your dotfiles repo
 
 3. **go4dot manages everything:**
    - Platform detection
@@ -187,7 +187,7 @@ g4d install
 
 ## Core Components
 
-### 1. Configuration File: `.gopherdot.yaml`
+### 1. Configuration File: `.go4dot.yaml`
 
 **Location:** Root of dotfiles repository
 
@@ -271,7 +271,7 @@ machine_config:
 ```
 g4d
 ├── install         # Interactive setup (main command)
-├── init            # Generate .gopherdot.yaml from existing dotfiles
+├── init            # Generate .go4dot.yaml from existing dotfiles
 ├── doctor          # Health check and troubleshooting
 ├── update          # Pull latest dotfiles and restow
 ├── list            # Show installed configs
@@ -331,7 +331,7 @@ g4d
 
 ## Configuration File Specification
 
-See the full `.gopherdot.yaml` specification with detailed examples in [CONFIG_SPEC.md](./docs/CONFIG_SPEC.md) (to be created).
+See the full `.go4dot.yaml` specification with detailed examples in [CONFIG_SPEC.md](./docs/CONFIG_SPEC.md) (to be created).
 
 ### Key Sections
 
@@ -369,7 +369,7 @@ Interactive first-time setup.
 
 ### `g4d init`
 
-Generate `.gopherdot.yaml` from existing dotfiles.
+Generate `.go4dot.yaml` from existing dotfiles.
 
 **Flow:**
 1. Scan directory for configs
@@ -377,7 +377,7 @@ Generate `.gopherdot.yaml` from existing dotfiles.
 3. Interactive prompts for unknowns
 4. Prompt for metadata (name, author, description)
 5. Prompt for platform support
-6. Generate `.gopherdot.yaml` with helpful comments
+6. Generate `.go4dot.yaml` with helpful comments
 7. Show next steps
 
 ### `g4d doctor`
@@ -399,7 +399,7 @@ Pull latest dotfiles and update.
 **Flow:**
 1. Git pull in dotfiles directory
 2. Show what changed
-3. Check if `.gopherdot.yaml` changed
+3. Check if `.go4dot.yaml` changed
 4. Offer to install new configs
 5. Restow configs
 6. Update external deps
@@ -466,7 +466,7 @@ go4dot/
 │
 ├── internal/                       # Private application code
 │   ├── config/
-│   │   ├── loader.go              # Load .gopherdot.yaml
+│   │   ├── loader.go              # Load .go4dot.yaml
 │   │   ├── schema.go              # Struct definitions
 │   │   ├── validator.go           # Validate config
 │   │   └── init.go                # Generate config (for init command)
@@ -517,7 +517,7 @@ go4dot/
 │   ├── README.md
 │   ├── installation.md            # How to install go4dot
 │   ├── getting-started.md         # Quick start guide
-│   ├── config-reference.md        # .gopherdot.yaml specification
+│   ├── config-reference.md        # .go4dot.yaml specification
 │   ├── commands.md                # Command reference
 │   └── creating-dotfiles.md       # Guide for creating dotfiles
 │
@@ -525,13 +525,13 @@ go4dot/
 │   ├── minimal/                   # Minimal example dotfiles
 │   │   ├── git/.gitconfig
 │   │   ├── zsh/.zshrc
-│   │   └── .gopherdot.yaml
+│   │   └── .go4dot.yaml
 │   │
 │   └── advanced/                  # Full-featured example
 │       ├── git/
 │       ├── nvim/
 │       ├── tmux/
-│       ├── .gopherdot.yaml
+│       ├── .go4dot.yaml
 │       └── README.md
 │
 ├── scripts/
@@ -654,7 +654,7 @@ go4dot/
 
 ### Phase 3: Config Schema & Loading (3-4 hours)
 
-**Goal:** Parse `.gopherdot.yaml` files.
+**Goal:** Parse `.go4dot.yaml` files.
 
 **Status:** ✅ COMPLETED
 
@@ -668,7 +668,7 @@ go4dot/
 - [ ] Write tests for loading and validation
 
 **Deliverables:**
-- Can load `.gopherdot.yaml` files
+- Can load `.go4dot.yaml` files
 - Validation working
 - `g4d config` commands
 - Tests passing
@@ -897,7 +897,7 @@ go4dot/
 
 ### Phase 11: Init Command (4-5 hours)
 
-**Goal:** Generate `.gopherdot.yaml` from existing dotfiles.
+**Goal:** Generate `.go4dot.yaml` from existing dotfiles.
 
 **Status:** ⏳ PENDING
 

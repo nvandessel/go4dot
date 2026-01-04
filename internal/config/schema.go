@@ -1,6 +1,6 @@
 package config
 
-// Config represents the complete .gopherdot.yaml configuration
+// Config represents the complete .go4dot.yaml configuration
 type Config struct {
 	SchemaVersion string          `yaml:"schema_version"`
 	Metadata      Metadata        `yaml:"metadata"`

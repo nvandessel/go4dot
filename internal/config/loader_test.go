@@ -8,7 +8,7 @@ import (
 
 func TestLoad(t *testing.T) {
 	// Test with the example minimal config
-	examplePath := "../../examples/minimal/.gopherdot.yaml"
+	examplePath := "../../examples/minimal/.go4dot.yaml"
 
 	cfg, err := Load(examplePath)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestLoadNonExistent(t *testing.T) {
-	_, err := Load("/path/that/does/not/exist/.gopherdot.yaml")
+	_, err := Load("/path/that/does/not/exist/.go4dot.yaml")
 	if err == nil {
 		t.Error("Load() should fail for non-existent file")
 	}
@@ -87,7 +87,7 @@ func TestLoadFromPath(t *testing.T) {
 	}
 
 	// Test loading from file
-	exampleFile := filepath.Join(exampleDir, ".gopherdot.yaml")
+	exampleFile := filepath.Join(exampleDir, ".go4dot.yaml")
 	cfg, err = LoadFromPath(exampleFile)
 	if err != nil {
 		t.Fatalf("LoadFromPath() with file failed: %v", err)

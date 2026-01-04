@@ -14,7 +14,7 @@ A powerful, cross-platform CLI tool for managing dotfiles with style.
 - 🔗 **Stow Management** - Safely symlink configs with conflict detection
 - 🌐 **External Dependencies** - Clone plugin managers, themes, etc. from GitHub
 - 🏥 **Health Checking** - Doctor command to validate installation
-- 🌍 **Universal** - Works with ANY dotfiles repo with a `.gopherdot.yaml` config
+- 🌍 **Universal** - Works with ANY dotfiles repo with a `.go4dot.yaml` config
 
 ## 🚀 Quick Start
 
@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/nvandessel/go4dot/main/scripts/inst
 # Install dotfiles interactively
 g4d install
 
-# Initialize a new .gopherdot.yaml for your existing dotfiles
+# Initialize a new .go4dot.yaml for your existing dotfiles
 g4d init
 
 # Check your dotfiles health
