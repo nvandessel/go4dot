@@ -29,6 +29,7 @@ It provides:
   - Health checking with doctor command
 
 go4dot works with any dotfiles repository that has a .go4dot.yaml config file.`,
+	Run: runInteractive,
 }
 
 var versionCmd = &cobra.Command{
