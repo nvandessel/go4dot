@@ -39,5 +39,24 @@ Currently, go4dot modifies files directly. To test safely:
 
 ## 4. UI Testing
 
-Run `g4d` without arguments to check the dashboard.
-Run `g4d doctor` to check the output formatting.
+Run `g4d` without arguments to check the interactive dashboard.
+
+```bash
+g4d
+```
+
+Verify that:
+- The banner is displayed.
+- The menu lists Install, Update, Doctor, List, Init, and Quit.
+- Navigation works with arrow keys.
+- You can select an item with Enter.
+
+Also check specific commands for output formatting:
+
+```bash
+g4d doctor
+g4d list --all
+g4d detect
+```
+
+Verify that they use the new styled output (colors, icons, sections).

@@ -8,6 +8,7 @@ import (
 	"github.com/nvandessel/go4dot/internal/deps"
 	"github.com/nvandessel/go4dot/internal/platform"
 	"github.com/nvandessel/go4dot/internal/state"
+	"github.com/nvandessel/go4dot/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -62,27 +63,22 @@ Displays:
 		}
 
 		// Core configs
-		fmt.Println("Core Configs")
-		fmt.Println("------------")
+		ui.Section("Core Configs")
 		for _, c := range cfg.Configs.Core {
 			printConfigStatus(c, installed, p, showAll)
 		}
-		fmt.Println()
 
 		// Optional configs
 		if len(cfg.Configs.Optional) > 0 {
-			fmt.Println("Optional Configs")
-			fmt.Println("----------------")
+			ui.Section("Optional Configs")
 			for _, c := range cfg.Configs.Optional {
 				printConfigStatus(c, installed, p, showAll)
 			}
-			fmt.Println()
 		}
 
 		// External deps
 		if len(cfg.External) > 0 {
-			fmt.Println("External Dependencies")
-			fmt.Println("---------------------")
+			ui.Section("External Dependencies")
 			for _, e := range cfg.External {
 				status := "x"
 				info := "not installed"
@@ -97,20 +93,22 @@ Displays:
 				// Check if skipped due to platform
 				if !deps.CheckCondition(e.Condition, p) {
 					if showAll {
-						fmt.Printf("  o %s (skipped - platform mismatch)\n", e.Name)
+						fmt.Printf("  ⊘ %s (skipped - platform mismatch)\n", e.Name)
 					}
 					continue
 				}
 
-				fmt.Printf("  %s %s (%s)\n", status, e.Name, info)
+				if status == "+" {
+					ui.Success("%s (%s)", e.Name, info)
+				} else {
+					fmt.Printf("  • %s (%s)\n", e.Name, info)
+				}
 			}
-			fmt.Println()
 		}
 
 		// Machine configs
 		if len(cfg.MachineConfig) > 0 {
-			fmt.Println("Machine Configurations")
-			fmt.Println("----------------------")
+			ui.Section("Machine Configurations")
 			for _, mc := range cfg.MachineConfig {
 				status := "x"
 				info := "not configured"
@@ -122,32 +120,34 @@ Displays:
 					}
 				}
 
-				fmt.Printf("  %s %s (%s)\n", status, mc.Description, info)
+				if status == "+" {
+					ui.Success("%s (%s)", mc.Description, info)
+				} else {
+					fmt.Printf("  • %s (%s)\n", mc.Description, info)
+				}
 			}
-			fmt.Println()
 		}
 
 		// Archived configs
 		if len(cfg.Archived) > 0 && showAll {
-			fmt.Println("Archived Configs (deprecated)")
-			fmt.Println("-----------------------------")
+			ui.Section("Archived Configs (deprecated)")
 			for _, c := range cfg.Archived {
 				fmt.Printf("  - %s\n", c.Name)
 				if c.Description != "" {
 					fmt.Printf("    %s\n", c.Description)
 				}
 			}
-			fmt.Println()
 		}
 
 		// Summary
+		ui.Section("Summary")
 		if st != nil {
 			fmt.Printf("Installed: %d configs\n", len(st.Configs))
 			if st.DotfilesPath != "" {
 				fmt.Printf("Dotfiles:  %s\n", st.DotfilesPath)
 			}
 		} else {
-			fmt.Println("No installation state found. Run 'g4d install' to set up.")
+			ui.Warning("No installation state found. Run 'g4d install' to set up.")
 		}
 	},
 }
@@ -156,24 +156,16 @@ func printConfigStatus(c config.ConfigItem, installed map[string]bool, p *platfo
 	// Check platform compatibility
 	if len(c.Platforms) > 0 && !isPlatformMatch(c.Platforms, p) {
 		if showAll {
-			fmt.Printf("  o %s (not available on %s)\n", c.Name, p.OS)
+			fmt.Printf("  ⊘ %s (not available on %s)\n", c.Name, p.OS)
 		}
 		return
 	}
 
-	status := "x"
-	info := "not installed"
-
 	if installed[c.Name] {
-		status = "+"
-		info = "installed"
+		ui.Success("%s - %s (installed)", c.Name, c.Description)
+	} else {
+		fmt.Printf("  • %s - %s (not installed)\n", c.Name, c.Description)
 	}
-
-	fmt.Printf("  %s %s", status, c.Name)
-	if c.Description != "" {
-		fmt.Printf(" - %s", c.Description)
-	}
-	fmt.Printf(" (%s)\n", info)
 }
 
 func isPlatformMatch(platforms []string, p *platform.Platform) bool {

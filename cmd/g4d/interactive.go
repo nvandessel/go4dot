@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/nvandessel/go4dot/internal/ui"
+	"github.com/nvandessel/go4dot/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -17,8 +18,46 @@ func runInteractive(cmd *cobra.Command, args []string) {
 
 	ui.PrintBanner(Version)
 
+	// Check for updates in background
+	updateMsgChan := make(chan string)
+	go func() {
+		res, err := version.CheckForUpdates(Version)
+		if err == nil && res != nil && res.IsOutdated {
+			updateMsgChan <- fmt.Sprintf("• Update available: %s -> %s", res.CurrentVersion, res.LatestVersion)
+		} else {
+			updateMsgChan <- ""
+		}
+	}()
+
+	updateMsg := ""
+	firstRun := true
+
 	for {
-		action, err := ui.RunInteractiveMenu()
+		// Wait for update check only on first run, but don't block too long?
+		// Actually, if it's slow, we don't want to delay the menu.
+		// But since we are already inside the loop, we can just check if channel has data non-blocking
+		if firstRun {
+			// We can't easily wait for background task without delaying startup.
+			// Let's just pass empty string first time, and if we loop back, check channel.
+			// Or better: just wait up to 500ms? No, responsiveness is key.
+			// Let's just use select with default
+			select {
+			case msg := <-updateMsgChan:
+				updateMsg = msg
+			default:
+				// Not ready yet
+			}
+			firstRun = false
+		} else {
+			// Subsequent runs (after returning from a command)
+			select {
+			case msg := <-updateMsgChan:
+				updateMsg = msg
+			default:
+			}
+		}
+
+		action, err := ui.RunInteractiveMenu(updateMsg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error running interactive menu: %v\n", err)
 			os.Exit(1)

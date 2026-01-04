@@ -69,7 +69,7 @@ func (m model) View() string {
 }
 
 // RunInteractiveMenu starts the interactive dashboard
-func RunInteractiveMenu() (MenuAction, error) {
+func RunInteractiveMenu(updateMsg string) (MenuAction, error) {
 	// Detect platform for display info
 	p, _ := platform.Detect()
 
@@ -97,6 +97,9 @@ func RunInteractiveMenu() (MenuAction, error) {
 
 	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "go4dot Dashboard"
+	if updateMsg != "" {
+		l.Title += " " + updateMsg
+	}
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 

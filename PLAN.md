@@ -62,6 +62,14 @@ g4d uninstall [-f] [path]           # Remove symlinks and state
 ### ⏳ Next Up - Phase 14: Polish & v1.0.0
 Final code cleanup, version checking, and v1.0.0 release.
 
+**Tasks:**
+- [x] Create `internal/ui` package (styles, menu, spinner)
+- [x] Implement interactive dashboard
+- [x] Refactor commands to use new UI
+- [x] Add version checking
+- [ ] Run linter and fix issues
+- [ ] Create v1.0.0 release
+
 ---
 
 ## Table of Contents

@@ -8,6 +8,7 @@ import (
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/setup"
 	"github.com/nvandessel/go4dot/internal/state"
+	"github.com/nvandessel/go4dot/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -67,49 +68,75 @@ Use flags to customize the installation:
 			SkipStow:     skipStow,
 			Overwrite:    overwrite,
 			ProgressFunc: func(msg string) {
+				// Simple heuristic to style the output from setup package
+				if len(msg) > 0 && msg[0] == '\n' {
+					ui.Section(msg[1:]) // Remove newline and print as section
+					return
+				}
+
+				// Already styled symbols from setup package: ✓, ⚠, ⊘
+				// We can just print them, or replace them with our UI icons
+				if len(msg) > 2 {
+					prefix := msg[:2] // Get symbol and space
+					content := msg[2:]
+
+					switch prefix {
+					case "✓ ":
+						ui.Success(content)
+						return
+					case "⚠ ":
+						ui.Warning(content)
+						return
+					case "⊘ ":
+						// Skip symbol, print as info/subtle
+						fmt.Println("  " + msg)
+						return
+					}
+				}
+
+				// Default
 				fmt.Println(msg)
 			},
 		}
 
 		// Print header
-		fmt.Println("========================================")
-		fmt.Println("         go4dot Installation           ")
-		fmt.Println("========================================")
-		fmt.Printf("\nDotfiles: %s\n", dotfilesPath)
+		ui.PrintBanner(Version)
+		ui.Section("Installation")
+
+		fmt.Printf("Dotfiles: %s\n", dotfilesPath)
 		if cfg.Metadata.Name != "" {
 			fmt.Printf("Config:   %s\n", cfg.Metadata.Name)
 		}
-		fmt.Println()
 
 		result, err := setup.Install(cfg, dotfilesPath, opts)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "\nError: %v\n", err)
+			ui.Error(err.Error())
 			os.Exit(1)
 		}
 
 		// Print summary
-		fmt.Println("\n========================================")
+		ui.Section("Summary")
 		if result.HasErrors() {
-			fmt.Println("Installation completed with errors")
+			ui.Error("Installation completed with errors")
 			fmt.Println()
 			fmt.Print(result.Summary())
 
 			// Show specific errors
 			for _, e := range result.DepsFailed {
-				fmt.Printf("  x Dependency %s: %v\n", e.Item.Name, e.Error)
+				ui.Error("Dependency %s: %v", e.Item.Name, e.Error)
 			}
 			for _, e := range result.ConfigsFailed {
-				fmt.Printf("  x Config %s: %v\n", e.ConfigName, e.Error)
+				ui.Error("Config %s: %v", e.ConfigName, e.Error)
 			}
 			for _, e := range result.ExternalFailed {
-				fmt.Printf("  x External %s: %v\n", e.Dep.Name, e.Error)
+				ui.Error("External %s: %v", e.Dep.Name, e.Error)
 			}
 			for _, e := range result.Errors {
-				fmt.Printf("  x %v\n", e)
+				ui.Error("%v", e)
 			}
 			os.Exit(1)
 		} else {
-			fmt.Println("+ Installation complete!")
+			ui.Success("Installation complete!")
 			fmt.Println()
 			fmt.Print(result.Summary())
 
@@ -118,7 +145,7 @@ Use flags to customize the installation:
 
 			// Show post-install message if present
 			if cfg.PostInstall != "" {
-				fmt.Println("\n-- Next Steps --")
+				ui.Section("Next Steps")
 				fmt.Println(cfg.PostInstall)
 			}
 		}

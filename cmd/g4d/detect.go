@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -15,13 +16,22 @@ var detectCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		p, err := platform.Detect()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error detecting platform: %v\n", err)
+			ui.Error("Error detecting platform: %v", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("Platform Information:")
-		fmt.Println("---------------------")
-		fmt.Println(p.String())
+		ui.Section("Platform Information")
+		fmt.Printf("OS:              %s\n", p.OS)
+		if p.Distro != "" {
+			fmt.Printf("Distro:          %s\n", p.Distro)
+		}
+		if p.DistroVersion != "" {
+			fmt.Printf("Version:         %s\n", p.DistroVersion)
+		}
+		fmt.Printf("Package Manager: %s\n", p.PackageManager)
+		if p.IsWSL {
+			ui.Info("Running inside WSL")
+		}
 	},
 }
 
