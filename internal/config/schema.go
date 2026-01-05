@@ -31,9 +31,11 @@ type Dependencies struct {
 // DependencyItem represents a single dependency
 // Can be a simple string or a complex object with package mappings
 type DependencyItem struct {
-	Name    string            `yaml:"name"`
-	Binary  string            `yaml:"binary"`  // Binary name to check in PATH
-	Package map[string]string `yaml:"package"` // Package name per manager
+	Name       string            `yaml:"name"`
+	Binary     string            `yaml:"binary"`      // Binary name to check in PATH
+	Package    map[string]string `yaml:"package"`     // Package name per manager
+	Version    string            `yaml:"version"`     // Required version (e.g. "0.11+")
+	VersionCmd string            `yaml:"version_cmd"` // Command to check version (defaults to --version)
 }
 
 // UnmarshalYAML allows DependencyItem to accept both string and object formats

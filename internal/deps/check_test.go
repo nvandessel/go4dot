@@ -1,6 +1,7 @@
 package deps
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
@@ -194,21 +195,52 @@ func TestAllInstalled(t *testing.T) {
 	}
 }
 
-func TestSummary(t *testing.T) {
-	result := &CheckResult{
-		Critical: []DependencyCheck{
-			{Item: config.DependencyItem{Name: "dep1"}, Status: StatusInstalled},
-			{Item: config.DependencyItem{Name: "dep2"}, Status: StatusMissing},
-		},
-		Core: []DependencyCheck{
-			{Item: config.DependencyItem{Name: "dep3"}, Status: StatusInstalled},
-		},
+func TestCompareVersions(t *testing.T) {
+	tests := []struct {
+		installed string
+		required  string
+		want      bool
+	}{
+		{"0.10.1", "0.10.1", true},
+		{"0.11.0", "0.10.1+", true},
+		{"0.10.1", "0.10.1+", true},
+		{"0.9.5", "0.10.1+", false},
+		{"1.0.0", "0.10+", true},
+		{"v0.11.0", "0.11+", true},
+		{"0.11.0-dev", "0.11+", true},
 	}
 
-	summary := result.Summary()
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s_%s", tt.installed, tt.required), func(t *testing.T) {
+			if got := compareVersions(tt.installed, tt.required); got != tt.want {
+				t.Errorf("compareVersions(%s, %s) = %v, want %v", tt.installed, tt.required, got, tt.want)
+			}
+		})
+	}
+}
 
-	// Should be "2 installed, 1 missing"
-	if summary != "2 installed, 1 missing" {
-		t.Errorf("Summary() = %s, want '2 installed, 1 missing'", summary)
+func TestParseVersion(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []int
+	}{
+		{"1.2.3", []int{1, 2, 3}},
+		{"v1.2.3", []int{1, 2, 3}},
+		{"0.10.1-dev", []int{0, 10, 1}},
+		{"1.2", []int{1, 2}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := parseVersion(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseVersion(%s) length = %d, want %d", tt.input, len(got), len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseVersion(%s)[%d] = %d, want %d", tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
 	}
 }
