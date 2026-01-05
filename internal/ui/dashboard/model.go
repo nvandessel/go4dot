@@ -23,6 +23,10 @@ const (
 	ActionDoctor
 	ActionInstall
 	ActionMachineConfig
+	ActionExternal
+	ActionUninstall
+	ActionUpdate
+	ActionList
 	ActionInit
 	ActionQuit
 )
@@ -62,6 +66,8 @@ type keyMap struct {
 	Doctor  key.Binding
 	Install key.Binding
 	Machine key.Binding
+	Update  key.Binding
+	Menu    key.Binding
 	Quit    key.Binding
 	Up      key.Binding
 	Down    key.Binding
@@ -85,6 +91,14 @@ var keys = keyMap{
 	Machine: key.NewBinding(
 		key.WithKeys("m"),
 		key.WithHelp("m", "overrides"),
+	),
+	Update: key.NewBinding(
+		key.WithKeys("u"),
+		key.WithHelp("u", "update"),
+	),
+	Menu: key.NewBinding(
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "more"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "esc", "ctrl+c"),
@@ -151,7 +165,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result = &Result{Action: ActionMachineConfig}
 			return m, tea.Quit
 
+		case key.Matches(msg, keys.Update):
+			m.result = &Result{Action: ActionUpdate}
+			return m, tea.Quit
+
+		case key.Matches(msg, keys.Menu):
+			// For now, we'll just return a special action to show the menu
+			// In a more complex app, we might switch models here
+			m.result = &Result{Action: ActionList} // Using ActionList as a placeholder for "More"
+			return m, tea.Quit
+
 		case key.Matches(msg, keys.Up):
+
 			if m.selectedIdx > 0 {
 				m.selectedIdx--
 			}
@@ -374,6 +399,8 @@ func (m Model) renderActions() string {
 		keyStyle.Render("[i]") + style.Render(" Install"),
 		keyStyle.Render("[d]") + style.Render(" Doctor"),
 		keyStyle.Render("[m]") + style.Render(" Overrides"),
+		keyStyle.Render("[u]") + style.Render(" Update"),
+		keyStyle.Render("[tab]") + style.Render(" More"),
 		keyStyle.Render("[enter]") + style.Render(" Sync Selected"),
 		keyStyle.Render("[q]") + style.Render(" Quit"),
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/machine"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/setup"
 	"github.com/nvandessel/go4dot/internal/state"
 	"github.com/nvandessel/go4dot/internal/stow"
 	"github.com/nvandessel/go4dot/internal/ui"
@@ -256,9 +257,126 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 		}
 		installCmd.Run(installCmd, nil)
 		waitForEnter()
+
+	case dashboard.ActionUpdate:
+		if cfg != nil && configPath != "" {
+			dotfilesPath := filepath.Dir(configPath)
+			st, _ := state.Load()
+			opts := setup.UpdateOptions{
+				UpdateExternal: true,
+				ProgressFunc: func(msg string) {
+					fmt.Println("  " + msg)
+				},
+			}
+			if err := setup.Update(cfg, dotfilesPath, st, opts); err != nil {
+				ui.Error("%v", err)
+			} else {
+				ui.Success("Update complete")
+			}
+			waitForEnter()
+		}
+
+	case dashboard.ActionList:
+		// This is the "More" menu
+		runMoreMenu(cfg, configPath)
 	}
 
 	return false
+}
+
+func runMoreMenu(cfg *config.Config, configPath string) {
+	var action string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("More Commands").
+				Options(
+					huh.NewOption("List Configs", "list"),
+					huh.NewOption("External Dependencies", "external"),
+					huh.NewOption("Uninstall go4dot", "uninstall"),
+					huh.NewOption("Back", "back"),
+				).
+				Value(&action),
+		),
+	)
+
+	if err := form.Run(); err != nil || action == "back" {
+		return
+	}
+
+	switch action {
+	case "list":
+		st, _ := state.Load()
+		p, _ := platform.Detect()
+		ui.PrintConfigList(cfg, st, p, true)
+		waitForEnter()
+
+	case "external":
+		runExternalMenu(cfg, configPath)
+
+	case "uninstall":
+		var confirm bool
+		huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Are you sure you want to uninstall?").
+					Description("This will remove all symlinks and state.").
+					Value(&confirm),
+			),
+		).Run()
+
+		if confirm {
+			dotfilesPath := filepath.Dir(configPath)
+			st, _ := state.Load()
+			opts := setup.UninstallOptions{
+				RemoveExternal: true,
+				RemoveMachine:  true,
+				ProgressFunc: func(msg string) {
+					fmt.Println("  " + msg)
+				},
+			}
+			if err := setup.Uninstall(cfg, dotfilesPath, st, opts); err != nil {
+				ui.Error("%v", err)
+			} else {
+				ui.Success("Uninstall complete")
+			}
+			waitForEnter()
+		}
+	}
+}
+
+func runExternalMenu(cfg *config.Config, configPath string) {
+	var action string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("External Dependencies").
+				Options(
+					huh.NewOption("Show Status", "status"),
+					huh.NewOption("Clone Missing", "clone"),
+					huh.NewOption("Update All", "update"),
+					huh.NewOption("Back", "back"),
+				).
+				Value(&action),
+		),
+	)
+
+	if err := form.Run(); err != nil || action == "back" {
+		return
+	}
+
+	switch action {
+	case "status":
+		externalStatusCmd.Run(externalStatusCmd, nil)
+		waitForEnter()
+	case "clone":
+		externalCloneCmd.Run(externalCloneCmd, nil)
+		waitForEnter()
+	case "update":
+		externalUpdateCmd.Run(externalUpdateCmd, nil)
+		waitForEnter()
+	}
 }
 
 func waitForEnter() {
