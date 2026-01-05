@@ -24,10 +24,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zip
 
       - name: Build and Package
-        run: make release
+        run: make package
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+          draft: false
+          prerelease: false

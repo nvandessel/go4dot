@@ -11,6 +11,8 @@ make lint           # Run golangci-lint (install: curl -sSfL https://raw.githubu
 make fmt            # Format code with go fmt and gofmt -s
 make vet            # Run go vet static analysis
 make test-coverage  # Generate coverage.html report
+make package        # Build and package release artifacts
+make release        # Tag and push a new version (interactive)
 ```
 
 ### Running a Single Test

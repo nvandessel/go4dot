@@ -96,11 +96,16 @@ tidy:
 	@echo "Tidying dependencies..."
 	go mod tidy
 
-# Create release artifacts
-.PHONY: release
-release:
+# Create release artifacts (binaries and archives)
+.PHONY: package
+package:
 	@echo "Creating release artifacts..."
 	@./scripts/build.sh
+
+# Tag and push a new release
+.PHONY: release
+release:
+	@./scripts/release.sh
 
 # Help target
 .PHONY: help
@@ -108,8 +113,8 @@ help:
 	@echo "go4dot Makefile targets:"
 	@echo ""
 	@echo "  build         - Build the binary for current platform"
-	@echo "  build-all     - Build binaries for all platforms"
-	@echo "  release       - Build and package release artifacts"
+	@echo "  package       - Build and package release artifacts (binaries + checksums)"
+	@echo "  release       - Tag and push a new version (interactive)"
 	@echo "  run           - Build and run the application"
 	@echo "  test          - Run tests with race detection"
 	@echo "  test-coverage - Run tests and generate coverage report"
