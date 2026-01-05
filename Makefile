@@ -124,6 +124,8 @@ help:
 	@echo "  lint          - Run golangci-lint"
 	@echo "  vet           - Run go vet"
 	@echo "  tidy          - Tidy go.mod dependencies"
+	@echo "  sandbox       - Run Docker sandbox (use ARGS=\"--no-examples --url <url>\")"
+	@echo "  sandbox-no-install - Run sandbox without pre-installed g4d"
 	@echo "  help          - Show this help message"
 	@echo ""
 	@echo "Variables:"
@@ -135,4 +137,10 @@ help:
 .PHONY: sandbox
 sandbox:
 	@chmod +x test/run.sh
-	@./test/run.sh
+	@./test/run.sh $(ARGS)
+
+# Run the Docker sandbox without pre-installed g4d
+.PHONY: sandbox-no-install
+sandbox-no-install:
+	@chmod +x test/run.sh
+	@./test/run.sh --no-install $(ARGS)
