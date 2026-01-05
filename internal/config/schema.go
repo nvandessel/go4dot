@@ -91,9 +91,10 @@ type MachinePrompt struct {
 
 // PromptField represents a single prompt for user input
 type PromptField struct {
-	ID       string `yaml:"id"`
-	Prompt   string `yaml:"prompt"`
-	Type     string `yaml:"type"` // text, password, confirm, select
-	Required bool   `yaml:"required"`
-	Default  string `yaml:"default"`
+	ID       string   `yaml:"id"`
+	Prompt   string   `yaml:"prompt"`
+	Type     string   `yaml:"type"` // text, password, confirm, select
+	Required bool     `yaml:"required"`
+	Default  string   `yaml:"default"`
+	Options  []string `yaml:"options,omitempty"` // Options for select type
 }

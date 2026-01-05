@@ -115,17 +115,29 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 				Value(&val))
 
 		case "select":
-			// Fallback to text input for now as schema doesn't support options list yet
 			var val string = prompt.Default
 			valuePointers[prompt.ID] = &val
 
-			f := huh.NewInput().
-				Title(prompt.Prompt).
-				Value(&val)
-			if prompt.Required {
-				f.Validate(requiredValidator)
+			var options []huh.Option[string]
+			for _, opt := range prompt.Options {
+				options = append(options, huh.NewOption(opt, opt))
 			}
-			fields = append(fields, f)
+
+			if len(options) > 0 {
+				fields = append(fields, huh.NewSelect[string]().
+					Title(prompt.Prompt).
+					Options(options...).
+					Value(&val))
+			} else {
+				// Fallback to text input if no options provided
+				f := huh.NewInput().
+					Title(prompt.Prompt).
+					Value(&val)
+				if prompt.Required {
+					f.Validate(requiredValidator)
+				}
+				fields = append(fields, f)
+			}
 
 		default: // text
 			var val string = prompt.Default
