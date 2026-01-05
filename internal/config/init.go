@@ -261,6 +261,141 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 		}
 	}
 
+	// System Dependencies
+	var systemDeps []DependencyItem
+	var addSystemDep bool
+
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Would you like to add system dependencies (e.g. neovim, tmux)?").
+				Value(&addSystemDep),
+		),
+	).WithInput(in).WithOutput(out).Run()
+
+	if err != nil {
+		return err
+	}
+
+	for addSystemDep {
+		var name, binary, version string
+		err = huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().Title("Dependency Name").Placeholder("neovim").Value(&name),
+				huh.NewInput().Title("Binary Name").Placeholder("nvim").Value(&binary),
+				huh.NewInput().Title("Required Version (optional)").Placeholder("0.11+").Value(&version),
+			),
+		).WithInput(in).WithOutput(out).Run()
+
+		if err != nil {
+			return err
+		}
+
+		if name != "" {
+			if binary == "" {
+				binary = name
+			}
+			systemDeps = append(systemDeps, DependencyItem{
+				Name:    name,
+				Binary:  binary,
+				Version: version,
+			})
+		}
+
+		err = huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().Title("Add another system dependency?").Value(&addSystemDep),
+			),
+		).WithInput(in).WithOutput(out).Run()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Machine Specific Configs
+	var machineConfigs []MachinePrompt
+	var addMachineConfig bool
+
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Would you like to add machine-specific configurations (e.g. git signing)?").
+				Value(&addMachineConfig),
+		),
+	).WithInput(in).WithOutput(out).Run()
+
+	if err != nil {
+		return err
+	}
+
+	for addMachineConfig {
+		var choice string
+		err = huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Select a machine config preset or create custom").
+					Options(
+						huh.NewOption("Git Signing (Name, Email, GPG Key)", "git-signing"),
+						huh.NewOption("Custom", "custom"),
+					).
+					Value(&choice),
+			),
+		).WithInput(in).WithOutput(out).Run()
+
+		if err != nil {
+			return err
+		}
+
+		if choice == "git-signing" {
+			machineConfigs = append(machineConfigs, MachinePrompt{
+				ID:          "git-local",
+				Description: "Local Git Configuration",
+				Destination: "~/.gitconfig.local",
+				Prompts: []PromptField{
+					{ID: "name", Prompt: "Git User Name", Type: "text", Required: true},
+					{ID: "email", Prompt: "Git User Email", Type: "text", Required: true},
+					{ID: "signingkey", Prompt: "GPG Signing Key ID (optional)", Type: "text"},
+				},
+				Template: "[user]\n  name = {{.name}}\n  email = {{.email}}\n{{if .signingkey}}  signingkey = {{.signingkey}}\n[commit]\n  gpgsign = true{{end}}\n",
+			})
+		} else {
+			var id, desc, dest, tmpl string
+			err = huh.NewForm(
+				huh.NewGroup(
+					huh.NewInput().Title("Config ID").Placeholder("my-config").Value(&id),
+					huh.NewInput().Title("Description").Placeholder("My custom config").Value(&desc),
+					huh.NewInput().Title("Destination Path").Placeholder("~/.myconfig").Value(&dest),
+					huh.NewInput().Title("Template").Placeholder("key = {{.value}}").Value(&tmpl),
+				),
+			).WithInput(in).WithOutput(out).Run()
+
+			if err != nil {
+				return err
+			}
+
+			if id != "" {
+				machineConfigs = append(machineConfigs, MachinePrompt{
+					ID:          id,
+					Description: desc,
+					Destination: dest,
+					Template:    tmpl,
+					Prompts: []PromptField{
+						{ID: "value", Prompt: "Enter value", Type: "text", Required: true},
+					},
+				})
+			}
+		}
+
+		err = huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().Title("Add another machine config?").Value(&addMachineConfig),
+			),
+		).WithInput(in).WithOutput(out).Run()
+		if err != nil {
+			return err
+		}
+	}
+
 	// Create Config
 	cfg := Config{
 		SchemaVersion: "1.0",
@@ -270,12 +405,13 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 				{Name: "git", Binary: "git"},
 				{Name: "stow", Binary: "stow"},
 			},
+			Core: systemDeps,
 		},
 		Configs: ConfigGroups{
 			Core: selectedConfigs,
 		},
 		External:      externalDeps,
-		MachineConfig: []MachinePrompt{}, // Initialize empty
+		MachineConfig: machineConfigs,
 	}
 
 	// Generate YAML
