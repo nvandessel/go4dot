@@ -63,11 +63,33 @@ tar -xzf "$TMP_DIR/release.tar.gz" -C "$TMP_DIR"
 
 # Install
 echo "Installing to $INSTALL_DIR..."
-mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/$BINARY"
+# The binary might be named 'g4d' or 'g4d-linux-amd64' etc.
+if [ -f "$TMP_DIR/$BINARY" ]; then
+    mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/$BINARY"
+else
+    # Look for any file starting with the binary name that isn't the archive itself
+    EXTRACTED_BINARY=$(ls "$TMP_DIR" | grep "^$BINARY" | grep -v "release.tar.gz" | head -n 1)
+    if [ -n "$EXTRACTED_BINARY" ]; then
+        mv "$TMP_DIR/$EXTRACTED_BINARY" "$INSTALL_DIR/$BINARY"
+    else
+        echo -e "${RED}Error: Could not find binary '$BINARY' in the extracted files.${NC}"
+        ls -l "$TMP_DIR"
+        exit 1
+    fi
+fi
 chmod +x "$INSTALL_DIR/$BINARY"
 
 # Cleanup
 rm -rf "$TMP_DIR"
 
 echo -e "${GREEN}✅ Installation successful!${NC}"
-echo "Run 'g4d --version' to verify."
+
+# Check if INSTALL_DIR is in PATH
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    echo -e "${RED}Warning: $INSTALL_DIR is not in your PATH.${NC}"
+    echo "You may need to add it to your shell profile (e.g., ~/.zshrc or ~/.bashrc):"
+    echo "  export PATH=\"\$PATH:$INSTALL_DIR\""
+    echo ""
+fi
+
+echo "Run '$BINARY --version' to verify."

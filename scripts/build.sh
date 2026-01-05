@@ -29,10 +29,16 @@ for binary in "$BUILD_DIR"/*; do
     
     if [[ "$filename" == *".exe" ]]; then
         # Windows - zip
-        zip -j "$DIST_DIR/${filename%.exe}.zip" "$binary"
+        # Create a temporary copy with the generic name for the archive
+        cp "$binary" "$BUILD_DIR/$APP_NAME.exe"
+        zip -j "$DIST_DIR/${filename%.exe}.zip" "$BUILD_DIR/$APP_NAME.exe"
+        rm "$BUILD_DIR/$APP_NAME.exe"
     else
         # Linux/macOS - tar.gz
-        tar -czf "$DIST_DIR/$filename.tar.gz" -C "$BUILD_DIR" "$filename"
+        # Create a temporary copy with the generic name for the archive
+        cp "$binary" "$BUILD_DIR/$APP_NAME"
+        tar -czf "$DIST_DIR/$filename.tar.gz" -C "$BUILD_DIR" "$APP_NAME"
+        rm "$BUILD_DIR/$APP_NAME"
     fi
 done
 
