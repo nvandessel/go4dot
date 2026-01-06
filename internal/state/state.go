@@ -276,3 +276,29 @@ func (s *State) RemoveSymlinkCount(configName string) {
 		delete(s.SymlinkCounts, configName)
 	}
 }
+
+// AdoptConfigs adds multiple configs to state at once (for adoption)
+func (s *State) AdoptConfigs(configs []ConfigState) {
+	for _, cfg := range configs {
+		s.AddConfig(cfg.Name, cfg.Path, cfg.IsCore)
+	}
+}
+
+// SetSymlinkCountBulk sets counts for multiple configs
+func (s *State) SetSymlinkCountBulk(counts map[string]int) {
+	if s.SymlinkCounts == nil {
+		s.SymlinkCounts = make(map[string]int)
+	}
+	for name, count := range counts {
+		s.SymlinkCounts[name] = count
+	}
+}
+
+// GetInstalledConfigNames returns a set of installed config names for quick lookup
+func (s *State) GetInstalledConfigNames() map[string]bool {
+	result := make(map[string]bool)
+	for _, cfg := range s.Configs {
+		result[cfg.Name] = true
+	}
+	return result
+}

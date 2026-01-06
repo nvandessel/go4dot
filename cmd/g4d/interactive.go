@@ -86,6 +86,9 @@ func runInteractive(cmd *cobra.Command, args []string) {
 				hasBaseline = len(st.SymlinkCounts) > 0
 			}
 
+			// Get link status for all configs
+			linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
+
 			machineStatus := machine.CheckMachineConfigStatus(cfg)
 
 			// Convert to dashboard type
@@ -99,7 +102,7 @@ func runInteractive(cmd *cobra.Command, args []string) {
 			}
 
 			allConfigs := cfg.GetAllConfigs()
-			result, err = dashboard.Run(p, driftSummary, dashStatus, allConfigs, dotfilesPath, updateMsg, hasBaseline)
+			result, err = dashboard.Run(p, driftSummary, linkStatus, dashStatus, allConfigs, dotfilesPath, updateMsg, hasBaseline)
 		}
 
 		if err != nil {

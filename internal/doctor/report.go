@@ -139,6 +139,16 @@ func (r *CheckResult) DetailedReport() string {
 		}
 	}
 
+	// Add detailed unmanaged symlinks
+	if len(r.UnmanagedLinks) > 0 {
+		sb.WriteString("\n── Unmanaged Symlinks ──\n\n")
+		sb.WriteString("The following symlinks point to your dotfiles but are not in your config:\n\n")
+		for _, l := range r.UnmanagedLinks {
+			sb.WriteString(fmt.Sprintf("• %s\n", l.TargetPath))
+			sb.WriteString(fmt.Sprintf("  Points to: %s\n", l.SourcePath))
+		}
+	}
+
 	// Add detailed missing deps if any
 	if r.DepsResult != nil {
 		missing := r.DepsResult.GetMissing()

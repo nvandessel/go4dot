@@ -29,6 +29,7 @@ type InstallResult struct {
 	DepsInstalled  []config.DependencyItem
 	DepsFailed     []deps.InstallError
 	ConfigsStowed  []string
+	ConfigsAdopted []string // Configs that were already linked and adopted
 	ConfigsFailed  []stow.StowError
 	ExternalCloned []config.ExternalDep
 	ExternalFailed []deps.ExternalError
@@ -137,7 +138,7 @@ func installDependencies(cfg *config.Config, p *platform.Platform, opts InstallO
 	return nil
 }
 
-// stowConfigs stows all or selected configs
+// stowConfigs stows all or selected configs, adopting existing symlinks where possible
 func stowConfigs(cfg *config.Config, dotfilesPath string, opts InstallOptions, result *InstallResult) error {
 	progress(opts, "\n── Configs ──")
 
@@ -154,7 +155,36 @@ func stowConfigs(cfg *config.Config, dotfilesPath string, opts InstallOptions, r
 		return nil
 	}
 
-	progress(opts, fmt.Sprintf("Stowing %d configs...", len(configs)))
+	// Check for existing symlinks first
+	adoptSummary, _ := stow.ScanExistingSymlinks(cfg, dotfilesPath)
+
+	// Build a map of fully-linked configs (can be adopted without re-stowing)
+	fullyLinkedMap := make(map[string]bool)
+	if adoptSummary != nil {
+		for _, ar := range adoptSummary.GetFullyLinked() {
+			fullyLinkedMap[ar.ConfigName] = true
+			result.ConfigsAdopted = append(result.ConfigsAdopted, ar.ConfigName)
+		}
+	}
+
+	if len(result.ConfigsAdopted) > 0 {
+		progress(opts, fmt.Sprintf("✓ Found %d config(s) already symlinked", len(result.ConfigsAdopted)))
+	}
+
+	// Filter out fully-linked configs from those to stow
+	var configsToStow []config.ConfigItem
+	for _, c := range configs {
+		if !fullyLinkedMap[c.Name] {
+			configsToStow = append(configsToStow, c)
+		}
+	}
+
+	if len(configsToStow) == 0 {
+		progress(opts, "All configs are already linked")
+		return nil
+	}
+
+	progress(opts, fmt.Sprintf("Stowing %d configs...", len(configsToStow)))
 
 	stowOpts := stow.StowOptions{
 		ProgressFunc: func(msg string) {
@@ -162,7 +192,7 @@ func stowConfigs(cfg *config.Config, dotfilesPath string, opts InstallOptions, r
 		},
 	}
 
-	stowResult := stow.StowConfigs(dotfilesPath, configs, stowOpts)
+	stowResult := stow.StowConfigs(dotfilesPath, configsToStow, stowOpts)
 
 	result.ConfigsStowed = stowResult.Success
 	result.ConfigsFailed = stowResult.Failed
@@ -305,9 +335,14 @@ func (r *InstallResult) Summary() string {
 			len(r.DepsInstalled), len(r.DepsFailed))
 	}
 
-	if len(r.ConfigsStowed) > 0 || len(r.ConfigsFailed) > 0 {
-		summary += fmt.Sprintf("Configs: %d stowed, %d failed\n",
-			len(r.ConfigsStowed), len(r.ConfigsFailed))
+	if len(r.ConfigsStowed) > 0 || len(r.ConfigsAdopted) > 0 || len(r.ConfigsFailed) > 0 {
+		if len(r.ConfigsAdopted) > 0 {
+			summary += fmt.Sprintf("Configs: %d stowed, %d adopted, %d failed\n",
+				len(r.ConfigsStowed), len(r.ConfigsAdopted), len(r.ConfigsFailed))
+		} else {
+			summary += fmt.Sprintf("Configs: %d stowed, %d failed\n",
+				len(r.ConfigsStowed), len(r.ConfigsFailed))
+		}
 	}
 
 	if len(r.ExternalCloned) > 0 || len(r.ExternalFailed) > 0 {
@@ -337,8 +372,9 @@ func SaveState(cfg *config.Config, dotfilesPath string, result *InstallResult) e
 		}
 	}
 
-	// Save installed configs
-	for _, configName := range result.ConfigsStowed {
+	// Save installed configs (both stowed and adopted)
+	allConfigs := append(result.ConfigsStowed, result.ConfigsAdopted...)
+	for _, configName := range allConfigs {
 		item := cfg.GetConfigByName(configName)
 		isCore := false
 		if item != nil {

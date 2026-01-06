@@ -50,11 +50,14 @@ type Model struct {
 	height        int
 	platform      *platform.Platform
 	driftSummary  *stow.DriftSummary
+	linkStatus    map[string]*stow.ConfigLinkStatus // Per-config link status
 	machineStatus []MachineStatus
 	configs       []config.ConfigItem
 	dotfilesPath  string
 	updateMsg     string
 	selectedIdx   int
+	expandedIdx   int  // Index of expanded config (-1 = none)
+	scrollOffset  int  // Scroll offset within expanded file list
 	result        *Result
 	quitting      bool
 	hasBaseline   bool // True if we have stored symlink counts (synced before)
@@ -72,6 +75,7 @@ type keyMap struct {
 	Up      key.Binding
 	Down    key.Binding
 	Enter   key.Binding
+	Expand  key.Binding
 	Help    key.Binding
 }
 
@@ -116,6 +120,10 @@ var keys = keyMap{
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "sync config"),
 	),
+	Expand: key.NewBinding(
+		key.WithKeys("e", "right"),
+		key.WithHelp("e", "expand/collapse"),
+	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
@@ -123,15 +131,17 @@ var keys = keyMap{
 }
 
 // New creates a new dashboard model
-func New(p *platform.Platform, driftSummary *stow.DriftSummary, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) Model {
+func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) Model {
 	return Model{
 		platform:      p,
 		driftSummary:  driftSummary,
+		linkStatus:    linkStatus,
 		machineStatus: machineStatus,
 		configs:       configs,
 		dotfilesPath:  dotfilesPath,
 		updateMsg:     updateMsg,
 		selectedIdx:   0,
+		expandedIdx:   -1,
 		hasBaseline:   hasBaseline,
 	}
 }
@@ -176,14 +186,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
-
 			if m.selectedIdx > 0 {
 				m.selectedIdx--
+				// Reset expansion when changing selection
+				m.expandedIdx = -1
+				m.scrollOffset = 0
 			}
 
 		case key.Matches(msg, keys.Down):
 			if m.selectedIdx < len(m.configs)-1 {
 				m.selectedIdx++
+				// Reset expansion when changing selection
+				m.expandedIdx = -1
+				m.scrollOffset = 0
+			}
+
+		case key.Matches(msg, keys.Expand):
+			// Toggle expansion for selected config
+			if m.expandedIdx == m.selectedIdx {
+				m.expandedIdx = -1
+				m.scrollOffset = 0
+			} else {
+				m.expandedIdx = m.selectedIdx
+				m.scrollOffset = 0
 			}
 
 		case key.Matches(msg, keys.Enter):
@@ -323,6 +348,7 @@ func (m Model) renderConfigList() string {
 	selectedStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
 	warnStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
+	errStyle := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 	subtleStyle := lipgloss.NewStyle().Foreground(ui.SubtleColor)
 
 	// Build a map of drift results for quick lookup
@@ -346,28 +372,63 @@ func (m Model) renderConfigList() string {
 			nameStyle = selectedStyle
 		}
 
-		// Check drift status
-		drift, hasDrift := driftMap[cfg.Name]
-		statusIcon := okStyle.Render("")
-		statusText := ""
+		// Get link status for this config
+		linkStatus := m.linkStatus[cfg.Name]
+		drift := driftMap[cfg.Name]
 
-		if hasDrift && drift.HasDrift {
-			statusIcon = warnStyle.Render("")
-			newCount := len(drift.NewFiles)
-			if newCount > 0 {
-				statusText = fmt.Sprintf(" %d new file(s)", newCount)
+		// Determine status icon and text based on link status
+		var statusIcon, statusText string
+
+		if linkStatus != nil {
+			linked := linkStatus.LinkedCount
+			total := linkStatus.TotalCount
+
+			if linkStatus.IsFullyLinked() {
+				// Fully linked
+				statusIcon = okStyle.Render("✓")
+				statusText = fmt.Sprintf("%d/%d", linked, total)
+			} else if linkStatus.IsPartiallyLinked() {
+				// Partially linked
+				statusIcon = warnStyle.Render("⚠")
+				newFiles := 0
+				if drift != nil {
+					newFiles = len(drift.NewFiles)
+				}
+				if newFiles > 0 {
+					statusText = fmt.Sprintf("%d/%d (%d new)", linked, total, newFiles)
+				} else {
+					statusText = fmt.Sprintf("%d/%d", linked, total)
+				}
+			} else {
+				// Not linked
+				statusIcon = errStyle.Render("✗")
+				statusText = fmt.Sprintf("0/%d", total)
 			}
-		} else if hasDrift {
-			statusText = fmt.Sprintf(" %d files", drift.CurrentCount)
+		} else if drift != nil {
+			// Fallback to drift-based display if no link status
+			if drift.HasDrift {
+				statusIcon = warnStyle.Render("◆")
+				statusText = fmt.Sprintf("%d new", len(drift.NewFiles))
+			} else {
+				statusIcon = okStyle.Render("●")
+				statusText = fmt.Sprintf("%d files", drift.CurrentCount)
+			}
+		} else {
+			statusIcon = subtleStyle.Render("○")
+			statusText = "unknown"
 		}
 
 		// Pad name to align status
-		paddedName := fmt.Sprintf("%-20s", cfg.Name)
-		dots := subtleStyle.Render(strings.Repeat(".", 20-len(cfg.Name)))
+		maxNameLen := 18
+		nameLen := len(cfg.Name)
+		if nameLen > maxNameLen {
+			nameLen = maxNameLen
+		}
+		dots := subtleStyle.Render(strings.Repeat(".", maxNameLen-nameLen+2))
 
-		line = fmt.Sprintf("%s%s %s %s%s",
+		line = fmt.Sprintf("%s%s %s %s %s",
 			prefix,
-			nameStyle.Render(paddedName[:len(cfg.Name)]),
+			nameStyle.Render(cfg.Name),
 			dots,
 			statusIcon,
 			subtleStyle.Render(statusText),
@@ -375,14 +436,50 @@ func (m Model) renderConfigList() string {
 
 		lines = append(lines, line)
 
-		// Show new files if this is the selected item and has drift
-		if i == m.selectedIdx && hasDrift && drift.HasDrift && len(drift.NewFiles) > 0 {
-			for j, f := range drift.NewFiles {
-				if j >= 3 {
-					lines = append(lines, subtleStyle.Render(fmt.Sprintf("      ... and %d more", len(drift.NewFiles)-3)))
-					break
+		// Show expanded file list if this config is expanded
+		if i == m.expandedIdx && linkStatus != nil && len(linkStatus.Files) > 0 {
+			maxFiles := 8
+			files := linkStatus.Files
+			start := m.scrollOffset
+			if start >= len(files) {
+				start = 0
+			}
+			end := start + maxFiles
+			if end > len(files) {
+				end = len(files)
+			}
+
+			for j := start; j < end; j++ {
+				f := files[j]
+				var fileIcon string
+				if f.IsLinked {
+					fileIcon = okStyle.Render("✓")
+				} else {
+					fileIcon = errStyle.Render("✗")
 				}
-				lines = append(lines, subtleStyle.Render(fmt.Sprintf("       %s", f)))
+				fileLine := fmt.Sprintf("      %s %s", fileIcon, subtleStyle.Render(f.RelPath))
+				if !f.IsLinked && f.Issue != "" {
+					fileLine += subtleStyle.Render(" (" + f.Issue + ")")
+				}
+				lines = append(lines, fileLine)
+			}
+
+			// Show scroll indicator if needed
+			if len(files) > maxFiles {
+				remaining := len(files) - end
+				if remaining > 0 {
+					lines = append(lines, subtleStyle.Render(fmt.Sprintf("      ... %d more (scroll with shift+j/k)", remaining)))
+				}
+			}
+		} else if i == m.selectedIdx && linkStatus != nil {
+			// Show summary hint when selected but not expanded
+			if !linkStatus.IsFullyLinked() && len(linkStatus.GetMissingFiles()) > 0 {
+				missing := linkStatus.GetMissingFiles()
+				hint := missing[0].RelPath
+				if len(missing) > 1 {
+					hint += fmt.Sprintf(" (+%d more)", len(missing)-1)
+				}
+				lines = append(lines, subtleStyle.Render(fmt.Sprintf("      press [e] to expand • %s", hint)))
 			}
 		}
 	}
@@ -414,8 +511,8 @@ func (m Model) GetResult() *Result {
 }
 
 // Run starts the dashboard and returns the selected action
-func Run(p *platform.Platform, driftSummary *stow.DriftSummary, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) (*Result, error) {
-	m := New(p, driftSummary, machineStatus, configs, dotfilesPath, updateMsg, hasBaseline)
+func Run(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) (*Result, error) {
+	m := New(p, driftSummary, linkStatus, machineStatus, configs, dotfilesPath, updateMsg, hasBaseline)
 
 	finalModel, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {

@@ -5,11 +5,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/deps"
 	"github.com/nvandessel/go4dot/internal/machine"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/state"
 	"github.com/nvandessel/go4dot/internal/stow"
 )
 
@@ -34,12 +36,14 @@ type Check struct {
 
 // CheckResult contains all health check results
 type CheckResult struct {
-	Platform       *platform.Platform
-	Checks         []Check
-	DepsResult     *deps.CheckResult
-	ExternalStatus []deps.ExternalStatus
-	MachineStatus  []machine.MachineConfigStatus
-	SymlinkStatus  []SymlinkCheck
+	Platform              *platform.Platform
+	Checks                []Check
+	DepsResult            *deps.CheckResult
+	ExternalStatus        []deps.ExternalStatus
+	MachineStatus         []machine.MachineConfigStatus
+	SymlinkStatus         []SymlinkCheck
+	UnmanagedLinks        []UnmanagedSymlink
+	AdoptionOpportunities []AdoptionOpportunity
 }
 
 // SymlinkCheck represents the status of a stowed symlink
@@ -48,6 +52,20 @@ type SymlinkCheck struct {
 	TargetPath string
 	Status     CheckStatus
 	Message    string
+}
+
+// UnmanagedSymlink represents a symlink pointing to dotfiles but not in config
+type UnmanagedSymlink struct {
+	TargetPath string
+	SourcePath string
+}
+
+// AdoptionOpportunity represents a config that could be adopted into state
+type AdoptionOpportunity struct {
+	ConfigName    string
+	LinkedCount   int
+	TotalCount    int
+	IsFullyLinked bool
 }
 
 // CheckOptions configures the health check behavior
@@ -132,6 +150,53 @@ func RunChecks(cfg *config.Config, opts CheckOptions) (*CheckResult, error) {
 		result.MachineStatus = machineStatus
 		machineCheck := summarizeMachineCheck(machineStatus)
 		result.Checks = append(result.Checks, machineCheck)
+	}
+
+	// Step 8: Check for unmanaged symlinks
+	progress(opts, "Checking for unmanaged symlinks...")
+	if opts.DotfilesPath != "" {
+		unmanaged := checkUnmanagedSymlinks(cfg, opts.DotfilesPath)
+		result.UnmanagedLinks = unmanaged
+		if len(unmanaged) > 0 {
+			result.Checks = append(result.Checks, Check{
+				Name:        "Unmanaged Symlinks",
+				Description: "Symlinks pointing to dotfiles but not in config",
+				Status:      StatusWarning,
+				Message:     fmt.Sprintf("%d unmanaged symlinks found", len(unmanaged)),
+				Fix:         "Add these to your .go4dot.yaml or remove them",
+			})
+		} else {
+			result.Checks = append(result.Checks, Check{
+				Name:        "Unmanaged Symlinks",
+				Description: "Symlinks pointing to dotfiles but not in config",
+				Status:      StatusOK,
+				Message:     "No unmanaged symlinks found",
+			})
+		}
+	}
+
+	// Step 9: Check for adoption opportunities
+	progress(opts, "Checking for adoption opportunities...")
+	if opts.DotfilesPath != "" {
+		opportunities := checkAdoptionOpportunities(cfg, opts.DotfilesPath)
+		result.AdoptionOpportunities = opportunities
+		if len(opportunities) > 0 {
+			fullyLinked := 0
+			for _, op := range opportunities {
+				if op.IsFullyLinked {
+					fullyLinked++
+				}
+			}
+			if fullyLinked > 0 {
+				result.Checks = append(result.Checks, Check{
+					Name:        "Adoption Opportunities",
+					Description: "Configs with existing symlinks not in state",
+					Status:      StatusWarning,
+					Message:     fmt.Sprintf("%d config(s) can be adopted", fullyLinked),
+					Fix:         "Run 'g4d adopt' to adopt existing symlinks into state",
+				})
+			}
+		}
 	}
 
 	return result, nil
@@ -468,4 +533,117 @@ func progress(opts CheckOptions, msg string) {
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(msg)
 	}
+}
+
+// checkUnmanagedSymlinks finds symlinks in home pointing to dotfiles but not in config
+func checkUnmanagedSymlinks(cfg *config.Config, dotfilesPath string) []UnmanagedSymlink {
+	var unmanaged []UnmanagedSymlink
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	absDotfiles, err := filepath.Abs(dotfilesPath)
+	if err != nil {
+		absDotfiles = dotfilesPath
+	}
+
+	// Map of managed target paths for quick lookup
+	managedTargets := make(map[string]bool)
+	allConfigs := cfg.GetAllConfigs()
+	for _, configItem := range allConfigs {
+		configPath := filepath.Join(absDotfiles, configItem.Path)
+		_ = filepath.Walk(configPath, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				relPath, _ := filepath.Rel(configPath, path)
+				targetPath := filepath.Join(home, relPath)
+				managedTargets[filepath.Clean(targetPath)] = true
+			}
+			return nil
+		})
+	}
+
+	// Scan home and ~/.config
+	scanDirs := []string{home, filepath.Join(home, ".config")}
+	for _, dir := range scanDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+
+		for _, entry := range entries {
+			path := filepath.Join(dir, entry.Name())
+			info, err := os.Lstat(path)
+			if err != nil || info.Mode()&os.ModeSymlink == 0 {
+				continue
+			}
+
+			// It's a symlink, check where it points
+			linkDest, err := os.Readlink(path)
+			if err != nil {
+				continue
+			}
+
+			// Resolve to absolute path
+			if !filepath.IsAbs(linkDest) {
+				linkDest = filepath.Join(filepath.Dir(path), linkDest)
+			}
+			linkDest = filepath.Clean(linkDest)
+
+			// Check if it points into dotfiles
+			if strings.HasPrefix(linkDest, absDotfiles) {
+				if !managedTargets[filepath.Clean(path)] {
+					unmanaged = append(unmanaged, UnmanagedSymlink{
+						TargetPath: path,
+						SourcePath: linkDest,
+					})
+				}
+			}
+		}
+	}
+
+	return unmanaged
+}
+
+// checkAdoptionOpportunities finds configs with existing symlinks that aren't in state
+func checkAdoptionOpportunities(cfg *config.Config, dotfilesPath string) []AdoptionOpportunity {
+	var opportunities []AdoptionOpportunity
+
+	// Load current state to see what's already tracked
+	st, err := state.Load()
+	if err != nil {
+		return nil
+	}
+
+	// Get set of installed config names
+	installedConfigs := make(map[string]bool)
+	if st != nil {
+		installedConfigs = st.GetInstalledConfigNames()
+	}
+
+	// Scan for existing symlinks
+	summary, err := stow.ScanExistingSymlinks(cfg, dotfilesPath)
+	if err != nil {
+		return nil
+	}
+
+	// Find configs that have symlinks but aren't in state
+	for _, result := range summary.Results {
+		if installedConfigs[result.ConfigName] {
+			// Already in state, skip
+			continue
+		}
+
+		if len(result.LinkedFiles) > 0 {
+			// Has some symlinks but not in state - adoption opportunity
+			opportunities = append(opportunities, AdoptionOpportunity{
+				ConfigName:    result.ConfigName,
+				LinkedCount:   len(result.LinkedFiles),
+				TotalCount:    result.TotalFiles,
+				IsFullyLinked: result.IsFullyLinked(),
+			})
+		}
+	}
+
+	return opportunities
 }
