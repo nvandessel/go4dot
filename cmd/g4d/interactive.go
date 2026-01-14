@@ -158,6 +158,10 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 	case dashboard.ActionQuit:
 		return true
 
+	case dashboard.ActionRefresh:
+		// Refresh action - just return false to reload the dashboard
+		return false
+
 	case dashboard.ActionInit:
 		initCmd.Run(initCmd, nil)
 
