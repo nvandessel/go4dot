@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -58,6 +59,9 @@ type Model struct {
 	selectedIdx   int
 	expandedIdx   int // Index of expanded config (-1 = none)
 	scrollOffset  int // Scroll offset within expanded file list
+	filterMode    bool
+	filterText    string
+	filteredIdxs  []int
 	result        *Result
 	quitting      bool
 	hasBaseline   bool // True if we have stored symlink counts (synced before)
@@ -76,6 +80,7 @@ type keyMap struct {
 	Down    key.Binding
 	Enter   key.Binding
 	Expand  key.Binding
+	Filter  key.Binding
 	Help    key.Binding
 }
 
@@ -124,6 +129,10 @@ var keys = keyMap{
 		key.WithKeys("e", "right"),
 		key.WithHelp("e", "expand/collapse"),
 	),
+	Filter: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "filter"),
+	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
@@ -132,7 +141,7 @@ var keys = keyMap{
 
 // New creates a new dashboard model
 func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) Model {
-	return Model{
+	m := Model{
 		platform:      p,
 		driftSummary:  driftSummary,
 		linkStatus:    linkStatus,
@@ -143,7 +152,12 @@ func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[s
 		selectedIdx:   0,
 		expandedIdx:   -1,
 		hasBaseline:   hasBaseline,
+		filterMode:    false,
+		filterText:    "",
+		filteredIdxs:  []int{},
 	}
+	m.updateFilter()
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -153,11 +167,48 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Special handling when in filter mode
+		if m.filterMode {
+			switch msg.String() {
+			case "enter", "esc":
+				m.filterMode = false
+				return m, nil
+
+			case "ctrl+c":
+				m.filterMode = false
+				m.filterText = ""
+				m.updateFilter()
+				return m, nil
+
+			case "backspace":
+				if len(m.filterText) > 0 {
+					m.filterText = m.filterText[:len(m.filterText)-1]
+					m.updateFilter()
+				}
+				return m, nil
+
+			default:
+				// Capture text input (a-z, 0-9, -, _)
+				if len(msg.String()) == 1 {
+					r := []rune(msg.String())[0]
+					if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '-' || r == '_' {
+						m.filterText += msg.String()
+						m.updateFilter()
+					}
+				}
+				return m, nil
+			}
+		}
+
 		switch {
 		case key.Matches(msg, keys.Quit):
 			m.result = &Result{Action: ActionQuit}
 			m.quitting = true
 			return m, tea.Quit
+
+		case key.Matches(msg, keys.Filter):
+			m.filterMode = true
+			return m, nil
 
 		case key.Matches(msg, keys.Sync):
 			m.result = &Result{Action: ActionSync}
@@ -186,19 +237,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
-			if m.selectedIdx > 0 {
-				m.selectedIdx--
-				// Reset expansion when changing selection
-				m.expandedIdx = -1
-				m.scrollOffset = 0
+			if len(m.filteredIdxs) > 0 {
+				// Find current position in filtered list
+				currentPos := -1
+				for i, idx := range m.filteredIdxs {
+					if idx == m.selectedIdx {
+						currentPos = i
+						break
+					}
+				}
+
+				if currentPos > 0 {
+					m.selectedIdx = m.filteredIdxs[currentPos-1]
+					// Reset expansion when changing selection
+					m.expandedIdx = -1
+					m.scrollOffset = 0
+				}
 			}
 
 		case key.Matches(msg, keys.Down):
-			if m.selectedIdx < len(m.configs)-1 {
-				m.selectedIdx++
-				// Reset expansion when changing selection
-				m.expandedIdx = -1
-				m.scrollOffset = 0
+			if len(m.filteredIdxs) > 0 {
+				// Find current position in filtered list
+				currentPos := -1
+				for i, idx := range m.filteredIdxs {
+					if idx == m.selectedIdx {
+						currentPos = i
+						break
+					}
+				}
+
+				if currentPos != -1 && currentPos < len(m.filteredIdxs)-1 {
+					m.selectedIdx = m.filteredIdxs[currentPos+1]
+					// Reset expansion when changing selection
+					m.expandedIdx = -1
+					m.scrollOffset = 0
+				}
 			}
 
 		case key.Matches(msg, keys.Expand):
@@ -229,6 +302,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateFilter recalculates which configs match the current filter text
+func (m *Model) updateFilter() {
+	m.filteredIdxs = []int{}
+
+	// No filter text = show all configs
+	if m.filterText == "" {
+		for i := range m.configs {
+			m.filteredIdxs = append(m.filteredIdxs, i)
+		}
+		return
+	}
+
+	// Filter configs by case-insensitive substring match
+	filterLower := strings.ToLower(m.filterText)
+	for i, cfg := range m.configs {
+		if strings.Contains(strings.ToLower(cfg.Name), filterLower) {
+			m.filteredIdxs = append(m.filteredIdxs, i)
+		}
+	}
+
+	// Reset selection to first matching config if current selection is not in filtered list
+	found := false
+	for _, idx := range m.filteredIdxs {
+		if idx == m.selectedIdx {
+			found = true
+			break
+		}
+	}
+
+	if !found && len(m.filteredIdxs) > 0 {
+		m.selectedIdx = m.filteredIdxs[0]
+	}
+}
+
 func (m Model) View() string {
 	if m.quitting {
 		return ""
@@ -245,6 +352,12 @@ func (m Model) View() string {
 	status := m.renderStatus()
 	b.WriteString(status)
 	b.WriteString("\n\n")
+
+	// Filter bar
+	if m.filterMode || m.filterText != "" {
+		b.WriteString(m.renderFilterBar())
+		b.WriteString("\n\n")
+	}
 
 	// Machine status (if any)
 	if len(m.machineStatus) > 0 {
@@ -314,6 +427,31 @@ func (m Model) renderStatus() string {
 		Render("  All synced")
 }
 
+// renderFilterBar renders the filter input/display bar
+func (m Model) renderFilterBar() string {
+	style := lipgloss.NewStyle().Foreground(ui.PrimaryColor)
+	subtleStyle := lipgloss.NewStyle().Foreground(ui.SubtleColor)
+
+	var filterIndicator string
+	if m.filterMode {
+		// Active mode: show cursor
+		filterIndicator = style.Render("Filter:") + " " + m.filterText + style.Render("█")
+	} else {
+		// Inactive but filtered: show subtle
+		filterIndicator = subtleStyle.Render("Filter:") + " " + m.filterText
+	}
+
+	// Show match count when filtering
+	countText := ""
+	if m.filterText != "" {
+		countText = subtleStyle.Render(
+			fmt.Sprintf(" (%d of %d)", len(m.filteredIdxs), len(m.configs)),
+		)
+	}
+
+	return "  " + filterIndicator + countText
+}
+
 func (m Model) renderMachineStatus() string {
 	var parts []string
 
@@ -360,7 +498,13 @@ func (m Model) renderConfigList() string {
 		}
 	}
 
-	for i, cfg := range m.configs {
+	// If filtered but no matches, show message
+	if m.filterText != "" && len(m.filteredIdxs) == 0 {
+		return subtleStyle.Render("  No configs match filter: \"" + m.filterText + "\"")
+	}
+
+	for _, i := range m.filteredIdxs {
+		cfg := m.configs[i]
 		var line string
 		prefix := "  "
 		if i == m.selectedIdx {
@@ -492,6 +636,7 @@ func (m Model) renderActions() string {
 	keyStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
 
 	actions := []string{
+		keyStyle.Render("[/]") + style.Render(" Filter"),
 		keyStyle.Render("[s]") + style.Render(" Sync All"),
 		keyStyle.Render("[i]") + style.Render(" Install"),
 		keyStyle.Render("[d]") + style.Render(" Doctor"),
