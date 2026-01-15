@@ -12,7 +12,7 @@ import (
 // - wsl: true, false
 // - arch, architecture: amd64, arm64, etc.
 func CheckCondition(condition map[string]string, p *Platform) bool {
-	if condition == nil || len(condition) == 0 {
+	if len(condition) == 0 {
 		return true // No condition means always true
 	}
 

@@ -25,11 +25,12 @@ func RunInteractiveConfig(cfg *config.Config) {
 
 	for _, s := range statuses {
 		statusIcon := " "
-		if s.Status == "configured" {
+		switch s.Status {
+		case "configured":
 			statusIcon = "+"
-		} else if s.Status == "missing" {
+		case "missing":
 			statusIcon = "x"
-		} else if s.Status == "error" {
+		case "error":
 			statusIcon = "!"
 		}
 

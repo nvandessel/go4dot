@@ -45,18 +45,18 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 			return err
 		}
 		if !overwrite {
-			fmt.Fprintln(out, "Aborted.")
+			_, _ = fmt.Fprintln(out, "Aborted.")
 			return nil
 		}
 	}
 
-	fmt.Fprintf(out, "🔍 Scanning %s for dotfiles...\n", absPath)
+	_, _ = fmt.Fprintf(out, "🔍 Scanning %s for dotfiles...\n", absPath)
 	configs, err := scanDirectory(absPath)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(out, "Found %d potential config directories.\n\n", len(configs))
+	_, _ = fmt.Fprintf(out, "Found %d potential config directories.\n\n", len(configs))
 
 	// Collect Metadata
 	meta := Metadata{
@@ -427,8 +427,8 @@ func InitConfigWithIO(path string, in io.Reader, out io.Writer) error {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	fmt.Fprintf(out, "\n✅ Successfully created %s\n", configFile)
-	fmt.Fprintln(out, "run 'g4d install' to set up your dotfiles!")
+	_, _ = fmt.Fprintf(out, "\n✅ Successfully created %s\n", configFile)
+	_, _ = fmt.Fprintln(out, "run 'g4d install' to set up your dotfiles!")
 
 	return nil
 }

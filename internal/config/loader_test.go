@@ -60,13 +60,13 @@ func TestLoadInvalidYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	_, err = tmpfile.Write([]byte("invalid: yaml: content:\n  - this is\n wrong"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	_, err = Load(tmpfile.Name())
 	if err == nil {
@@ -130,7 +130,7 @@ func TestDependencyItemUnmarshal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.Remove(tmpfile.Name())
+			defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 			// Write minimal valid config
 			content := "schema_version: \"1.0\"\nmetadata:\n  name: test\n" + tt.yaml
@@ -138,7 +138,7 @@ func TestDependencyItemUnmarshal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			tmpfile.Close()
+			_ = tmpfile.Close()
 
 			cfg, err := Load(tmpfile.Name())
 			if err != nil {

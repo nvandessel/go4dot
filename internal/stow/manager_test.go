@@ -185,7 +185,7 @@ func TestStowOptionsProgressCallback(t *testing.T) {
 		},
 	}
 
-	err = Stow(tmpDir, "testconfig", opts)
+	_ = Stow(tmpDir, "testconfig", opts)
 	// Don't fail on error since we're in dry-run mode with a test directory
 
 	// Should have received at least one progress message

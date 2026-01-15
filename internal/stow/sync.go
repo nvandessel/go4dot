@@ -36,7 +36,9 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 
 	// Update symlink counts in state
 	if st != nil {
-		UpdateSymlinkCounts(cfg, dotfilesPath, st)
+		if err := UpdateSymlinkCounts(cfg, dotfilesPath, st); err != nil {
+			return result, fmt.Errorf("failed to update symlink counts: %w", err)
+		}
 	}
 
 	return result, nil
@@ -68,7 +70,9 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 
 	// Update symlink count for this config
 	if st != nil {
-		UpdateSymlinkCounts(cfg, dotfilesPath, st)
+		if err := UpdateSymlinkCounts(cfg, dotfilesPath, st); err != nil {
+			return fmt.Errorf("failed to update symlink counts: %w", err)
+		}
 	}
 
 	return nil

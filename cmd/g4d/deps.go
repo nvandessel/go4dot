@@ -169,16 +169,17 @@ func printDepStatus(dep deps.DependencyCheck) {
 	status := "x"
 	info := "missing"
 
-	if dep.Status == deps.StatusInstalled {
+	switch dep.Status {
+	case deps.StatusInstalled:
 		status = "+"
 		info = dep.InstalledPath
 		if dep.InstalledVersion != "" {
 			info = fmt.Sprintf("%s (v%s)", info, dep.InstalledVersion)
 		}
-	} else if dep.Status == deps.StatusVersionMismatch {
+	case deps.StatusVersionMismatch:
 		status = "!"
 		info = fmt.Sprintf("version mismatch: found v%s, want %s", dep.InstalledVersion, dep.RequiredVersion)
-	} else if dep.Status == deps.StatusCheckFailed {
+	case deps.StatusCheckFailed:
 		status = "?"
 		info = fmt.Sprintf("check failed: %v", dep.Error)
 	}

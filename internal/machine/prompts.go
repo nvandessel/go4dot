@@ -115,7 +115,7 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 				Value(&val))
 
 		case "select":
-			var val string = prompt.Default
+			val := prompt.Default
 			valuePointers[prompt.ID] = &val
 
 			var options []huh.Option[string]
@@ -140,7 +140,7 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 			}
 
 		default: // text
-			var val string = prompt.Default
+			val := prompt.Default
 			valuePointers[prompt.ID] = &val
 
 			f := huh.NewInput().

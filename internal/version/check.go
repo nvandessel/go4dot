@@ -27,7 +27,7 @@ func CheckForUpdates(currentVersion string) (*CheckResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github api returned %d", resp.StatusCode)

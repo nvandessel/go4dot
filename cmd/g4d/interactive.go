@@ -331,14 +331,16 @@ func runMoreMenu(cfg *config.Config, configPath string) {
 
 	case "uninstall":
 		var confirm bool
-		huh.NewForm(
+		if err := huh.NewForm(
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Are you sure you want to uninstall?").
 					Description("This will remove all symlinks and state.").
 					Value(&confirm),
 			),
-		).Run()
+		).Run(); err != nil {
+			return
+		}
 
 		if confirm {
 			dotfilesPath := filepath.Dir(configPath)
@@ -400,5 +402,5 @@ func runExternalMenu(cfg *config.Config, configPath string) {
 
 func waitForEnter() {
 	fmt.Println("\nPress Enter to continue...")
-	fmt.Scanln()
+	_, _ = fmt.Scanln()
 }

@@ -226,9 +226,10 @@ func (r *CheckResult) Summary() string {
 
 	for _, checks := range [][]DependencyCheck{r.Critical, r.Core, r.Optional} {
 		for _, check := range checks {
-			if check.Status == StatusInstalled {
+			switch check.Status {
+			case StatusInstalled:
 				totalInstalled++
-			} else if check.Status == StatusMissing {
+			case StatusMissing:
 				totalMissing++
 			}
 		}

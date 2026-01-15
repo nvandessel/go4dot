@@ -160,8 +160,8 @@ func TestStateSaveLoad(t *testing.T) {
 
 	// Override home for testing
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	// Create and save state
 	s := New()
@@ -223,8 +223,8 @@ func TestLoadNonExistent(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	// Load should return nil, nil for non-existent
 	loaded, err := Load()
@@ -241,8 +241,8 @@ func TestExists(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	// Initially should not exist
 	if Exists() {

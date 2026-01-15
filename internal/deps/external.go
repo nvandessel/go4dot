@@ -378,7 +378,7 @@ func gitCloneThenCopy(url, dest, mergeStrategy string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Clone to temp
 	tmpDest := filepath.Join(tmpDir, "repo")
@@ -450,7 +450,7 @@ func copyFile(src, dst, mergeStrategy string) error {
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() { _ = srcFile.Close() }()
 
 	srcInfo, err := srcFile.Stat()
 	if err != nil {
@@ -461,7 +461,7 @@ func copyFile(src, dst, mergeStrategy string) error {
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func() { _ = dstFile.Close() }()
 
 	buf := make([]byte, 32*1024)
 	for {

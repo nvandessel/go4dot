@@ -77,7 +77,7 @@ func detectLinuxDistro(p *Platform) error {
 			return fmt.Errorf("could not open os-release file: %w", err)
 		}
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	osInfo := make(map[string]string)
