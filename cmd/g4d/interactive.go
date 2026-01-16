@@ -336,6 +336,10 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 	case dashboard.ActionList:
 		// This is the "More" menu
 		runMoreMenu(cfg, configPath)
+
+	case dashboard.ActionRefresh:
+		// Just return false to continue the loop and refresh state
+		return false
 	}
 
 	return false
@@ -369,7 +373,7 @@ func runMoreMenu(cfg *config.Config, configPath string) {
 		waitForEnter()
 
 	case "external":
-		runExternalMenu(cfg, configPath)
+		runExternalMenu()
 
 	case "uninstall":
 		var confirm bool
@@ -408,7 +412,7 @@ func runMoreMenu(cfg *config.Config, configPath string) {
 	}
 }
 
-func runExternalMenu(cfg *config.Config, configPath string) {
+func runExternalMenu() {
 	var action string
 
 	form := huh.NewForm(
