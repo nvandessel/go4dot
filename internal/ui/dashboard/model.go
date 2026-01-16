@@ -68,6 +68,7 @@ type Model struct {
 	result          *Result
 	quitting        bool
 	hasBaseline     bool // True if we have stored symlink counts (synced before)
+	showHelp        bool
 }
 
 // keyMap defines the key bindings
@@ -88,6 +89,7 @@ type keyMap struct {
 	Select  key.Binding
 	All     key.Binding
 	Bulk    key.Binding
+	Refresh key.Binding
 }
 
 var keys = keyMap{
@@ -155,6 +157,10 @@ var keys = keyMap{
 		key.WithKeys("S"),
 		key.WithHelp("shift+s", "sync selected"),
 	),
+	Refresh: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "refresh"),
+	),
 }
 
 // New creates a new dashboard model
@@ -174,6 +180,7 @@ func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[s
 		filterText:      "",
 		filteredIdxs:    []int{},
 		selectedConfigs: make(map[string]bool),
+		showHelp:        false,
 	}
 	m.updateFilter()
 	return m
@@ -186,6 +193,15 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Help overlay takes precedence
+		if m.showHelp {
+			switch msg.String() {
+			case "?", "q", "esc":
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
 		// Special handling when in filter mode
 		if m.filterMode {
 			switch msg.String() {
@@ -227,6 +243,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.Filter):
 			m.filterMode = true
+			return m, nil
+
+		case key.Matches(msg, keys.Help):
+			m.showHelp = true
+			return m, nil
+
+		case key.Matches(msg, keys.Refresh):
+			// For now, we'll just return a special action to refresh
+			// In a more complex app, we might trigger a reload here
+			// For now, let's just quit and let the caller handle it if they want
+			// or we can just do nothing for now as requested "implement logic later"
 			return m, nil
 
 		case key.Matches(msg, keys.Sync):
@@ -403,6 +430,96 @@ func (m *Model) updateFilter() {
 	}
 }
 
+// renderHelp renders the help overlay with all keyboard shortcuts
+func (m Model) renderHelp() string {
+	var b strings.Builder
+
+	boxWidth := 60
+	if m.width > 0 && m.width < boxWidth+4 {
+		boxWidth = m.width - 4
+	}
+
+	// Styles
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ui.PrimaryColor).
+		Bold(true).
+		Width(boxWidth).
+		Align(lipgloss.Center).
+		MarginBottom(1)
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(ui.SecondaryColor).
+		Bold(true).
+		MarginTop(1).
+		MarginLeft(2)
+
+	keyStyle := lipgloss.NewStyle().
+		Foreground(ui.PrimaryColor).
+		Bold(true).
+		Width(14).
+		Align(lipgloss.Right)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(ui.TextColor).
+		MarginLeft(2)
+
+	subtleStyle := lipgloss.NewStyle().
+		Foreground(ui.SubtleColor).
+		Width(boxWidth).
+		Align(lipgloss.Center).
+		MarginTop(1)
+
+	// Build help content
+	b.WriteString(titleStyle.Render("go4dot Dashboard - Keyboard Shortcuts"))
+	b.WriteString("\n")
+
+	// Navigation section
+	b.WriteString(headerStyle.Render("Navigation"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("↑/k"), descStyle.Render("Move selection up")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("↓/j"), descStyle.Render("Move selection down")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("e / →"), descStyle.Render("Expand/collapse details")))
+
+	// Actions section
+	b.WriteString(headerStyle.Render("Actions"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("enter"), descStyle.Render("Sync selected config")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("s"), descStyle.Render("Sync all configs")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("shift+s"), descStyle.Render("Sync selected configs")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("i"), descStyle.Render("Run install wizard")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("u"), descStyle.Render("Update dotfiles/deps")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("r"), descStyle.Render("Refresh dashboard")))
+
+	// Selection section
+	b.WriteString(headerStyle.Render("Selection"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("space"), descStyle.Render("Toggle selection")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("shift+a"), descStyle.Render("Select/deselect all")))
+
+	// Filter section
+	b.WriteString(headerStyle.Render("Filter"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("/"), descStyle.Render("Enter filter mode")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("esc"), descStyle.Render("Exit filter mode")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("ctrl+c"), descStyle.Render("Clear filter and exit")))
+
+	// Other section
+	b.WriteString(headerStyle.Render("Other"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("d"), descStyle.Render("Run doctor check")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("m"), descStyle.Render("Configure overrides")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("tab"), descStyle.Render("More commands menu")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("?"), descStyle.Render("Toggle help screen")))
+	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("q / esc"), descStyle.Render("Quit dashboard")))
+
+	b.WriteString(subtleStyle.Render("Press ?, q, or esc to close"))
+
+	// Wrap in a bordered box
+	return ui.BoxStyle.
+		Width(boxWidth).
+		Render(b.String())
+}
+
 func (m Model) View() string {
 	if m.quitting {
 		return ""
@@ -436,13 +553,48 @@ func (m Model) View() string {
 	// Config list
 	configList := m.renderConfigList()
 	b.WriteString(configList)
-	b.WriteString("\n\n")
 
-	// Action bar
+	// Main content
+	content := b.String()
+
+	// Action bar (pinned to bottom)
 	actions := m.renderActions()
-	b.WriteString(actions)
 
-	return b.String()
+	// Calculate how much space we have for content
+	headerHeight := lipgloss.Height(header) + 2
+	statusHeight := lipgloss.Height(status) + 2
+	filterHeight := 0
+	if m.filterMode || m.filterText != "" {
+		filterHeight = lipgloss.Height(m.renderFilterBar()) + 2
+	}
+	machineHeight := 0
+	if len(m.machineStatus) > 0 {
+		machineHeight = lipgloss.Height(m.renderMachineStatus()) + 2
+	}
+	actionsHeight := lipgloss.Height(actions)
+
+	// Total height used by non-config-list elements
+	fixedHeight := headerHeight + statusHeight + filterHeight + machineHeight + actionsHeight
+
+	// Fill remaining space with newlines to push actions to bottom
+	// but only if we have enough height
+	if m.height > fixedHeight {
+		configListHeight := lipgloss.Height(configList)
+		padding := m.height - fixedHeight - configListHeight
+		if padding > 0 {
+			content += strings.Repeat("\n", padding)
+		}
+	}
+
+	finalView := content + "\n" + actions
+
+	// Show help overlay if active
+	if m.showHelp {
+		help := m.renderHelp()
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, help, lipgloss.WithWhitespaceChars(" "), lipgloss.WithWhitespaceForeground(ui.SubtleColor))
+	}
+
+	return finalView
 }
 
 func (m Model) renderHeader() string {
@@ -719,21 +871,20 @@ func (m Model) renderActions() string {
 	keyStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
 
 	actions := []string{
+		keyStyle.Render("[?]") + style.Render(" Help"),
 		keyStyle.Render("[/]") + style.Render(" Filter"),
 		keyStyle.Render("[space]") + style.Render(" Select"),
-		keyStyle.Render("[shift+a]") + style.Render(" All"),
-		keyStyle.Render("[shift+s]") + style.Render(" Sync Selected"),
 		keyStyle.Render("[s]") + style.Render(" Sync All"),
+		keyStyle.Render("[r]") + style.Render(" Refresh"),
 		keyStyle.Render("[i]") + style.Render(" Install"),
 		keyStyle.Render("[d]") + style.Render(" Doctor"),
 		keyStyle.Render("[m]") + style.Render(" Overrides"),
 		keyStyle.Render("[u]") + style.Render(" Update"),
 		keyStyle.Render("[tab]") + style.Render(" More"),
-		keyStyle.Render("[enter]") + style.Render(" Sync Config"),
 		keyStyle.Render("[q]") + style.Render(" Quit"),
 	}
 
-	return strings.Join(actions, "   ")
+	return strings.Join(actions, "  ")
 }
 
 // GetResult returns the action result after the model exits
