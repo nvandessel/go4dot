@@ -31,6 +31,7 @@ const (
 	ActionInit
 	ActionQuit
 	ActionBulkSync
+	ActionRefresh
 )
 
 // Result is returned when the dashboard exits
@@ -250,11 +251,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, keys.Refresh):
-			// For now, we'll just return a special action to refresh
-			// In a more complex app, we might trigger a reload here
-			// For now, let's just quit and let the caller handle it if they want
-			// or we can just do nothing for now as requested "implement logic later"
-			return m, nil
+			m.result = &Result{Action: ActionRefresh}
+			return m, tea.Quit
 
 		case key.Matches(msg, keys.Sync):
 			m.result = &Result{Action: ActionSync}
