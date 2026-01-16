@@ -242,6 +242,48 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 			waitForEnter()
 		}
 
+	case dashboard.ActionBulkSync:
+		if cfg != nil && configPath != "" {
+			dotfilesPath := filepath.Dir(configPath)
+			st, _ := state.Load()
+			if st == nil {
+				st = state.New()
+			}
+
+			total := len(result.ConfigNames)
+			successCount := 0
+
+			fmt.Printf("\n")
+			ui.Info("Starting bulk sync of %d configs...", total)
+			fmt.Printf("\n")
+
+			for i, name := range result.ConfigNames {
+				fmt.Printf("  Syncing %d/%d: %s\n", i+1, total, name)
+
+				err := stow.SyncSingle(dotfilesPath, name, cfg, st, stow.StowOptions{
+					ProgressFunc: func(current, total int, msg string) {
+						fmt.Printf("    %s\n", msg)
+					},
+				})
+
+				if err != nil {
+					ui.Error("  Failed to sync %s: %v", name, err)
+				} else {
+					ui.Success("  Synced %s", name)
+					successCount++
+				}
+				fmt.Printf("\n")
+			}
+
+			fmt.Printf("  Bulk sync complete: %d/%d succeeded\n", successCount, total)
+			if successCount < total {
+				ui.Warning("  Some configs failed to sync")
+			}
+			fmt.Printf("\n")
+
+			waitForEnter()
+		}
+
 	case dashboard.ActionDoctor:
 		doctorCmd.Run(doctorCmd, nil)
 		waitForEnter()

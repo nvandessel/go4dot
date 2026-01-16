@@ -30,12 +30,14 @@ const (
 	ActionList
 	ActionInit
 	ActionQuit
+	ActionBulkSync
 )
 
 // Result is returned when the dashboard exits
 type Result struct {
-	Action     Action
-	ConfigName string // For ActionSyncConfig
+	Action      Action
+	ConfigName  string   // For ActionSyncConfig
+	ConfigNames []string // For ActionBulkSync
 }
 
 // MachineStatus represents the status of a machine config for the dashboard
@@ -47,24 +49,25 @@ type MachineStatus struct {
 
 // Model is the Bubbletea model for the dashboard
 type Model struct {
-	width         int
-	height        int
-	platform      *platform.Platform
-	driftSummary  *stow.DriftSummary
-	linkStatus    map[string]*stow.ConfigLinkStatus // Per-config link status
-	machineStatus []MachineStatus
-	configs       []config.ConfigItem
-	dotfilesPath  string
-	updateMsg     string
-	selectedIdx   int
-	expandedIdx   int // Index of expanded config (-1 = none)
-	scrollOffset  int // Scroll offset within expanded file list
-	filterMode    bool
-	filterText    string
-	filteredIdxs  []int
-	result        *Result
-	quitting      bool
-	hasBaseline   bool // True if we have stored symlink counts (synced before)
+	width           int
+	height          int
+	platform        *platform.Platform
+	driftSummary    *stow.DriftSummary
+	linkStatus      map[string]*stow.ConfigLinkStatus // Per-config link status
+	machineStatus   []MachineStatus
+	configs         []config.ConfigItem
+	dotfilesPath    string
+	updateMsg       string
+	selectedIdx     int
+	expandedIdx     int // Index of expanded config (-1 = none)
+	scrollOffset    int // Scroll offset within expanded file list
+	filterMode      bool
+	filterText      string
+	filteredIdxs    []int
+	selectedConfigs map[string]bool // Config name -> selected state
+	result          *Result
+	quitting        bool
+	hasBaseline     bool // True if we have stored symlink counts (synced before)
 }
 
 // keyMap defines the key bindings
@@ -82,6 +85,9 @@ type keyMap struct {
 	Expand  key.Binding
 	Filter  key.Binding
 	Help    key.Binding
+	Select  key.Binding
+	All     key.Binding
+	Bulk    key.Binding
 }
 
 var keys = keyMap{
@@ -137,24 +143,37 @@ var keys = keyMap{
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
 	),
+	Select: key.NewBinding(
+		key.WithKeys(" "),
+		key.WithHelp("space", "select"),
+	),
+	All: key.NewBinding(
+		key.WithKeys("A"),
+		key.WithHelp("shift+a", "select all"),
+	),
+	Bulk: key.NewBinding(
+		key.WithKeys("S"),
+		key.WithHelp("shift+s", "sync selected"),
+	),
 }
 
 // New creates a new dashboard model
 func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) Model {
 	m := Model{
-		platform:      p,
-		driftSummary:  driftSummary,
-		linkStatus:    linkStatus,
-		machineStatus: machineStatus,
-		configs:       configs,
-		dotfilesPath:  dotfilesPath,
-		updateMsg:     updateMsg,
-		selectedIdx:   0,
-		expandedIdx:   -1,
-		hasBaseline:   hasBaseline,
-		filterMode:    false,
-		filterText:    "",
-		filteredIdxs:  []int{},
+		platform:        p,
+		driftSummary:    driftSummary,
+		linkStatus:      linkStatus,
+		machineStatus:   machineStatus,
+		configs:         configs,
+		dotfilesPath:    dotfilesPath,
+		updateMsg:       updateMsg,
+		selectedIdx:     0,
+		expandedIdx:     -1,
+		hasBaseline:     hasBaseline,
+		filterMode:      false,
+		filterText:      "",
+		filteredIdxs:    []int{},
+		selectedConfigs: make(map[string]bool),
 	}
 	m.updateFilter()
 	return m
@@ -213,6 +232,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Sync):
 			m.result = &Result{Action: ActionSync}
 			return m, tea.Quit
+
+		case key.Matches(msg, keys.Bulk):
+			if len(m.selectedConfigs) > 0 {
+				names := make([]string, 0, len(m.selectedConfigs))
+				for name := range m.selectedConfigs {
+					names = append(names, name)
+				}
+				m.result = &Result{
+					Action:      ActionBulkSync,
+					ConfigNames: names,
+				}
+				return m, tea.Quit
+			}
+			return m, nil
+
+		case key.Matches(msg, keys.Select):
+			if len(m.configs) > 0 && m.selectedIdx < len(m.configs) {
+				name := m.configs[m.selectedIdx].Name
+				m.selectedConfigs[name] = !m.selectedConfigs[name]
+				if !m.selectedConfigs[name] {
+					delete(m.selectedConfigs, name)
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, keys.All):
+			// If all visible are selected, deselect them. Otherwise select all visible.
+			allSelected := true
+			if len(m.filteredIdxs) == 0 {
+				allSelected = false
+			}
+			for _, idx := range m.filteredIdxs {
+				if !m.selectedConfigs[m.configs[idx].Name] {
+					allSelected = false
+					break
+				}
+			}
+
+			if allSelected {
+				for _, idx := range m.filteredIdxs {
+					delete(m.selectedConfigs, m.configs[idx].Name)
+				}
+			} else {
+				for _, idx := range m.filteredIdxs {
+					m.selectedConfigs[m.configs[idx].Name] = true
+				}
+			}
+			return m, nil
 
 		case key.Matches(msg, keys.Doctor):
 			m.result = &Result{Action: ActionDoctor}
@@ -404,27 +471,37 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderStatus() string {
+	var status string
+
 	// If we haven't synced before (no baseline), show that clearly
 	if !m.hasBaseline {
-		return lipgloss.NewStyle().
+		status = lipgloss.NewStyle().
 			Foreground(ui.WarningColor).
 			Bold(true).
 			Render("  Not synced yet - press [s] to create symlinks")
-	}
-
-	// We have baseline - check for drift
-	if m.driftSummary != nil && m.driftSummary.HasDrift() {
-		return lipgloss.NewStyle().
+	} else if m.driftSummary != nil && m.driftSummary.HasDrift() {
+		// We have baseline - check for drift
+		status = lipgloss.NewStyle().
 			Foreground(ui.WarningColor).
 			Bold(true).
 			Render(fmt.Sprintf("  %d config(s) need syncing", m.driftSummary.DriftedConfigs))
+	} else {
+		// Baseline exists and no drift
+		status = lipgloss.NewStyle().
+			Foreground(ui.SecondaryColor).
+			Bold(true).
+			Render("  All synced")
 	}
 
-	// Baseline exists and no drift
-	return lipgloss.NewStyle().
-		Foreground(ui.SecondaryColor).
-		Bold(true).
-		Render("  All synced")
+	if len(m.selectedConfigs) > 0 {
+		selectionInfo := lipgloss.NewStyle().
+			Foreground(ui.PrimaryColor).
+			Bold(true).
+			Render(fmt.Sprintf(" • %d selected", len(m.selectedConfigs)))
+		return status + selectionInfo
+	}
+
+	return status
 }
 
 // renderFilterBar renders the filter input/display bar
@@ -511,6 +588,11 @@ func (m Model) renderConfigList() string {
 			prefix = "> "
 		}
 
+		checkbox := "[ ]"
+		if m.selectedConfigs[cfg.Name] {
+			checkbox = okStyle.Render("[✓]")
+		}
+
 		nameStyle := normalStyle
 		if i == m.selectedIdx {
 			nameStyle = selectedStyle
@@ -570,8 +652,9 @@ func (m Model) renderConfigList() string {
 		}
 		dots := subtleStyle.Render(strings.Repeat(".", maxNameLen-nameLen+2))
 
-		line = fmt.Sprintf("%s%s %s %s %s",
+		line = fmt.Sprintf("%s%s %s %s %s %s",
 			prefix,
+			checkbox,
 			nameStyle.Render(cfg.Name),
 			dots,
 			statusIcon,
@@ -637,13 +720,16 @@ func (m Model) renderActions() string {
 
 	actions := []string{
 		keyStyle.Render("[/]") + style.Render(" Filter"),
+		keyStyle.Render("[space]") + style.Render(" Select"),
+		keyStyle.Render("[shift+a]") + style.Render(" All"),
+		keyStyle.Render("[shift+s]") + style.Render(" Sync Selected"),
 		keyStyle.Render("[s]") + style.Render(" Sync All"),
 		keyStyle.Render("[i]") + style.Render(" Install"),
 		keyStyle.Render("[d]") + style.Render(" Doctor"),
 		keyStyle.Render("[m]") + style.Render(" Overrides"),
 		keyStyle.Render("[u]") + style.Render(" Update"),
 		keyStyle.Render("[tab]") + style.Render(" More"),
-		keyStyle.Render("[enter]") + style.Render(" Sync Selected"),
+		keyStyle.Render("[enter]") + style.Render(" Sync Config"),
 		keyStyle.Render("[q]") + style.Render(" Quit"),
 	}
 
