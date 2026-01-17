@@ -107,8 +107,8 @@ func TestModel_getConfigStatusInfo(t *testing.T) {
 	// Setup temporary HOME for external dep test
 	tmpHome := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpHome)
-	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpHome)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

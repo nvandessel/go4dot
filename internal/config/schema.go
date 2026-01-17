@@ -66,7 +66,7 @@ type ConfigItem struct {
 	Description           string        `yaml:"description"`
 	Platforms             []string      `yaml:"platforms"`
 	DependsOn             []string      `yaml:"depends_on"`
-	ExternalDeps          []ExternalDep `yaml:"external_deps"`
+	ExternalDeps          []ExternalDep `yaml:"external_deps,omitempty"`
 	RequiresMachineConfig bool          `yaml:"requires_machine_config"`
 }
 

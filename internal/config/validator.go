@@ -11,6 +11,7 @@ type ValidationError struct {
 	Message string
 }
 
+// Error returns the string representation of the validation error
 func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
@@ -18,6 +19,7 @@ func (e ValidationError) Error() string {
 // ValidationErrors is a collection of validation errors
 type ValidationErrors []ValidationError
 
+// Error returns the string representation of all validation errors
 func (e ValidationErrors) Error() string {
 	var msgs []string
 	for _, err := range e {
@@ -164,6 +166,7 @@ func (c *Config) GetAllConfigs() []ConfigItem {
 }
 
 // GetConfigByName finds a config by name
+// GetConfigByName returns a config item by its name
 func (c *Config) GetConfigByName(name string) *ConfigItem {
 	for _, cfg := range c.Configs.Core {
 		if cfg.Name == name {
@@ -199,5 +202,22 @@ func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 			Message: "destination is required",
 		})
 	}
+
+	method := strings.ToLower(strings.TrimSpace(ext.Method))
+	if method != "" && method != "clone" && method != "copy" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".method",
+			Message: "method must be \"clone\" or \"copy\"",
+		})
+	}
+
+	merge := strings.ToLower(strings.TrimSpace(ext.MergeStrategy))
+	if merge != "" && merge != "overwrite" && merge != "keep_existing" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".merge_strategy",
+			Message: "merge_strategy must be \"overwrite\" or \"keep_existing\"",
+		})
+	}
+
 	return errors
 }

@@ -189,10 +189,12 @@ func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[s
 	return m
 }
 
+// Init initializes the dashboard model
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles messages and updates the dashboard model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -532,6 +534,7 @@ func (m Model) renderHelp() string {
 		Render(b.String())
 }
 
+// View renders the dashboard view
 func (m Model) View() string {
 	if m.quitting {
 		return ""
@@ -609,6 +612,7 @@ func (m Model) View() string {
 	return finalView
 }
 
+// renderHeader renders the dashboard header
 func (m Model) renderHeader() string {
 	titleStyle := lipgloss.NewStyle().
 		Foreground(ui.PrimaryColor).
@@ -634,6 +638,7 @@ func (m Model) renderHeader() string {
 	return title + subtitle + updateInfo
 }
 
+// renderStatus renders the overall sync status
 func (m Model) renderStatus() string {
 	var status string
 
@@ -693,6 +698,7 @@ func (m Model) renderFilterBar() string {
 	return "  " + filterIndicator + countText
 }
 
+// renderMachineStatus renders the status of machine-specific overrides
 func (m Model) renderMachineStatus() string {
 	var parts []string
 
@@ -788,6 +794,9 @@ func (m Model) getConfigStatusInfo(cfg config.ConfigItem, linkStatus *stow.Confi
 			// Resolve destination relative to home if not absolute
 			fullDest := dest
 			if !filepath.IsAbs(dest) {
+				if home == "" {
+					continue
+				}
 				fullDest = filepath.Join(home, dest)
 			}
 			if _, err := os.Stat(fullDest); os.IsNotExist(err) {
@@ -801,7 +810,7 @@ func (m Model) getConfigStatusInfo(cfg config.ConfigItem, linkStatus *stow.Confi
 	}
 
 	// Check module dependencies
-	if len(cfg.DependsOn) > 0 {
+	if len(cfg.DependsOn) > 0 && m.linkStatus != nil {
 		missingDep := false
 		for _, depName := range cfg.DependsOn {
 			depStatus, ok := m.linkStatus[depName]
@@ -818,6 +827,7 @@ func (m Model) getConfigStatusInfo(cfg config.ConfigItem, linkStatus *stow.Confi
 	return info
 }
 
+// renderConfigList renders the list of dotfile configurations
 func (m Model) renderConfigList() string {
 	var lines []string
 
@@ -891,8 +901,8 @@ func (m Model) renderConfigList() string {
 
 		// Show expanded details if this config is expanded
 		if i == m.expandedIdx {
-			if linkStatus != nil {
-				details := m.renderConfigDetails(cfg, linkStatus)
+			details := m.renderConfigDetails(cfg, linkStatus)
+			if strings.TrimSpace(details) != "" {
 				lines = append(lines, details)
 			} else {
 				lines = append(lines, subtleStyle.Render("      No status information available"))
@@ -908,6 +918,7 @@ func (m Model) renderConfigList() string {
 	return strings.Join(lines, "\n")
 }
 
+// renderActions renders the bottom action bar
 func (m Model) renderActions() string {
 	style := lipgloss.NewStyle().Foreground(ui.SubtleColor)
 	keyStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
@@ -1059,6 +1070,7 @@ func (m Model) renderConfigDetails(cfg config.ConfigItem, linkStatus *stow.Confi
 	return strings.Join(lines, "\n")
 }
 
+// min returns the minimum of two integers
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -1102,10 +1114,12 @@ func NewSetup(p *platform.Platform, updateMsg string) SetupModel {
 	}
 }
 
+// Init initializes the setup model
 func (m SetupModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles messages and updates the setup model
 func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -1138,6 +1152,7 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the setup view
 func (m SetupModel) View() string {
 	if m.quitting {
 		return ""
