@@ -72,6 +72,12 @@ func (c *Config) Validate() error {
 			})
 		}
 		configNames[cfg.Name] = true
+
+		// Validate per-config external dependencies
+		for j, ext := range cfg.ExternalDeps {
+			extErrors := validateExternalDep(ext, fmt.Sprintf("configs.core[%d].external_deps[%d]", i, j))
+			errors = append(errors, extErrors...)
+		}
 	}
 
 	// Check optional configs
@@ -97,28 +103,18 @@ func (c *Config) Validate() error {
 			})
 		}
 		configNames[cfg.Name] = true
+
+		// Validate per-config external dependencies
+		for j, ext := range cfg.ExternalDeps {
+			extErrors := validateExternalDep(ext, fmt.Sprintf("configs.optional[%d].external_deps[%d]", i, j))
+			errors = append(errors, extErrors...)
+		}
 	}
 
 	// Validate external dependencies
 	for i, ext := range c.External {
-		if ext.ID == "" {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("external[%d].id", i),
-				Message: "id is required",
-			})
-		}
-		if ext.URL == "" {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("external[%d].url", i),
-				Message: "url is required",
-			})
-		}
-		if ext.Destination == "" {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("external[%d].destination", i),
-				Message: "destination is required",
-			})
-		}
+		extErrors := validateExternalDep(ext, fmt.Sprintf("external[%d]", i))
+		errors = append(errors, extErrors...)
 	}
 
 	// Validate machine config
@@ -180,4 +176,28 @@ func (c *Config) GetConfigByName(name string) *ConfigItem {
 		}
 	}
 	return nil
+}
+
+// validateExternalDep validates a single external dependency
+func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
+	var errors []ValidationError
+	if ext.ID == "" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".id",
+			Message: "id is required",
+		})
+	}
+	if ext.URL == "" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".url",
+			Message: "url is required",
+		})
+	}
+	if ext.Destination == "" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".destination",
+			Message: "destination is required",
+		})
+	}
+	return errors
 }

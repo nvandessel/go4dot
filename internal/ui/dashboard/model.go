@@ -813,50 +813,18 @@ func (m Model) renderConfigList() string {
 
 		lines = append(lines, line)
 
-		// Show expanded file list if this config is expanded
-		if i == m.expandedIdx && linkStatus != nil && len(linkStatus.Files) > 0 {
-			maxFiles := 8
-			files := linkStatus.Files
-			start := m.scrollOffset
-			if start >= len(files) {
-				start = 0
-			}
-			end := start + maxFiles
-			if end > len(files) {
-				end = len(files)
-			}
-
-			for j := start; j < end; j++ {
-				f := files[j]
-				var fileIcon string
-				if f.IsLinked {
-					fileIcon = okStyle.Render("✓")
-				} else {
-					fileIcon = errStyle.Render("✗")
-				}
-				fileLine := fmt.Sprintf("      %s %s", fileIcon, subtleStyle.Render(f.RelPath))
-				if !f.IsLinked && f.Issue != "" {
-					fileLine += subtleStyle.Render(" (" + f.Issue + ")")
-				}
-				lines = append(lines, fileLine)
-			}
-
-			// Show scroll indicator if needed
-			if len(files) > maxFiles {
-				remaining := len(files) - end
-				if remaining > 0 {
-					lines = append(lines, subtleStyle.Render(fmt.Sprintf("      ... %d more (scroll with shift+j/k)", remaining)))
-				}
+		// Show expanded details if this config is expanded
+		if i == m.expandedIdx {
+			if linkStatus != nil {
+				details := m.renderConfigDetails(cfg, linkStatus)
+				lines = append(lines, details)
+			} else {
+				lines = append(lines, subtleStyle.Render("      No status information available"))
 			}
 		} else if i == m.selectedIdx && linkStatus != nil {
 			// Show summary hint when selected but not expanded
-			if !linkStatus.IsFullyLinked() && len(linkStatus.GetMissingFiles()) > 0 {
-				missing := linkStatus.GetMissingFiles()
-				hint := missing[0].RelPath
-				if len(missing) > 1 {
-					hint += fmt.Sprintf(" (+%d more)", len(missing)-1)
-				}
-				lines = append(lines, subtleStyle.Render(fmt.Sprintf("      press [e] to expand • %s", hint)))
+			if !linkStatus.IsFullyLinked() {
+				lines = append(lines, subtleStyle.Render("      press [e] to expand"))
 			}
 		}
 	}
@@ -883,6 +851,143 @@ func (m Model) renderActions() string {
 	}
 
 	return strings.Join(actions, "  ")
+}
+
+// renderConfigDetails renders comprehensive details for an expanded config
+func (m Model) renderConfigDetails(cfg config.ConfigItem, linkStatus *stow.ConfigLinkStatus) string {
+	var lines []string
+	indent := "      "
+
+	// Styles
+	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	warnStyle := ui.WarningStyle
+	errStyle := ui.ErrorStyle
+	subtleStyle := ui.SubtleStyle
+	headerStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
+
+	// Description header
+	if cfg.Description != "" {
+		lines = append(lines, subtleStyle.Render(indent+cfg.Description))
+		lines = append(lines, "")
+	}
+
+	// File breakdown section
+	if linkStatus != nil {
+		lines = append(lines, headerStyle.Render(indent+"Files:"))
+
+		// Get file lists
+		var linked []stow.FileStatus
+		var missing []stow.FileStatus
+		var conflicts []stow.FileStatus
+
+		for _, f := range linkStatus.Files {
+			if f.IsLinked {
+				linked = append(linked, f)
+			} else {
+				// Check if it's a conflict or just missing
+				issue := strings.ToLower(f.Issue)
+				if strings.Contains(issue, "conflict") ||
+					strings.Contains(issue, "exists") ||
+					strings.Contains(issue, "elsewhere") {
+					conflicts = append(conflicts, f)
+				} else {
+					missing = append(missing, f)
+				}
+			}
+		}
+
+		// Linked files
+		if len(linked) > 0 {
+			lines = append(lines, okStyle.Render(fmt.Sprintf(indent+"  ✓ %d linked", len(linked))))
+			displayCount := min(3, len(linked))
+			for i := 0; i < displayCount; i++ {
+				lines = append(lines, subtleStyle.Render(indent+"    "+linked[i].RelPath))
+			}
+			if len(linked) > 3 {
+				lines = append(lines, subtleStyle.Render(
+					fmt.Sprintf(indent+"    ... %d more", len(linked)-3)))
+			}
+		}
+
+		// Conflicts
+		if len(conflicts) > 0 {
+			lines = append(lines, warnStyle.Render(fmt.Sprintf(indent+"  ⚠ %d conflicts", len(conflicts))))
+			for _, f := range conflicts {
+				reason := f.Issue
+				if reason == "" {
+					reason = "file exists"
+				}
+				lines = append(lines, subtleStyle.Render(
+					fmt.Sprintf(indent+"    %s (%s)", f.RelPath, reason)))
+			}
+		}
+
+		// Missing/not linked files
+		if len(missing) > 0 {
+			lines = append(lines, errStyle.Render(fmt.Sprintf(indent+"  ✗ %d not linked", len(missing))))
+			displayCount := min(3, len(missing))
+			for i := 0; i < displayCount; i++ {
+				reason := missing[i].Issue
+				if reason == "" {
+					reason = "not linked"
+				}
+				lines = append(lines, subtleStyle.Render(
+					fmt.Sprintf(indent+"    %s (%s)", missing[i].RelPath, reason)))
+			}
+			if len(missing) > 3 {
+				lines = append(lines, subtleStyle.Render(
+					fmt.Sprintf(indent+"    ... %d more", len(missing)-3)))
+			}
+		}
+
+		lines = append(lines, "")
+	}
+
+	// Dependencies section
+	if len(cfg.DependsOn) > 0 {
+		lines = append(lines, headerStyle.Render(indent+"Dependencies:"))
+		displayCount := min(5, len(cfg.DependsOn))
+		for i := 0; i < displayCount; i++ {
+			lines = append(lines, subtleStyle.Render(indent+"  • "+cfg.DependsOn[i]))
+		}
+		if len(cfg.DependsOn) > 5 {
+			lines = append(lines, subtleStyle.Render(
+				fmt.Sprintf(indent+"  ... %d more", len(cfg.DependsOn)-5)))
+		}
+		lines = append(lines, "")
+	}
+
+	// External dependencies section
+	if len(cfg.ExternalDeps) > 0 {
+		lines = append(lines, headerStyle.Render(indent+"External:"))
+		displayCount := min(3, len(cfg.ExternalDeps))
+		for i := 0; i < displayCount; i++ {
+			extDep := cfg.ExternalDeps[i]
+			// Show URL
+			displayURL := extDep.URL
+			lines = append(lines, subtleStyle.Render(indent+"  • "+displayURL))
+		}
+		if len(cfg.ExternalDeps) > 3 {
+			lines = append(lines, subtleStyle.Render(
+				fmt.Sprintf(indent+"  ... %d more", len(cfg.ExternalDeps)-3)))
+		}
+		lines = append(lines, "")
+	}
+
+	// Statistics summary
+	if linkStatus != nil {
+		statsLine := fmt.Sprintf("Total: %d files", linkStatus.TotalCount)
+		lines = append(lines, subtleStyle.Render(indent+statsLine))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // GetResult returns the action result after the model exits
