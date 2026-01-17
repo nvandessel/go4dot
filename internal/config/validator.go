@@ -202,7 +202,6 @@ func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 			Message: "destination is required",
 		})
 	}
-
 	method := strings.ToLower(strings.TrimSpace(ext.Method))
 	if method != "" && method != "clone" && method != "copy" {
 		errors = append(errors, ValidationError{
@@ -218,6 +217,5 @@ func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 			Message: "merge_strategy must be \"overwrite\" or \"keep_existing\"",
 		})
 	}
-
 	return errors
 }
