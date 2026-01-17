@@ -2,6 +2,8 @@ package dashboard
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -501,6 +503,18 @@ func (m Model) renderHelp() string {
 	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("esc"), descStyle.Render("Exit filter mode")))
 	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("ctrl+c"), descStyle.Render("Clear filter and exit")))
 
+	// Status Indicators section
+	b.WriteString(headerStyle.Render("Status Indicators"))
+	b.WriteString("\n")
+	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	warnStyle := ui.WarningStyle
+	errStyle := ui.ErrorStyle
+	b.WriteString(fmt.Sprintf("  %s  %s\n", okStyle.Render("✓"), descStyle.Render("Fully linked / Configured")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", warnStyle.Render("◆"), descStyle.Render("Partially linked")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", warnStyle.Render("⚠"), descStyle.Render("Conflicts detected")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", errStyle.Render("✗"), descStyle.Render("Not linked / Missing")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", subtleStyle.Render("•"), descStyle.Render("Status tags (deps, external)")))
+
 	// Other section
 	b.WriteString(headerStyle.Render("Other"))
 	b.WriteString("\n")
@@ -686,16 +700,15 @@ func (m Model) renderMachineStatus() string {
 	parts = append(parts, headerStyle.Render("  Overrides:"))
 
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
-	missStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	errStyle := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 
 	for _, status := range m.machineStatus {
 		icon := ""
 		switch status.Status {
 		case "configured":
-			icon = okStyle.Render("+")
+			icon = okStyle.Render("✓")
 		case "missing":
-			icon = missStyle.Render("x")
+			icon = errStyle.Render("✗")
 		case "error":
 			icon = errStyle.Render("!")
 		}
@@ -706,14 +719,111 @@ func (m Model) renderMachineStatus() string {
 	return strings.Join(parts, "  ")
 }
 
+// configStatusInfo holds detailed status information for a config
+type configStatusInfo struct {
+	icon       string   // Primary status icon
+	statusText string   // "X/Y" display
+	statusTags []string // Additional status tags (conflicts, deps, external)
+}
+
+// getConfigStatusInfo analyzes a config and returns detailed status information
+func (m Model) getConfigStatusInfo(cfg config.ConfigItem, linkStatus *stow.ConfigLinkStatus, drift *stow.DriftResult) configStatusInfo {
+	info := configStatusInfo{
+		statusTags: []string{},
+	}
+
+	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	warnStyle := ui.WarningStyle
+	errStyle := ui.ErrorStyle
+
+	// Analyze link status
+	if linkStatus != nil {
+		// Check for conflicts
+		conflictCount := 0
+		for _, f := range linkStatus.Files {
+			if !f.IsLinked && (strings.Contains(strings.ToLower(f.Issue), "conflict") ||
+				strings.Contains(strings.ToLower(f.Issue), "exists") ||
+				strings.Contains(strings.ToLower(f.Issue), "elsewhere")) {
+				conflictCount++
+			}
+		}
+
+		// Determine primary icon
+		if conflictCount > 0 {
+			info.icon = warnStyle.Render("⚠")
+			info.statusTags = append(info.statusTags, fmt.Sprintf("conflicts (%d)", conflictCount))
+		} else if linkStatus.IsFullyLinked() {
+			info.icon = okStyle.Render("✓")
+		} else if linkStatus.LinkedCount > 0 {
+			info.icon = warnStyle.Render("◆") // Partial link indicator
+		} else {
+			info.icon = errStyle.Render("✗")
+		}
+
+		// File count
+		info.statusText = fmt.Sprintf("%d/%d", linkStatus.LinkedCount, linkStatus.TotalCount)
+	} else if drift != nil {
+		// Fallback to drift-based display if no link status
+		if drift.HasDrift {
+			info.icon = warnStyle.Render("◆")
+			info.statusText = fmt.Sprintf("%d new", len(drift.NewFiles))
+		} else {
+			info.icon = okStyle.Render("●")
+			info.statusText = fmt.Sprintf("%d files", drift.CurrentCount)
+		}
+	} else {
+		info.icon = ui.SubtleStyle.Render("○")
+		info.statusText = "unknown"
+	}
+
+	// Check external dependencies
+	if len(cfg.ExternalDeps) > 0 {
+		missingExternal := false
+		home := os.Getenv("HOME")
+		for _, ext := range cfg.ExternalDeps {
+			dest := ext.Destination
+			if dest == "" {
+				continue
+			}
+			// Resolve destination relative to home if not absolute
+			fullDest := dest
+			if !filepath.IsAbs(dest) {
+				fullDest = filepath.Join(home, dest)
+			}
+			if _, err := os.Stat(fullDest); os.IsNotExist(err) {
+				missingExternal = true
+				break
+			}
+		}
+		if missingExternal {
+			info.statusTags = append(info.statusTags, "external")
+		}
+	}
+
+	// Check module dependencies
+	if len(cfg.DependsOn) > 0 {
+		missingDep := false
+		for _, depName := range cfg.DependsOn {
+			depStatus, ok := m.linkStatus[depName]
+			if !ok || !depStatus.IsFullyLinked() {
+				missingDep = true
+				break
+			}
+		}
+		if missingDep {
+			info.statusTags = append(info.statusTags, "deps")
+		}
+	}
+
+	return info
+}
+
 func (m Model) renderConfigList() string {
 	var lines []string
 
 	normalStyle := ui.TextStyle
 	selectedStyle := ui.SelectedItemStyle
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
-	warnStyle := ui.WarningStyle
-	errStyle := ui.ErrorStyle
 	subtleStyle := ui.SubtleStyle
 
 	// Build a map of drift results for quick lookup
@@ -752,47 +862,8 @@ func (m Model) renderConfigList() string {
 		linkStatus := m.linkStatus[cfg.Name]
 		drift := driftMap[cfg.Name]
 
-		// Determine status icon and text based on link status
-		var statusIcon, statusText string
-
-		if linkStatus != nil {
-			linked := linkStatus.LinkedCount
-			total := linkStatus.TotalCount
-
-			if linkStatus.IsFullyLinked() {
-				// Fully linked
-				statusIcon = okStyle.Render("✓")
-				statusText = fmt.Sprintf("%d/%d", linked, total)
-			} else if linkStatus.IsPartiallyLinked() {
-				// Partially linked
-				statusIcon = warnStyle.Render("⚠")
-				newFiles := 0
-				if drift != nil {
-					newFiles = len(drift.NewFiles)
-				}
-				if newFiles > 0 {
-					statusText = fmt.Sprintf("%d/%d (%d new)", linked, total, newFiles)
-				} else {
-					statusText = fmt.Sprintf("%d/%d", linked, total)
-				}
-			} else {
-				// Not linked
-				statusIcon = errStyle.Render("✗")
-				statusText = fmt.Sprintf("0/%d", total)
-			}
-		} else if drift != nil {
-			// Fallback to drift-based display if no link status
-			if drift.HasDrift {
-				statusIcon = warnStyle.Render("◆")
-				statusText = fmt.Sprintf("%d new", len(drift.NewFiles))
-			} else {
-				statusIcon = okStyle.Render("●")
-				statusText = fmt.Sprintf("%d files", drift.CurrentCount)
-			}
-		} else {
-			statusIcon = subtleStyle.Render("○")
-			statusText = "unknown"
-		}
+		// Get enhanced status info
+		statusInfo := m.getConfigStatusInfo(cfg, linkStatus, drift)
 
 		// Pad name to align status
 		maxNameLen := 18
@@ -802,13 +873,18 @@ func (m Model) renderConfigList() string {
 		}
 		dots := subtleStyle.Render(strings.Repeat(".", maxNameLen-nameLen+2))
 
-		line = fmt.Sprintf("%s%s %s %s %s %s",
+		// Build status display
+		statusDisplay := statusInfo.icon + " " + subtleStyle.Render(statusInfo.statusText)
+		if len(statusInfo.statusTags) > 0 {
+			statusDisplay += " " + subtleStyle.Render("•") + " " + subtleStyle.Render(strings.Join(statusInfo.statusTags, " • "))
+		}
+
+		line = fmt.Sprintf("%s%s %s %s %s",
 			prefix,
 			checkbox,
 			nameStyle.Render(cfg.Name),
 			dots,
-			statusIcon,
-			subtleStyle.Render(statusText),
+			statusDisplay,
 		)
 
 		lines = append(lines, line)
