@@ -61,12 +61,13 @@ type ConfigGroups struct {
 
 // ConfigItem represents a single dotfile configuration
 type ConfigItem struct {
-	Name                  string   `yaml:"name"`
-	Path                  string   `yaml:"path"`
-	Description           string   `yaml:"description"`
-	Platforms             []string `yaml:"platforms"`
-	DependsOn             []string `yaml:"depends_on"`
-	RequiresMachineConfig bool     `yaml:"requires_machine_config"`
+	Name                  string        `yaml:"name"`
+	Path                  string        `yaml:"path"`
+	Description           string        `yaml:"description"`
+	Platforms             []string      `yaml:"platforms"`
+	DependsOn             []string      `yaml:"depends_on"`
+	ExternalDeps          []ExternalDep `yaml:"external_deps"`
+	RequiresMachineConfig bool          `yaml:"requires_machine_config"`
 }
 
 // ExternalDep represents an external dependency to clone (plugins, themes, etc.)
