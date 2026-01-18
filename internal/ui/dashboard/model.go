@@ -2,6 +2,8 @@ package dashboard
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -187,10 +189,12 @@ func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[s
 	return m
 }
 
+// Init initializes the dashboard model
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles messages and updates the dashboard model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -501,6 +505,18 @@ func (m Model) renderHelp() string {
 	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("esc"), descStyle.Render("Exit filter mode")))
 	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("ctrl+c"), descStyle.Render("Clear filter and exit")))
 
+	// Status Indicators section
+	b.WriteString(headerStyle.Render("Status Indicators"))
+	b.WriteString("\n")
+	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	warnStyle := ui.WarningStyle
+	errStyle := ui.ErrorStyle
+	b.WriteString(fmt.Sprintf("  %s  %s\n", okStyle.Render("✓"), descStyle.Render("Fully linked / Configured")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", warnStyle.Render("◆"), descStyle.Render("Partially linked")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", warnStyle.Render("⚠"), descStyle.Render("Conflicts detected")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", errStyle.Render("✗"), descStyle.Render("Not linked / Missing")))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", subtleStyle.Render("•"), descStyle.Render("Status tags (deps, external)")))
+
 	// Other section
 	b.WriteString(headerStyle.Render("Other"))
 	b.WriteString("\n")
@@ -518,6 +534,7 @@ func (m Model) renderHelp() string {
 		Render(b.String())
 }
 
+// View renders the dashboard view
 func (m Model) View() string {
 	if m.quitting {
 		return ""
@@ -595,6 +612,7 @@ func (m Model) View() string {
 	return finalView
 }
 
+// renderHeader renders the dashboard header
 func (m Model) renderHeader() string {
 	titleStyle := lipgloss.NewStyle().
 		Foreground(ui.PrimaryColor).
@@ -620,6 +638,7 @@ func (m Model) renderHeader() string {
 	return title + subtitle + updateInfo
 }
 
+// renderStatus renders the overall sync status
 func (m Model) renderStatus() string {
 	var status string
 
@@ -679,6 +698,7 @@ func (m Model) renderFilterBar() string {
 	return "  " + filterIndicator + countText
 }
 
+// renderMachineStatus renders the status of machine-specific overrides
 func (m Model) renderMachineStatus() string {
 	var parts []string
 
@@ -686,16 +706,15 @@ func (m Model) renderMachineStatus() string {
 	parts = append(parts, headerStyle.Render("  Overrides:"))
 
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
-	missStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	errStyle := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 
 	for _, status := range m.machineStatus {
 		icon := ""
 		switch status.Status {
 		case "configured":
-			icon = okStyle.Render("+")
+			icon = okStyle.Render("✓")
 		case "missing":
-			icon = missStyle.Render("x")
+			icon = errStyle.Render("✗")
 		case "error":
 			icon = errStyle.Render("!")
 		}
@@ -706,14 +725,115 @@ func (m Model) renderMachineStatus() string {
 	return strings.Join(parts, "  ")
 }
 
+// configStatusInfo holds detailed status information for a config
+type configStatusInfo struct {
+	icon       string   // Primary status icon
+	statusText string   // "X/Y" display
+	statusTags []string // Additional status tags (conflicts, deps, external)
+}
+
+// getConfigStatusInfo analyzes a config and returns detailed status information
+func (m Model) getConfigStatusInfo(cfg config.ConfigItem, linkStatus *stow.ConfigLinkStatus, drift *stow.DriftResult) configStatusInfo {
+	info := configStatusInfo{
+		statusTags: []string{},
+	}
+
+	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	warnStyle := ui.WarningStyle
+	errStyle := ui.ErrorStyle
+
+	// Analyze link status
+	if linkStatus != nil {
+		// Check for conflicts
+		conflictCount := 0
+		for _, f := range linkStatus.Files {
+			if !f.IsLinked && (strings.Contains(strings.ToLower(f.Issue), "conflict") ||
+				strings.Contains(strings.ToLower(f.Issue), "exists") ||
+				strings.Contains(strings.ToLower(f.Issue), "elsewhere")) {
+				conflictCount++
+			}
+		}
+
+		// Determine primary icon
+		if conflictCount > 0 {
+			info.icon = warnStyle.Render("⚠")
+			info.statusTags = append(info.statusTags, fmt.Sprintf("conflicts (%d)", conflictCount))
+		} else if linkStatus.IsFullyLinked() {
+			info.icon = okStyle.Render("✓")
+		} else if linkStatus.LinkedCount > 0 {
+			info.icon = warnStyle.Render("◆") // Partial link indicator
+		} else {
+			info.icon = errStyle.Render("✗")
+		}
+
+		// File count
+		info.statusText = fmt.Sprintf("%d/%d", linkStatus.LinkedCount, linkStatus.TotalCount)
+	} else if drift != nil {
+		// Fallback to drift-based display if no link status
+		if drift.HasDrift {
+			info.icon = warnStyle.Render("◆")
+			info.statusText = fmt.Sprintf("%d new", len(drift.NewFiles))
+		} else {
+			info.icon = okStyle.Render("●")
+			info.statusText = fmt.Sprintf("%d files", drift.CurrentCount)
+		}
+	} else {
+		info.icon = ui.SubtleStyle.Render("○")
+		info.statusText = "unknown"
+	}
+
+	// Check external dependencies
+	if len(cfg.ExternalDeps) > 0 {
+		missingExternal := false
+		home := os.Getenv("HOME")
+		for _, ext := range cfg.ExternalDeps {
+			dest := ext.Destination
+			if dest == "" {
+				continue
+			}
+			// Resolve destination relative to home if not absolute
+			fullDest := dest
+			if !filepath.IsAbs(dest) {
+				if home == "" {
+					continue
+				}
+				fullDest = filepath.Join(home, dest)
+			}
+			if _, err := os.Stat(fullDest); os.IsNotExist(err) {
+				missingExternal = true
+				break
+			}
+		}
+		if missingExternal {
+			info.statusTags = append(info.statusTags, "external")
+		}
+	}
+
+	// Check module dependencies
+	if len(cfg.DependsOn) > 0 && m.linkStatus != nil {
+		missingDep := false
+		for _, depName := range cfg.DependsOn {
+			depStatus, ok := m.linkStatus[depName]
+			if !ok || !depStatus.IsFullyLinked() {
+				missingDep = true
+				break
+			}
+		}
+		if missingDep {
+			info.statusTags = append(info.statusTags, "deps")
+		}
+	}
+
+	return info
+}
+
+// renderConfigList renders the list of dotfile configurations
 func (m Model) renderConfigList() string {
 	var lines []string
 
 	normalStyle := ui.TextStyle
 	selectedStyle := ui.SelectedItemStyle
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
-	warnStyle := ui.WarningStyle
-	errStyle := ui.ErrorStyle
 	subtleStyle := ui.SubtleStyle
 
 	// Build a map of drift results for quick lookup
@@ -752,47 +872,8 @@ func (m Model) renderConfigList() string {
 		linkStatus := m.linkStatus[cfg.Name]
 		drift := driftMap[cfg.Name]
 
-		// Determine status icon and text based on link status
-		var statusIcon, statusText string
-
-		if linkStatus != nil {
-			linked := linkStatus.LinkedCount
-			total := linkStatus.TotalCount
-
-			if linkStatus.IsFullyLinked() {
-				// Fully linked
-				statusIcon = okStyle.Render("✓")
-				statusText = fmt.Sprintf("%d/%d", linked, total)
-			} else if linkStatus.IsPartiallyLinked() {
-				// Partially linked
-				statusIcon = warnStyle.Render("⚠")
-				newFiles := 0
-				if drift != nil {
-					newFiles = len(drift.NewFiles)
-				}
-				if newFiles > 0 {
-					statusText = fmt.Sprintf("%d/%d (%d new)", linked, total, newFiles)
-				} else {
-					statusText = fmt.Sprintf("%d/%d", linked, total)
-				}
-			} else {
-				// Not linked
-				statusIcon = errStyle.Render("✗")
-				statusText = fmt.Sprintf("0/%d", total)
-			}
-		} else if drift != nil {
-			// Fallback to drift-based display if no link status
-			if drift.HasDrift {
-				statusIcon = warnStyle.Render("◆")
-				statusText = fmt.Sprintf("%d new", len(drift.NewFiles))
-			} else {
-				statusIcon = okStyle.Render("●")
-				statusText = fmt.Sprintf("%d files", drift.CurrentCount)
-			}
-		} else {
-			statusIcon = subtleStyle.Render("○")
-			statusText = "unknown"
-		}
+		// Get enhanced status info
+		statusInfo := m.getConfigStatusInfo(cfg, linkStatus, drift)
 
 		// Pad name to align status
 		maxNameLen := 18
@@ -802,21 +883,26 @@ func (m Model) renderConfigList() string {
 		}
 		dots := subtleStyle.Render(strings.Repeat(".", maxNameLen-nameLen+2))
 
-		line = fmt.Sprintf("%s%s %s %s %s %s",
+		// Build status display
+		statusDisplay := statusInfo.icon + " " + subtleStyle.Render(statusInfo.statusText)
+		if len(statusInfo.statusTags) > 0 {
+			statusDisplay += " " + subtleStyle.Render("•") + " " + subtleStyle.Render(strings.Join(statusInfo.statusTags, " • "))
+		}
+
+		line = fmt.Sprintf("%s%s %s %s %s",
 			prefix,
 			checkbox,
 			nameStyle.Render(cfg.Name),
 			dots,
-			statusIcon,
-			subtleStyle.Render(statusText),
+			statusDisplay,
 		)
 
 		lines = append(lines, line)
 
 		// Show expanded details if this config is expanded
 		if i == m.expandedIdx {
-			if linkStatus != nil {
-				details := m.renderConfigDetails(cfg, linkStatus)
+			details := m.renderConfigDetails(cfg, linkStatus)
+			if strings.TrimSpace(details) != "" {
 				lines = append(lines, details)
 			} else {
 				lines = append(lines, subtleStyle.Render("      No status information available"))
@@ -832,6 +918,7 @@ func (m Model) renderConfigList() string {
 	return strings.Join(lines, "\n")
 }
 
+// renderActions renders the bottom action bar
 func (m Model) renderActions() string {
 	style := lipgloss.NewStyle().Foreground(ui.SubtleColor)
 	keyStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
@@ -983,6 +1070,7 @@ func (m Model) renderConfigDetails(cfg config.ConfigItem, linkStatus *stow.Confi
 	return strings.Join(lines, "\n")
 }
 
+// min returns the minimum of two integers
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -1026,10 +1114,12 @@ func NewSetup(p *platform.Platform, updateMsg string) SetupModel {
 	}
 }
 
+// Init initializes the setup model
 func (m SetupModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles messages and updates the setup model
 func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -1062,6 +1152,7 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the setup view
 func (m SetupModel) View() string {
 	if m.quitting {
 		return ""
