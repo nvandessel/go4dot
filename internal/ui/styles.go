@@ -49,6 +49,12 @@ var (
 
 	SelectedItemStyle = lipgloss.NewStyle().
 				PaddingLeft(2).
-				Foreground(PrimaryColor).
+				Foreground(TextColor).
+				Background(PrimaryColor).
 				Bold(true)
+
+	HeaderStyle = lipgloss.NewStyle().
+			Foreground(PrimaryColor).
+			Bold(true).
+			Underline(true)
 )
