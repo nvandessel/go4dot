@@ -48,7 +48,6 @@ var (
 			PaddingLeft(2)
 
 	SelectedItemStyle = lipgloss.NewStyle().
-				PaddingLeft(2).
 				Foreground(TextColor).
 				Background(PrimaryColor).
 				Bold(true)

@@ -731,9 +731,11 @@ func (m Model) View() string {
 		sidebarWidth = 20
 	}
 
-	mainWidth := m.width - sidebarWidth - 3 // -3 for borders/spacing
+	// Total width = sidebarWidth + 1 (gap) + mainWidth = m.width
+	mainWidth := m.width - sidebarWidth - 1
 
 	// Sidebar (Config List)
+	// We use sidebarWidth-2 for content width because of borders
 	sidebarContent := m.renderConfigList(sidebarWidth, availableHeight)
 
 	// Add scroll indicators if needed
@@ -747,9 +749,9 @@ func (m Model) View() string {
 	sidebarContent = strings.Join(sidebarLines, "\n")
 
 	sidebar := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder(), true, true, true, true).
+		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.SubtleColor).
-		Width(sidebarWidth).
+		Width(sidebarWidth - 2).
 		Height(availableHeight).
 		Render(sidebarContent)
 
@@ -758,17 +760,17 @@ func (m Model) View() string {
 	if len(m.configs) > 0 && m.selectedIdx < len(m.configs) {
 		cfg := m.configs[m.selectedIdx]
 		linkStatus := m.linkStatus[cfg.Name]
-		mainContent = m.renderConfigDetails(cfg, linkStatus, mainWidth, availableHeight)
+		mainContent = m.renderConfigDetails(cfg, linkStatus, mainWidth-2, availableHeight)
 	} else {
-		mainContent = lipgloss.Place(mainWidth, availableHeight, lipgloss.Center, lipgloss.Center,
+		mainContent = lipgloss.Place(mainWidth-2, availableHeight, lipgloss.Center, lipgloss.Center,
 			ui.SubtleStyle.Render("No configuration selected"),
 		)
 	}
 
 	mainPanel := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder(), true, true, true, true).
+		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.PrimaryColor).
-		Width(mainWidth).
+		Width(mainWidth-2).
 		Height(availableHeight).
 		Padding(0, 1).
 		Render(mainContent)
@@ -1045,19 +1047,14 @@ func (m Model) renderConfigList(width, height int) string {
 		idx := m.filteredIdxs[i]
 		cfg := m.configs[idx]
 		var line string
-		prefix := "  "
+		prefix := " "
 		if idx == m.selectedIdx {
-			prefix = "> "
+			prefix = ">"
 		}
 
 		checkbox := "[ ]"
 		if m.selectedConfigs[cfg.Name] {
 			checkbox = okStyle.Render("[✓]")
-		}
-
-		nameStyle := normalStyle
-		if idx == m.selectedIdx {
-			nameStyle = selectedStyle
 		}
 
 		// Get link status for this config
@@ -1067,24 +1064,31 @@ func (m Model) renderConfigList(width, height int) string {
 		// Get enhanced status info
 		statusInfo := m.getConfigStatusInfo(cfg, linkStatus, drift)
 
-		// Pad name to align status
-		maxNameLen := width - 15
-		if maxNameLen < 10 {
-			maxNameLen = 10
+		// Calculate name width
+		// width - prefix(1) - space(1) - checkbox(3) - space(1) - icon(1) - padding(1)
+		nameWidth := width - 10
+		if nameWidth < 5 {
+			nameWidth = 5
 		}
 		name := cfg.Name
-		if len(name) > maxNameLen {
-			name = name[:maxNameLen-3] + "..."
+		if len(name) > nameWidth {
+			name = name[:nameWidth-3] + "..."
+		} else {
+			name = fmt.Sprintf("%-*s", nameWidth, name)
 		}
 
-		line = fmt.Sprintf("%s%s %s %s",
+		line = fmt.Sprintf("%s %s %s %s",
 			prefix,
 			checkbox,
-			nameStyle.Render(name),
+			name,
 			statusInfo.icon,
 		)
 
-		lines = append(lines, line)
+		if idx == m.selectedIdx {
+			lines = append(lines, selectedStyle.Render(line))
+		} else {
+			lines = append(lines, normalStyle.Render(" "+line))
+		}
 	}
 
 	// Fill remaining height with empty lines
