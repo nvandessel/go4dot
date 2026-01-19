@@ -447,13 +447,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateLayout recalculates layout-dependent values
 func (m *Model) updateLayout() {
-	// Rough estimate of fixed heights
-	fixedHeight := 15 // Header, status, filter, machine, actions
-	m.lastListHeight = m.height - fixedHeight
-	if m.lastListHeight < 5 {
-		m.lastListHeight = 5
-	}
+	m.lastListHeight = m.calculateAvailableHeight()
 	m.ensureVisible()
+}
+
+// calculateAvailableHeight computes the height available for the main content area
+// by measuring the rendered height of all other components.
+func (m *Model) calculateAvailableHeight() int {
+	// 1. Header
+	headerHeight := lipgloss.Height(m.renderHeader()) + 2
+
+	// 2. Status summary
+	statusHeight := lipgloss.Height(m.renderStatus()) + 2
+
+	// 3. Filter bar
+	filterHeight := 0
+	if m.filterMode || m.filterText != "" {
+		filterHeight = lipgloss.Height(m.renderFilterBar()) + 2
+	}
+
+	// 4. Machine status
+	machineHeight := 0
+	if len(m.machineStatus) > 0 {
+		machineHeight = lipgloss.Height(m.renderMachineStatus()) + 2
+	}
+
+	// 5. Action bar
+	actionsHeight := lipgloss.Height(m.renderActions()) + 1
+
+	// availableHeight is the inner height of the panels (excluding borders)
+	availableHeight := m.height - headerHeight - statusHeight - filterHeight - machineHeight - actionsHeight - 2
+	if availableHeight < 5 {
+		availableHeight = 5 // Minimum height
+	}
+	return availableHeight
 }
 
 // updateFilter recalculates which configs match the current filter text
@@ -511,9 +538,12 @@ func (m *Model) ensureVisible() {
 	}
 
 	// Use last calculated height or a default
-	listHeight := m.lastListHeight
+	// m.lastListHeight is the inner height of the panel.
+	// We subtract 2 to account for potential scroll indicators
+	// and provide a small buffer.
+	listHeight := m.lastListHeight - 2
 	if listHeight < 1 {
-		listHeight = 10
+		listHeight = 1
 	}
 
 	if currentPos < m.listOffset {
@@ -664,25 +694,10 @@ func (m Model) View() string {
 		b.WriteString("\n\n")
 	}
 
-	// Calculate available height for the main content area
-	headerHeight := lipgloss.Height(header) + 2
-	statusHeight := lipgloss.Height(status) + 2
-	filterHeight := 0
-	if filterBar != "" {
-		filterHeight = lipgloss.Height(filterBar) + 2
-	}
-	machineHeight := 0
-	if machineStatus != "" {
-		machineHeight = lipgloss.Height(machineStatus) + 2
-	}
 	actions := m.renderActions()
 	actionsHeight := lipgloss.Height(actions) + 1
 
-	availableHeight := m.height - headerHeight - statusHeight - filterHeight - machineHeight - actionsHeight - 2
-	if availableHeight < 5 {
-		availableHeight = 5 // Minimum height
-	}
-	m.lastListHeight = availableHeight
+	availableHeight := m.lastListHeight
 
 	// 5. Main Content (Split View)
 	sidebarWidth := 30
@@ -697,16 +712,36 @@ func (m Model) View() string {
 	mainWidth := m.width - sidebarWidth - 1
 
 	// Sidebar (Config List)
-	// We use sidebarWidth-2 for content width because of borders
-	sidebarContent := m.renderConfigList(sidebarWidth, availableHeight)
+	// availableHeight is the inner height of the panels.
+	innerPanelHeight := availableHeight
 
-	// Add scroll indicators if needed
-	sidebarLines := strings.Split(sidebarContent, "\n")
-	if m.listOffset > 0 && len(sidebarLines) > 0 {
-		sidebarLines[0] = lipgloss.NewStyle().Foreground(ui.PrimaryColor).Render("  ↑ more")
+	listHeight := innerPanelHeight
+	showTopIndicator := m.listOffset > 0
+	showBottomIndicator := m.listOffset+innerPanelHeight < len(m.filteredIdxs)
+
+	if showTopIndicator {
+		listHeight--
 	}
-	if m.listOffset+availableHeight < len(m.filteredIdxs) && len(sidebarLines) > 0 {
-		sidebarLines[len(sidebarLines)-1] = lipgloss.NewStyle().Foreground(ui.PrimaryColor).Render("  ↓ more")
+	if showBottomIndicator {
+		listHeight--
+	}
+
+	sidebarContent := m.renderConfigList(sidebarWidth, listHeight)
+	var sidebarLines []string
+	if showTopIndicator {
+		sidebarLines = append(sidebarLines, lipgloss.NewStyle().Foreground(ui.PrimaryColor).Render("  ↑ more"))
+	}
+	sidebarLines = append(sidebarLines, strings.Split(sidebarContent, "\n")...)
+	if showBottomIndicator {
+		sidebarLines = append(sidebarLines, lipgloss.NewStyle().Foreground(ui.PrimaryColor).Render("  ↓ more"))
+	}
+
+	// Ensure sidebarLines has exactly innerPanelHeight lines
+	for len(sidebarLines) < innerPanelHeight {
+		sidebarLines = append(sidebarLines, "")
+	}
+	if len(sidebarLines) > innerPanelHeight {
+		sidebarLines = sidebarLines[:innerPanelHeight]
 	}
 	sidebarContent = strings.Join(sidebarLines, "\n")
 
@@ -714,7 +749,7 @@ func (m Model) View() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.SubtleColor).
 		Width(sidebarWidth - 2).
-		Height(availableHeight).
+		Height(innerPanelHeight).
 		Render(sidebarContent)
 
 	// Main Panel (Details)
@@ -722,9 +757,9 @@ func (m Model) View() string {
 	if len(m.configs) > 0 && m.selectedIdx < len(m.configs) {
 		cfg := m.configs[m.selectedIdx]
 		linkStatus := m.linkStatus[cfg.Name]
-		mainContent = m.renderConfigDetails(cfg, linkStatus, mainWidth-2, availableHeight)
+		mainContent = m.renderConfigDetails(cfg, linkStatus, mainWidth-2, innerPanelHeight)
 	} else {
-		mainContent = lipgloss.Place(mainWidth-2, availableHeight, lipgloss.Center, lipgloss.Center,
+		mainContent = lipgloss.Place(mainWidth-2, innerPanelHeight, lipgloss.Center, lipgloss.Center,
 			ui.SubtleStyle.Render("No configuration selected"),
 		)
 	}
@@ -733,7 +768,7 @@ func (m Model) View() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.PrimaryColor).
 		Width(mainWidth-2).
-		Height(availableHeight).
+		Height(innerPanelHeight).
 		Padding(0, 1).
 		Render(mainContent)
 
@@ -981,7 +1016,7 @@ func (m Model) renderConfigList(width, height int) string {
 	var lines []string
 
 	normalStyle := ui.TextStyle
-	selectedStyle := ui.SelectedItemStyle.Copy().Width(width - 2)
+	selectedStyle := ui.SelectedItemStyle.Width(width - 2)
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
 	subtleStyle := ui.SubtleStyle
 
@@ -1008,10 +1043,10 @@ func (m Model) renderConfigList(width, height int) string {
 	for i := m.listOffset; i < endIdx; i++ {
 		idx := m.filteredIdxs[i]
 		cfg := m.configs[idx]
-		var line string
-		prefix := " "
+
+		prefix := "  "
 		if idx == m.selectedIdx {
-			prefix = ">"
+			prefix = "> "
 		}
 
 		checkbox := "[ ]"
@@ -1027,7 +1062,7 @@ func (m Model) renderConfigList(width, height int) string {
 		statusInfo := m.getConfigStatusInfo(cfg, linkStatus, drift)
 
 		// Calculate name width
-		// width - prefix(1) - space(1) - checkbox(3) - space(1) - icon(1) - padding(1)
+		// width - prefix(2) - checkbox(3) - space(1) - icon(1) - padding(1)
 		nameWidth := width - 10
 		if nameWidth < 5 {
 			nameWidth = 5
@@ -1039,17 +1074,20 @@ func (m Model) renderConfigList(width, height int) string {
 			name = fmt.Sprintf("%-*s", nameWidth, name)
 		}
 
-		line = fmt.Sprintf("%s %s %s %s",
+		content := fmt.Sprintf("%s%s %s %s",
 			prefix,
 			checkbox,
 			name,
 			statusInfo.icon,
 		)
 
+		// Pad to full width for consistent selection highlight and alignment
+		content = fmt.Sprintf("%-*s", width-2, content)
+
 		if idx == m.selectedIdx {
-			lines = append(lines, selectedStyle.Render(line))
+			lines = append(lines, selectedStyle.Render(content))
 		} else {
-			lines = append(lines, normalStyle.Render(" "+line))
+			lines = append(lines, normalStyle.Render(content))
 		}
 	}
 
@@ -1094,11 +1132,15 @@ func (m Model) renderActions() string {
 		width := lipgloss.Width(rendered)
 
 		if currentWidth+width+margin > m.width && len(visibleActions) > 0 {
-			// If we're out of space, we could wrap or just stop.
-			// For a "sexy" UI, let's try to fit as many as possible on one line,
-			// and maybe hide lower priority ones if the screen is too small.
-			if a.priority > 2 {
+			// If we're out of space, skip lower priority actions.
+			// Only allow priority 0 (Help, Quit) to potentially overflow slightly
+			// if they are the only ones, but generally we want to stop.
+			if a.priority > 0 {
 				continue
+			}
+			// For priority 0, if it still doesn't fit, we have to stop
+			if currentWidth+width > m.width {
+				break
 			}
 		}
 
@@ -1109,7 +1151,7 @@ func (m Model) renderActions() string {
 	return strings.Join(visibleActions, "   ")
 }
 
-// renderConfigDetails renders comprehensive details for an expanded config
+// renderConfigDetails renders comprehensive technical details for a config
 func (m Model) renderConfigDetails(cfg config.ConfigItem, linkStatus *stow.ConfigLinkStatus, width, height int) string {
 	var lines []string
 
@@ -1125,7 +1167,7 @@ func (m Model) renderConfigDetails(cfg config.ConfigItem, linkStatus *stow.Confi
 		Background(ui.PrimaryColor).
 		Padding(0, 1)
 
-	// Title & Status Badge
+	// 1. Header Section
 	driftMap := make(map[string]*stow.DriftResult)
 	if m.driftSummary != nil {
 		for i := range m.driftSummary.Results {
@@ -1153,92 +1195,67 @@ func (m Model) renderConfigDetails(cfg config.ConfigItem, linkStatus *stow.Confi
 		lines = append(lines, "")
 	}
 
-	// File breakdown section
+	// 2. Files Section (Technical Mapping)
 	if linkStatus != nil {
-		lines = append(lines, headerStyle.Render("FILES"))
-
-		// Get file lists
-		var linked []stow.FileStatus
-		var missing []stow.FileStatus
-		var conflicts []stow.FileStatus
+		lines = append(lines, headerStyle.Render("FILESYSTEM MAPPINGS"))
 
 		for _, f := range linkStatus.Files {
-			if f.IsLinked {
-				linked = append(linked, f)
-			} else {
-				issue := strings.ToLower(f.Issue)
-				if strings.Contains(issue, "conflict") ||
-					strings.Contains(issue, "exists") ||
-					strings.Contains(issue, "elsewhere") {
-					conflicts = append(conflicts, f)
+			icon := okStyle.Render("✓")
+			if !f.IsLinked {
+				if strings.Contains(strings.ToLower(f.Issue), "conflict") ||
+					strings.Contains(strings.ToLower(f.Issue), "exists") ||
+					strings.Contains(strings.ToLower(f.Issue), "elsewhere") {
+					icon = warnStyle.Render("⚠")
 				} else {
-					missing = append(missing, f)
+					icon = errStyle.Render("✗")
 				}
 			}
-		}
 
-		// Linked files
-		if len(linked) > 0 {
-			lines = append(lines, okStyle.Render(fmt.Sprintf("✓ %d linked", len(linked))))
-			displayCount := min(5, len(linked))
-			for i := 0; i < displayCount; i++ {
-				lines = append(lines, subtleStyle.Render("  "+linked[i].RelPath))
-			}
-			if len(linked) > 5 {
-				lines = append(lines, subtleStyle.Render(fmt.Sprintf("  ... %d more", len(linked)-5)))
-			}
-		}
+			// Format: [icon] source → ~/target
+			source := f.RelPath
+			target := filepath.Join("~", f.RelPath) // Simplified for display
 
-		// Conflicts
-		if len(conflicts) > 0 {
-			lines = append(lines, warnStyle.Render(fmt.Sprintf("⚠ %d conflicts", len(conflicts))))
-			for _, f := range conflicts {
-				reason := f.Issue
-				if reason == "" {
-					reason = "file exists"
-				}
-				lines = append(lines, subtleStyle.Render(fmt.Sprintf("  %s (%s)", f.RelPath, reason)))
+			mapping := fmt.Sprintf("%s %s %s %s", icon, source, subtleStyle.Render("→"), target)
+			lines = append(lines, mapping)
+
+			// Show issue if not linked
+			if !f.IsLinked && f.Issue != "" {
+				lines = append(lines, subtleStyle.Render("    └─ "+f.Issue))
 			}
 		}
-
-		// Missing/not linked files
-		if len(missing) > 0 {
-			lines = append(lines, errStyle.Render(fmt.Sprintf("✗ %d not linked", len(missing))))
-			displayCount := min(5, len(missing))
-			for i := 0; i < displayCount; i++ {
-				reason := missing[i].Issue
-				if reason == "" {
-					reason = "not linked"
-				}
-				lines = append(lines, subtleStyle.Render(fmt.Sprintf("  %s (%s)", missing[i].RelPath, reason)))
-			}
-			if len(missing) > 5 {
-				lines = append(lines, subtleStyle.Render(fmt.Sprintf("  ... %d more", len(missing)-5)))
-			}
-		}
-
 		lines = append(lines, "")
 	}
 
-	// Dependencies section
+	// 3. Dependencies Section
 	if len(cfg.DependsOn) > 0 {
-		lines = append(lines, headerStyle.Render("DEPENDENCIES"))
-		for _, dep := range cfg.DependsOn {
-			lines = append(lines, subtleStyle.Render("• "+dep))
+		lines = append(lines, headerStyle.Render("MODULE DEPENDENCIES"))
+		for _, depName := range cfg.DependsOn {
+			status := subtleStyle.Render("(unknown)")
+			if m.linkStatus != nil {
+				if depStatus, ok := m.linkStatus[depName]; ok {
+					if depStatus.IsFullyLinked() {
+						status = okStyle.Render("(✓ linked)")
+					} else {
+						status = warnStyle.Render("(✗ missing)")
+					}
+				}
+			}
+			lines = append(lines, fmt.Sprintf("• %s %s", depName, status))
 		}
 		lines = append(lines, "")
 	}
 
-	// External dependencies section
+	// 4. External Dependencies Section
 	if len(cfg.ExternalDeps) > 0 {
-		lines = append(lines, headerStyle.Render("EXTERNAL"))
+		lines = append(lines, headerStyle.Render("EXTERNAL REPOSITORIES"))
 		for _, extDep := range cfg.ExternalDeps {
-			lines = append(lines, subtleStyle.Render("• "+extDep.URL))
+			lines = append(lines, fmt.Sprintf("• %s", extDep.URL))
+			lines = append(lines, subtleStyle.Render("  └─ "+extDep.Destination))
 		}
 		lines = append(lines, "")
 	}
 
-	// Statistics summary (pinned to bottom of panel if possible)
+	// 5. Statistics summary (pinned to bottom)
 	if linkStatus != nil {
 		statsLine := fmt.Sprintf("Total: %d files", linkStatus.TotalCount)
 		statsStyle := lipgloss.NewStyle().
@@ -1246,23 +1263,19 @@ func (m Model) renderConfigDetails(cfg config.ConfigItem, linkStatus *stow.Confi
 			Align(lipgloss.Right).
 			Width(width - 4)
 
-		// If we have space, push stats to the bottom
+		// Calculate current height to see if we need to truncate or pad
 		currentHeight := lipgloss.Height(strings.Join(lines, "\n"))
 		if height > currentHeight+2 {
 			lines = append(lines, strings.Repeat("\n", height-currentHeight-2))
+			lines = append(lines, statsStyle.Render(statsLine))
+		} else {
+			// If too long, we might want to truncate the file list in a real app,
+			// but for now we'll just append the stats.
+			lines = append(lines, statsStyle.Render(statsLine))
 		}
-		lines = append(lines, statsStyle.Render(statsLine))
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // getSelectedConfigName returns the name of the currently selected config
