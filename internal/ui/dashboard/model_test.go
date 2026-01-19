@@ -11,7 +11,7 @@ import (
 )
 
 func TestModel_Update_Help(t *testing.T) {
-	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{}, "", "", false)
+	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{}, "", "", false, "", "")
 
 	// Initially help should be hidden
 	if m.showHelp {
@@ -47,11 +47,23 @@ func TestModel_Update_Help(t *testing.T) {
 }
 
 func TestModel_Update_Refresh(t *testing.T) {
-	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{}, "", "", false)
+	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{}, "", "", false, "", "")
 
 	// Press 'r' to refresh
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
 	updatedModel, cmd := m.Update(msg)
+	m = updatedModel.(Model)
+
+	if !m.refreshing {
+		t.Error("expected refreshing to be true after pressing 'r'")
+	}
+
+	if cmd == nil {
+		t.Error("expected a command after pressing 'r'")
+	}
+
+	// Simulate refresh completion
+	updatedModel, cmd = m.Update(refreshMsg{})
 	m = updatedModel.(Model)
 
 	if m.result == nil || m.result.Action != ActionRefresh {
@@ -67,7 +79,7 @@ func TestModel_View_Layout(t *testing.T) {
 	// This test ensures View doesn't crash and returns something
 	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{
 		{Name: "test"},
-	}, "", "", false)
+	}, "", "", false, "", "")
 	m.width = 80
 	m.height = 24
 
@@ -81,6 +93,14 @@ func TestModel_View_Layout(t *testing.T) {
 	view = m.View()
 	if !strings.Contains(view, "Keyboard Shortcuts") {
 		t.Error("expected help overlay in view")
+	}
+
+	// Check if refreshing indicator is rendered
+	m.showHelp = false
+	m.refreshing = true
+	view = m.View()
+	if !strings.Contains(view, "Refreshing dashboard...") {
+		t.Error("expected refreshing indicator in view")
 	}
 }
 
@@ -116,7 +136,7 @@ func TestModel_renderStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := New(&platform.Platform{}, tt.driftSummary, nil, nil, []config.ConfigItem{}, "", "", tt.hasBaseline)
+			m := New(&platform.Platform{}, tt.driftSummary, nil, nil, []config.ConfigItem{}, "", "", tt.hasBaseline, "", "")
 			status := m.renderStatus()
 			if !strings.Contains(status, tt.expected) {
 				t.Errorf("expected status to contain %q, got %q", tt.expected, status)
@@ -131,7 +151,7 @@ func TestModel_Update_Navigation(t *testing.T) {
 		{Name: "config2"},
 		{Name: "config3"},
 	}
-	m := New(&platform.Platform{}, nil, nil, nil, configs, "", "", true)
+	m := New(&platform.Platform{}, nil, nil, nil, configs, "", "", true, "", "")
 
 	// Initial selection should be 0
 	if m.selectedIdx != 0 {
@@ -154,5 +174,38 @@ func TestModel_Update_Navigation(t *testing.T) {
 
 	if m.selectedIdx != 0 {
 		t.Errorf("expected selectedIdx 0, got %d", m.selectedIdx)
+	}
+}
+
+func TestModel_StatePreservation(t *testing.T) {
+	configs := []config.ConfigItem{
+		{Name: "config1"},
+		{Name: "config2"},
+		{Name: "config3"},
+	}
+
+	// Test initial state restoration
+	m := New(&platform.Platform{}, nil, nil, nil, configs, "", "", true, "config", "config2")
+
+	if m.filterText != "config" {
+		t.Errorf("expected filterText 'config', got %q", m.filterText)
+	}
+
+	// config2 should be selected
+	if m.configs[m.selectedIdx].Name != "config2" {
+		t.Errorf("expected selected config 'config2', got %q", m.configs[m.selectedIdx].Name)
+	}
+
+	// Test state capture in result
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")}
+	updatedModel, _ := m.Update(msg)
+	m = updatedModel.(Model)
+
+	if m.result.FilterText != "config" {
+		t.Errorf("expected result FilterText 'config', got %q", m.result.FilterText)
+	}
+
+	if m.result.SelectedConfig != "config2" {
+		t.Errorf("expected result SelectedConfig 'config2', got %q", m.result.SelectedConfig)
 	}
 }

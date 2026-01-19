@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -38,9 +39,11 @@ const (
 
 // Result is returned when the dashboard exits
 type Result struct {
-	Action      Action
-	ConfigName  string   // For ActionSyncConfig
-	ConfigNames []string // For ActionBulkSync
+	Action         Action
+	ConfigName     string   // For ActionSyncConfig
+	ConfigNames    []string // For ActionBulkSync
+	FilterText     string   // For preserving state
+	SelectedConfig string   // For preserving state
 }
 
 // MachineStatus represents the status of a machine config for the dashboard
@@ -72,6 +75,7 @@ type Model struct {
 	quitting        bool
 	hasBaseline     bool // True if we have stored symlink counts (synced before)
 	showHelp        bool
+	refreshing      bool
 }
 
 // keyMap defines the key bindings
@@ -167,7 +171,7 @@ var keys = keyMap{
 }
 
 // New creates a new dashboard model
-func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) Model {
+func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool, initialFilter string, initialSelected string) Model {
 	m := Model{
 		platform:        p,
 		driftSummary:    driftSummary,
@@ -180,12 +184,29 @@ func New(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[s
 		expandedIdx:     -1,
 		hasBaseline:     hasBaseline,
 		filterMode:      false,
-		filterText:      "",
+		filterText:      initialFilter,
 		filteredIdxs:    []int{},
 		selectedConfigs: make(map[string]bool),
 		showHelp:        false,
 	}
 	m.updateFilter()
+
+	// Try to restore selection
+	if initialSelected != "" {
+		for i, cfg := range m.configs {
+			if cfg.Name == initialSelected {
+				// Check if it's in the filtered list
+				for _, fIdx := range m.filteredIdxs {
+					if fIdx == i {
+						m.selectedIdx = i
+						break
+					}
+				}
+				break
+			}
+		}
+	}
+
 	return m
 }
 
@@ -194,9 +215,25 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+type refreshMsg struct{}
+
+func doRefresh() tea.Cmd {
+	return tea.Tick(150*time.Millisecond, func(t time.Time) tea.Msg {
+		return refreshMsg{}
+	})
+}
+
 // Update handles messages and updates the dashboard model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case refreshMsg:
+		m.result = &Result{
+			Action:         ActionRefresh,
+			FilterText:     m.filterText,
+			SelectedConfig: m.getSelectedConfigName(),
+		}
+		return m, tea.Quit
+
 	case tea.KeyMsg:
 		// Help overlay takes precedence
 		if m.showHelp {
@@ -242,7 +279,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, keys.Quit):
-			m.result = &Result{Action: ActionQuit}
+			m.result = &Result{
+				Action:         ActionQuit,
+				FilterText:     m.filterText,
+				SelectedConfig: m.getSelectedConfigName(),
+			}
 			m.quitting = true
 			return m, tea.Quit
 
@@ -255,11 +296,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, keys.Refresh):
-			m.result = &Result{Action: ActionRefresh}
-			return m, tea.Quit
+			m.refreshing = true
+			return m, doRefresh()
 
 		case key.Matches(msg, keys.Sync):
-			m.result = &Result{Action: ActionSync}
+			m.result = &Result{
+				Action:         ActionSync,
+				FilterText:     m.filterText,
+				SelectedConfig: m.getSelectedConfigName(),
+			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Bulk):
@@ -269,8 +314,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					names = append(names, name)
 				}
 				m.result = &Result{
-					Action:      ActionBulkSync,
-					ConfigNames: names,
+					Action:         ActionBulkSync,
+					ConfigNames:    names,
+					FilterText:     m.filterText,
+					SelectedConfig: m.getSelectedConfigName(),
 				}
 				return m, tea.Quit
 			}
@@ -311,25 +358,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, keys.Doctor):
-			m.result = &Result{Action: ActionDoctor}
+			m.result = &Result{
+				Action:         ActionDoctor,
+				FilterText:     m.filterText,
+				SelectedConfig: m.getSelectedConfigName(),
+			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Install):
-			m.result = &Result{Action: ActionInstall}
+			m.result = &Result{
+				Action:         ActionInstall,
+				FilterText:     m.filterText,
+				SelectedConfig: m.getSelectedConfigName(),
+			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Machine):
-			m.result = &Result{Action: ActionMachineConfig}
+			m.result = &Result{
+				Action:         ActionMachineConfig,
+				FilterText:     m.filterText,
+				SelectedConfig: m.getSelectedConfigName(),
+			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Update):
-			m.result = &Result{Action: ActionUpdate}
+			m.result = &Result{
+				Action:         ActionUpdate,
+				FilterText:     m.filterText,
+				SelectedConfig: m.getSelectedConfigName(),
+			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Menu):
 			// For now, we'll just return a special action to show the menu
 			// In a more complex app, we might switch models here
-			m.result = &Result{Action: ActionList} // Using ActionList as a placeholder for "More"
+			m.result = &Result{
+				Action:         ActionList, // Using ActionList as a placeholder for "More"
+				FilterText:     m.filterText,
+				SelectedConfig: m.getSelectedConfigName(),
+			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
@@ -383,8 +450,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Enter):
 			if len(m.configs) > 0 && m.selectedIdx < len(m.configs) {
 				m.result = &Result{
-					Action:     ActionSyncConfig,
-					ConfigName: m.configs[m.selectedIdx].Name,
+					Action:         ActionSyncConfig,
+					ConfigName:     m.configs[m.selectedIdx].Name,
+					FilterText:     m.filterText,
+					SelectedConfig: m.getSelectedConfigName(),
 				}
 				return m, tea.Quit
 			}
@@ -538,6 +607,15 @@ func (m Model) renderHelp() string {
 func (m Model) View() string {
 	if m.quitting {
 		return ""
+	}
+
+	if m.refreshing {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+			lipgloss.NewStyle().
+				Foreground(ui.PrimaryColor).
+				Bold(true).
+				Render("Refreshing dashboard..."),
+		)
 	}
 
 	var b strings.Builder
@@ -1078,14 +1156,22 @@ func min(a, b int) int {
 	return b
 }
 
+// getSelectedConfigName returns the name of the currently selected config
+func (m Model) getSelectedConfigName() string {
+	if len(m.configs) > 0 && m.selectedIdx < len(m.configs) {
+		return m.configs[m.selectedIdx].Name
+	}
+	return ""
+}
+
 // GetResult returns the action result after the model exits
 func (m Model) GetResult() *Result {
 	return m.result
 }
 
 // Run starts the dashboard and returns the selected action
-func Run(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool) (*Result, error) {
-	m := New(p, driftSummary, linkStatus, machineStatus, configs, dotfilesPath, updateMsg, hasBaseline)
+func Run(p *platform.Platform, driftSummary *stow.DriftSummary, linkStatus map[string]*stow.ConfigLinkStatus, machineStatus []MachineStatus, configs []config.ConfigItem, dotfilesPath string, updateMsg string, hasBaseline bool, initialFilter string, initialSelected string) (*Result, error) {
+	m := New(p, driftSummary, linkStatus, machineStatus, configs, dotfilesPath, updateMsg, hasBaseline, initialFilter, initialSelected)
 
 	finalModel, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {

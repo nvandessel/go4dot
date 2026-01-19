@@ -132,3 +132,11 @@ Launches a Docker or Podman cotainer, so the symlinks can easily and safely be t
 ```bash
 make sandbox   # Run Docker/Podman container for isolated testing
 ```
+
+## AI guidance
+- ensure you're making feature branches
+- use gh cli when you can
+- finish all tasks with make build and make lint prior to commits
+- ensure you're writting unit tests
+- ensure you're implmenting good Architecture
+- focus on SOLID principles

@@ -142,7 +142,7 @@ func TestModel_getConfigStatusInfo(t *testing.T) {
 }
 
 func TestModel_renderHelp_StatusLegend(t *testing.T) {
-	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{}, "", "", false)
+	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{}, "", "", false, "", "")
 	help := m.renderHelp()
 
 	expected := []string{

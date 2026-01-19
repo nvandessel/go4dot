@@ -49,6 +49,10 @@ func runInteractive(cmd *cobra.Command, args []string) {
 	// Detect platform once
 	p, _ := platform.Detect()
 
+	// State preservation across dashboard runs
+	lastFilter := ""
+	lastSelected := ""
+
 	// Main application loop - stays in the app until user quits
 	for {
 		// Check for update message
@@ -102,7 +106,7 @@ func runInteractive(cmd *cobra.Command, args []string) {
 			}
 
 			allConfigs := cfg.GetAllConfigs()
-			result, err = dashboard.Run(p, driftSummary, linkStatus, dashStatus, allConfigs, dotfilesPath, updateMsg, hasBaseline)
+			result, err = dashboard.Run(p, driftSummary, linkStatus, dashStatus, allConfigs, dotfilesPath, updateMsg, hasBaseline, lastFilter, lastSelected)
 		}
 
 		if err != nil {
@@ -113,6 +117,10 @@ func runInteractive(cmd *cobra.Command, args []string) {
 		if result == nil {
 			return
 		}
+
+		// Update state for next run
+		lastFilter = result.FilterText
+		lastSelected = result.SelectedConfig
 
 		// Handle the action
 		shouldExit := handleAction(result, cfg, configPath)
