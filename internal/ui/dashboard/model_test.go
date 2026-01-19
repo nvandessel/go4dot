@@ -46,35 +46,6 @@ func TestModel_Update_Help(t *testing.T) {
 	}
 }
 
-func TestModel_Update_Refresh(t *testing.T) {
-	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{}, "", "", false, "", "")
-
-	// Press 'r' to refresh
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
-	updatedModel, cmd := m.Update(msg)
-	m = updatedModel.(Model)
-
-	if !m.refreshing {
-		t.Error("expected refreshing to be true after pressing 'r'")
-	}
-
-	if cmd == nil {
-		t.Error("expected a command after pressing 'r'")
-	}
-
-	// Simulate refresh completion
-	updatedModel, cmd = m.Update(refreshMsg{})
-	m = updatedModel.(Model)
-
-	if m.result == nil || m.result.Action != ActionRefresh {
-		t.Errorf("expected ActionRefresh, got %v", m.result)
-	}
-
-	if cmd == nil {
-		t.Error("expected tea.Quit command")
-	}
-}
-
 func TestModel_View_Layout(t *testing.T) {
 	// This test ensures View doesn't crash and returns something
 	m := New(&platform.Platform{}, nil, nil, nil, []config.ConfigItem{
@@ -93,14 +64,6 @@ func TestModel_View_Layout(t *testing.T) {
 	view = m.View()
 	if !strings.Contains(view, "Keyboard Shortcuts") {
 		t.Error("expected help overlay in view")
-	}
-
-	// Check if refreshing indicator is rendered
-	m.showHelp = false
-	m.refreshing = true
-	view = m.View()
-	if !strings.Contains(view, "Refreshing dashboard...") {
-		t.Error("expected refreshing indicator in view")
 	}
 }
 
