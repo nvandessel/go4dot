@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -34,7 +33,6 @@ const (
 	ActionInit
 	ActionQuit
 	ActionBulkSync
-	ActionRefresh
 )
 
 // Result is returned when the dashboard exits
@@ -76,7 +74,6 @@ type Model struct {
 	quitting        bool
 	hasBaseline     bool // True if we have stored symlink counts (synced before)
 	showHelp        bool
-	refreshing      bool
 	lastListHeight  int // Last calculated height of the config list
 }
 
@@ -98,7 +95,6 @@ type keyMap struct {
 	Select  key.Binding
 	All     key.Binding
 	Bulk    key.Binding
-	Refresh key.Binding
 }
 
 var keys = keyMap{
@@ -166,10 +162,6 @@ var keys = keyMap{
 		key.WithKeys("S"),
 		key.WithHelp("shift+s", "sync selected"),
 	),
-	Refresh: key.NewBinding(
-		key.WithKeys("r"),
-		key.WithHelp("r", "refresh"),
-	),
 }
 
 // New creates a new dashboard model
@@ -218,25 +210,9 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-type refreshMsg struct{}
-
-func doRefresh() tea.Cmd {
-	return tea.Tick(150*time.Millisecond, func(t time.Time) tea.Msg {
-		return refreshMsg{}
-	})
-}
-
 // Update handles messages and updates the dashboard model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case refreshMsg:
-		m.result = &Result{
-			Action:         ActionRefresh,
-			FilterText:     m.filterText,
-			SelectedConfig: m.getSelectedConfigName(),
-		}
-		return m, tea.Quit
-
 	case tea.KeyMsg:
 		// Help overlay takes precedence
 		if m.showHelp {
@@ -297,10 +273,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Help):
 			m.showHelp = true
 			return m, nil
-
-		case key.Matches(msg, keys.Refresh):
-			m.refreshing = true
-			return m, doRefresh()
 
 		case key.Matches(msg, keys.Sync):
 			m.result = &Result{
@@ -609,7 +581,6 @@ func (m Model) renderHelp() string {
 	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("shift+s"), descStyle.Render("Sync selected configs")))
 	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("i"), descStyle.Render("Run install wizard")))
 	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("u"), descStyle.Render("Update dotfiles/deps")))
-	b.WriteString(fmt.Sprintf("%s%s\n", keyStyle.Render("r"), descStyle.Render("Refresh dashboard")))
 
 	// Selection section
 	b.WriteString(headerStyle.Render("Selection"))
@@ -657,15 +628,6 @@ func (m Model) renderHelp() string {
 func (m Model) View() string {
 	if m.quitting {
 		return ""
-	}
-
-	if m.refreshing {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-			lipgloss.NewStyle().
-				Foreground(ui.PrimaryColor).
-				Bold(true).
-				Render("Refreshing dashboard..."),
-		)
 	}
 
 	// Show help overlay if active
@@ -961,11 +923,11 @@ func (m Model) getConfigStatusInfo(cfg config.ConfigItem, linkStatus *stow.Confi
 			info.icon = warnStyle.Render("◆")
 			info.statusText = fmt.Sprintf("%d new", len(drift.NewFiles))
 		} else {
-			info.icon = okStyle.Render("●")
+			info.icon = okStyle.Render("✓")
 			info.statusText = fmt.Sprintf("%d files", drift.CurrentCount)
 		}
 	} else {
-		info.icon = ui.SubtleStyle.Render("○")
+		info.icon = ui.SubtleStyle.Render("•")
 		info.statusText = "unknown"
 	}
 
@@ -1116,7 +1078,6 @@ func (m Model) renderActions() string {
 		{"s", "Sync All", 1},
 		{"/", "Filter", 1},
 		{"space", "Select", 2},
-		{"r", "Refresh", 2},
 		{"i", "Install", 3},
 		{"u", "Update", 3},
 		{"d", "Doctor", 4},
