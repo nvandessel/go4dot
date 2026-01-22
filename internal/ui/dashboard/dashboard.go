@@ -12,8 +12,14 @@ import (
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
+type view int
+
+const (
+	viewDashboard view = iota
+	viewMenu
+)
+
 // State holds all the shared data for the dashboard.
-// It is passed to components to ensure they have the data they need to render.
 type State struct {
 	Platform       *platform.Platform
 	DriftSummary   *stow.DriftSummary
@@ -28,7 +34,6 @@ type State struct {
 }
 
 // Model is the main container for the dashboard.
-// It holds all the sub-components and manages the overall layout and state.
 type Model struct {
 	state           State
 	width           int
@@ -38,6 +43,8 @@ type Model struct {
 	filterMode      bool
 	filterText      string
 	selectedConfigs map[string]bool
+	showHelp        bool
+	currentView     view
 
 	// Components
 	header  Header
@@ -45,6 +52,8 @@ type Model struct {
 	sidebar Sidebar
 	details Details
 	footer  Footer
+	help    Help
+	menu    Menu
 }
 
 // New creates a new dashboard model.
@@ -52,12 +61,15 @@ func New(s State) Model {
 	m := Model{
 		state:           s,
 		selectedConfigs: make(map[string]bool),
+		currentView:     viewDashboard,
 	}
 	m.header = NewHeader(s)
 	m.summary = NewSummary(s)
 	m.sidebar = NewSidebar(s, m.selectedConfigs)
 	m.details = NewDetails(s)
 	m.footer = NewFooter()
+	m.help = NewHelp()
+	m.menu = NewMenu()
 	return m
 }
 
@@ -66,6 +78,31 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
+	if m.showHelp {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch {
+			case key.Matches(msg, keys.Help), key.Matches(msg, keys.Quit):
+				m.showHelp = false
+			}
+		}
+		return m, nil
+	}
+
+	switch m.currentView {
+	case viewMenu:
+		return m.updateMenu(msg)
+	default:
+		return m.updateDashboard(msg)
+	}
+}
+
+func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -91,6 +128,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
+		case key.Matches(msg, keys.Help):
+			m.showHelp = true
 		case key.Matches(msg, keys.Quit):
 			m.quitting = true
 			m.result = &Result{Action: ActionQuit}
@@ -114,8 +153,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result = &Result{Action: ActionUpdate}
 			return m, tea.Quit
 		case key.Matches(msg, keys.Menu):
-			m.result = &Result{Action: ActionList}
-			return m, tea.Quit
+			m.currentView = viewMenu
 		case key.Matches(msg, keys.Enter):
 			m.result = &Result{Action: ActionSyncConfig, ConfigName: m.state.Configs[m.sidebar.selectedIdx].Name}
 			return m, tea.Quit
@@ -161,6 +199,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.details.width = msg.Width - m.sidebar.width
 		m.details.height = m.sidebar.height
 		m.footer.width = msg.Width
+		m.help.width = msg.Width
+		m.help.height = msg.Height
 	}
 
 	cmd = m.sidebar.Update(msg)
@@ -169,6 +209,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.details.selectedIdx = m.sidebar.selectedIdx
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, keys.Quit):
+			m.currentView = viewDashboard
+		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+			item, ok := m.menu.list.SelectedItem().(menuItem)
+			if ok {
+				m.result = &Result{Action: item.action}
+				return m, tea.Quit
+			}
+		}
+	}
+
+	var cmd tea.Cmd
+	m.menu.list, cmd = m.menu.list.Update(msg)
+	return m, cmd
 }
 
 func (m *Model) updateFilter() {
@@ -195,6 +255,19 @@ func (m Model) View() string {
 		return ""
 	}
 
+	if m.showHelp {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.help.View())
+	}
+
+	switch m.currentView {
+	case viewMenu:
+		return m.menu.View()
+	default:
+		return m.viewDashboard()
+	}
+}
+
+func (m Model) viewDashboard() string {
 	sidebarView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.SubtleColor).
