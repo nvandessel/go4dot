@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -29,7 +31,7 @@ func (e ValidationErrors) Error() string {
 }
 
 // Validate checks if the configuration is valid
-func (c *Config) Validate() error {
+func (c *Config) Validate(configDir string) error {
 	var errors ValidationErrors
 
 	// Check schema version
@@ -75,6 +77,10 @@ func (c *Config) Validate() error {
 		}
 		configNames[cfg.Name] = true
 
+		// Validate path
+		pathErrors := validateConfigPath(cfg.Path, configDir, fmt.Sprintf("configs.core[%d].path", i))
+		errors = append(errors, pathErrors...)
+
 		// Validate per-config external dependencies
 		for j, ext := range cfg.ExternalDeps {
 			extErrors := validateExternalDep(ext, fmt.Sprintf("configs.core[%d].external_deps[%d]", i, j))
@@ -105,6 +111,10 @@ func (c *Config) Validate() error {
 			})
 		}
 		configNames[cfg.Name] = true
+
+		// Validate path
+		pathErrors := validateConfigPath(cfg.Path, configDir, fmt.Sprintf("configs.optional[%d].path", i))
+		errors = append(errors, pathErrors...)
 
 		// Validate per-config external dependencies
 		for j, ext := range cfg.ExternalDeps {
@@ -139,6 +149,53 @@ func (c *Config) Validate() error {
 				Message: "template is required",
 			})
 		}
+	}
+
+	// Validate post_install script
+	if c.PostInstall != "" {
+		scriptPath := c.PostInstall
+		if !filepath.IsAbs(scriptPath) {
+			scriptPath = filepath.Join(configDir, scriptPath)
+		}
+		info, err := os.Stat(scriptPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				errors = append(errors, ValidationError{
+					Field:   "post_install",
+					Message: fmt.Sprintf("script does not exist: %s", scriptPath),
+				})
+			} else {
+				errors = append(errors, ValidationError{
+					Field:   "post_install",
+					Message: fmt.Sprintf("invalid path for script: %s (%v)", scriptPath, err),
+				})
+			}
+		} else {
+			// Check if it's a file and executable
+			if info.IsDir() {
+				errors = append(errors, ValidationError{
+					Field:   "post_install",
+					Message: fmt.Sprintf("path is a directory, not a file: %s", scriptPath),
+				})
+			} else if info.Mode()&0111 == 0 {
+				errors = append(errors, ValidationError{
+					Field:   "post_install",
+					Message: fmt.Sprintf("script is not executable: %s", scriptPath),
+				})
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return errors
+	}
+
+	// Check for circular dependencies
+	if err := c.validateCircularDependencies(); err != nil {
+		errors = append(errors, ValidationError{
+			Field:   "configs",
+			Message: err.Error(),
+		})
 	}
 
 	if len(errors) > 0 {
@@ -181,6 +238,36 @@ func (c *Config) GetConfigByName(name string) *ConfigItem {
 	return nil
 }
 
+// validateConfigPath validates a single config path
+func validateConfigPath(path, configDir, fieldPrefix string) []ValidationError {
+	var errors []ValidationError
+	if path == "" {
+		// This is already checked in the main validation loop,
+		// but we keep it here for robustness.
+		return errors
+	}
+
+	absPath := path
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(configDir, absPath)
+	}
+
+	if _, err := os.Stat(absPath); err != nil {
+		if os.IsNotExist(err) {
+			errors = append(errors, ValidationError{
+				Field:   fieldPrefix,
+				Message: fmt.Sprintf("path does not exist: %s", absPath),
+			})
+		} else {
+			errors = append(errors, ValidationError{
+				Field:   fieldPrefix,
+				Message: fmt.Sprintf("invalid path: %s (%v)", absPath, err),
+			})
+		}
+	}
+	return errors
+}
+
 // validateExternalDep validates a single external dependency
 func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 	var errors []ValidationError
@@ -218,4 +305,43 @@ func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 		})
 	}
 	return errors
+}
+
+func (c *Config) validateCircularDependencies() error {
+	allConfigs := c.GetAllConfigs()
+	graph := make(map[string][]string)
+	for _, cfg := range allConfigs {
+		graph[cfg.Name] = cfg.DependsOn
+	}
+
+	visiting := make(map[string]bool)
+	visited := make(map[string]bool)
+
+	var dfs func(name string) error
+	dfs = func(name string) error {
+		visiting[name] = true
+		for _, dep := range graph[name] {
+			if visiting[dep] {
+				return fmt.Errorf("circular dependency detected: %s -> %s", name, dep)
+			}
+			if !visited[dep] {
+				if err := dfs(dep); err != nil {
+					return err
+				}
+			}
+		}
+		visiting[name] = false
+		visited[name] = true
+		return nil
+	}
+
+	for name := range graph {
+		if !visited[name] {
+			if err := dfs(name); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
