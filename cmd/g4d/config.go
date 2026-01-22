@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ var configValidateCmd = &cobra.Command{
 		fmt.Printf("Loaded config from: %s\n", configPath)
 
 		// Validate
-		if err := cfg.Validate(); err != nil {
+		if err := cfg.Validate(filepath.Dir(configPath)); err != nil {
 			fmt.Fprintf(os.Stderr, "Validation failed:\n%v\n", err)
 			os.Exit(1)
 		}
