@@ -55,7 +55,7 @@ type Model struct {
 	details  Details
 	footer   Footer
 	help     Help
-	menu     Menu
+	menu     *Menu
 	noconfig NoConfig
 }
 
@@ -64,6 +64,10 @@ func New(s State) Model {
 	m := Model{
 		state:           s,
 		selectedConfigs: make(map[string]bool),
+		filterText:      s.FilterText,
+	}
+	if s.SelectedConfig != "" {
+		m.selectedConfigs[s.SelectedConfig] = true
 	}
 	if !s.HasConfig {
 		m.currentView = viewNoConfig
@@ -77,7 +81,8 @@ func New(s State) Model {
 	m.details = NewDetails(s)
 	m.footer = NewFooter()
 	m.help = NewHelp()
-	m.menu = NewMenu()
+	m.menu = &Menu{}
+	*m.menu = NewMenu()
 	m.noconfig = NewNoConfig()
 	return m
 }
@@ -105,6 +110,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateNoConfig(msg)
 	default:
 		return m.updateDashboard(msg)
+	}
+}
+
+func (m *Model) setResult(action Action, names ...string) {
+	m.result = &Result{
+		Action:     action,
+		FilterText: m.filterText,
+	}
+	if len(names) > 0 {
+		if action == ActionSyncConfig {
+			m.result.ConfigName = names[0]
+		} else {
+			m.result.ConfigNames = names
+		}
+	}
+	if len(m.selectedConfigs) == 1 {
+		for name := range m.selectedConfigs {
+			m.result.SelectedConfig = name
+		}
+	} else if len(m.selectedConfigs) > 1 {
+		// If multiple are selected, don't set a single SelectedConfig
+		// The action handler will use ConfigNames
 	}
 }
 
@@ -138,30 +165,30 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showHelp = true
 		case key.Matches(msg, keys.Quit):
 			m.quitting = true
-			m.result = &Result{Action: ActionQuit}
+			m.setResult(ActionQuit)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Filter):
 			m.filterMode = true
 			return m, nil
 		case key.Matches(msg, keys.Sync):
-			m.result = &Result{Action: ActionSync}
+			m.setResult(ActionSync)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Doctor):
-			m.result = &Result{Action: ActionDoctor}
+			m.setResult(ActionDoctor)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Install):
-			m.result = &Result{Action: ActionInstall}
+			m.setResult(ActionInstall)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Machine):
-			m.result = &Result{Action: ActionMachineConfig}
+			m.setResult(ActionMachineConfig)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Update):
-			m.result = &Result{Action: ActionUpdate}
+			m.setResult(ActionUpdate)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Menu):
 			m.currentView = viewMenu
 		case key.Matches(msg, keys.Enter):
-			m.result = &Result{Action: ActionSyncConfig, ConfigName: m.state.Configs[m.sidebar.selectedIdx].Name}
+			m.setResult(ActionSyncConfig, m.state.Configs[m.sidebar.selectedIdx].Name)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Select):
 			cfgName := m.state.Configs[m.sidebar.selectedIdx].Name
@@ -193,7 +220,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for name := range m.selectedConfigs {
 					names = append(names, name)
 				}
-				m.result = &Result{Action: ActionBulkSync, ConfigNames: names}
+				m.setResult(ActionBulkSync, names...)
 				return m, tea.Quit
 			}
 		}
@@ -226,15 +253,15 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			item, ok := m.menu.list.SelectedItem().(menuItem)
 			if ok {
-				m.result = &Result{Action: item.action}
+				m.setResult(item.action)
 				return m, tea.Quit
 			}
 		}
 	}
 
 	var cmd tea.Cmd
-	updatedMenu, cmd := m.menu.list.Update(msg)
-	m.menu.list = updatedMenu
+	newMenu, cmd := m.menu.Update(msg)
+	m.menu = newMenu.(*Menu)
 	return m, cmd
 }
 
@@ -244,10 +271,10 @@ func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, keys.Quit):
 			m.quitting = true
-			m.result = &Result{Action: ActionQuit}
+			m.setResult(ActionQuit)
 			return m, tea.Quit
 		case key.Matches(msg, key.NewBinding(key.WithKeys("i"), key.WithKeys("enter"))):
-			m.result = &Result{Action: ActionInit}
+			m.setResult(ActionInit)
 			return m, tea.Quit
 		}
 	}
@@ -268,6 +295,7 @@ func (m *Model) updateFilter() {
 		}
 	}
 	m.sidebar.filteredIdxs = filtered
+	m.sidebar.listOffset = 0
 	if len(filtered) > 0 {
 		m.sidebar.selectedIdx = filtered[0]
 	}

@@ -32,7 +32,11 @@ func (h Header) View() string {
 
 	platformInfo := ""
 	if h.state.Platform != nil {
-		platformInfo = fmt.Sprintf("%s (%s)", h.state.Platform.OS, h.state.Platform.PackageManager)
+		if h.state.Platform.PackageManager != "" {
+			platformInfo = fmt.Sprintf("%s (%s)", h.state.Platform.OS, h.state.Platform.PackageManager)
+		} else {
+			platformInfo = h.state.Platform.OS
+		}
 	}
 
 	subtitle := subtitleStyle.Render(platformInfo)

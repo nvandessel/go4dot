@@ -115,6 +115,7 @@ func runInteractive(cmd *cobra.Command, args []string) {
 				DotfilesPath:   dotfilesPath,
 				UpdateMsg:      updateMsg,
 				HasBaseline:    hasBaseline,
+				HasConfig:      len(allConfigs) > 0,
 				FilterText:     lastFilter,
 				SelectedConfig: lastSelected,
 			}

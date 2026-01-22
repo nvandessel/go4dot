@@ -10,8 +10,6 @@ import (
 
 // NoConfig is the model for the no config component.
 type NoConfig struct {
-	width       int
-	height      int
 	selectedIdx int
 }
 

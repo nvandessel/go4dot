@@ -27,6 +27,9 @@ func (h Help) View() string {
 	if h.width > 0 && h.width < boxWidth+4 {
 		boxWidth = h.width - 4
 	}
+	if boxWidth < 0 {
+		boxWidth = 0
+	}
 
 	// Styles
 	titleStyle := lipgloss.NewStyle().

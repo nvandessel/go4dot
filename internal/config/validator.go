@@ -186,11 +186,7 @@ func (c *Config) Validate(configDir string) error {
 		}
 	}
 
-	if len(errors) > 0 {
-		return errors
-	}
-
-	// Check for circular dependencies
+	// After all other validation, check for circular dependencies
 	if err := c.validateCircularDependencies(); err != nil {
 		errors = append(errors, ValidationError{
 			Field:   "configs",
@@ -310,8 +306,18 @@ func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 func (c *Config) validateCircularDependencies() error {
 	allConfigs := c.GetAllConfigs()
 	graph := make(map[string][]string)
+	configSet := make(map[string]struct{})
 	for _, cfg := range allConfigs {
 		graph[cfg.Name] = cfg.DependsOn
+		configSet[cfg.Name] = struct{}{}
+	}
+
+	for name, deps := range graph {
+		for _, dep := range deps {
+			if _, ok := configSet[dep]; !ok {
+				return fmt.Errorf("unknown dependency '%s' referenced by '%s'", dep, name)
+			}
+		}
 	}
 
 	visiting := make(map[string]bool)
