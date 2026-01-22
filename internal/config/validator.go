@@ -77,16 +77,9 @@ func (c *Config) Validate(configDir string) error {
 		}
 		configNames[cfg.Name] = true
 
-		// Check if path exists
-		if !filepath.IsAbs(cfg.Path) {
-			cfg.Path = filepath.Join(configDir, cfg.Path)
-		}
-		if _, err := os.Stat(cfg.Path); os.IsNotExist(err) {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("configs.core[%d].path", i),
-				Message: fmt.Sprintf("path does not exist: %s", cfg.Path),
-			})
-		}
+		// Validate path
+		pathErrors := validateConfigPath(cfg.Path, configDir, fmt.Sprintf("configs.core[%d].path", i))
+		errors = append(errors, pathErrors...)
 
 		// Validate per-config external dependencies
 		for j, ext := range cfg.ExternalDeps {
@@ -119,16 +112,9 @@ func (c *Config) Validate(configDir string) error {
 		}
 		configNames[cfg.Name] = true
 
-		// Check if path exists
-		if !filepath.IsAbs(cfg.Path) {
-			cfg.Path = filepath.Join(configDir, cfg.Path)
-		}
-		if _, err := os.Stat(cfg.Path); os.IsNotExist(err) {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("configs.optional[%d].path", i),
-				Message: fmt.Sprintf("path does not exist: %s", cfg.Path),
-			})
-		}
+		// Validate path
+		pathErrors := validateConfigPath(cfg.Path, configDir, fmt.Sprintf("configs.optional[%d].path", i))
+		errors = append(errors, pathErrors...)
 
 		// Validate per-config external dependencies
 		for j, ext := range cfg.ExternalDeps {
@@ -172,12 +158,19 @@ func (c *Config) Validate(configDir string) error {
 			scriptPath = filepath.Join(configDir, scriptPath)
 		}
 		info, err := os.Stat(scriptPath)
-		if os.IsNotExist(err) {
-			errors = append(errors, ValidationError{
-				Field:   "post_install",
-				Message: fmt.Sprintf("script does not exist: %s", scriptPath),
-			})
-		} else if err == nil {
+		if err != nil {
+			if os.IsNotExist(err) {
+				errors = append(errors, ValidationError{
+					Field:   "post_install",
+					Message: fmt.Sprintf("script does not exist: %s", scriptPath),
+				})
+			} else {
+				errors = append(errors, ValidationError{
+					Field:   "post_install",
+					Message: fmt.Sprintf("invalid path for script: %s (%v)", scriptPath, err),
+				})
+			}
+		} else {
 			// Check if it's a file and executable
 			if info.IsDir() {
 				errors = append(errors, ValidationError{
@@ -243,6 +236,36 @@ func (c *Config) GetConfigByName(name string) *ConfigItem {
 		}
 	}
 	return nil
+}
+
+// validateConfigPath validates a single config path
+func validateConfigPath(path, configDir, fieldPrefix string) []ValidationError {
+	var errors []ValidationError
+	if path == "" {
+		// This is already checked in the main validation loop,
+		// but we keep it here for robustness.
+		return errors
+	}
+
+	absPath := path
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(configDir, absPath)
+	}
+
+	if _, err := os.Stat(absPath); err != nil {
+		if os.IsNotExist(err) {
+			errors = append(errors, ValidationError{
+				Field:   fieldPrefix,
+				Message: fmt.Sprintf("path does not exist: %s", absPath),
+			})
+		} else {
+			errors = append(errors, ValidationError{
+				Field:   fieldPrefix,
+				Message: fmt.Sprintf("invalid path: %s (%v)", absPath, err),
+			})
+		}
+	}
+	return errors
 }
 
 // validateExternalDep validates a single external dependency
