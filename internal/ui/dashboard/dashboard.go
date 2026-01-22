@@ -17,6 +17,7 @@ type view int
 const (
 	viewDashboard view = iota
 	viewMenu
+	viewNoConfig
 )
 
 // State holds all the shared data for the dashboard.
@@ -31,6 +32,7 @@ type State struct {
 	HasBaseline    bool
 	FilterText     string
 	SelectedConfig string
+	HasConfig      bool
 }
 
 // Model is the main container for the dashboard.
@@ -47,13 +49,14 @@ type Model struct {
 	currentView     view
 
 	// Components
-	header  Header
-	summary Summary
-	sidebar Sidebar
-	details Details
-	footer  Footer
-	help    Help
-	menu    Menu
+	header   Header
+	summary  Summary
+	sidebar  Sidebar
+	details  Details
+	footer   Footer
+	help     Help
+	menu     Menu
+	noconfig NoConfig
 }
 
 // New creates a new dashboard model.
@@ -61,8 +64,13 @@ func New(s State) Model {
 	m := Model{
 		state:           s,
 		selectedConfigs: make(map[string]bool),
-		currentView:     viewDashboard,
 	}
+	if !s.HasConfig {
+		m.currentView = viewNoConfig
+	} else {
+		m.currentView = viewDashboard
+	}
+
 	m.header = NewHeader(s)
 	m.summary = NewSummary(s)
 	m.sidebar = NewSidebar(s, m.selectedConfigs)
@@ -70,6 +78,7 @@ func New(s State) Model {
 	m.footer = NewFooter()
 	m.help = NewHelp()
 	m.menu = NewMenu()
+	m.noconfig = NewNoConfig()
 	return m
 }
 
@@ -78,11 +87,6 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var (
-		cmd  tea.Cmd
-		cmds []tea.Cmd
-	)
-
 	if m.showHelp {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -97,6 +101,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.currentView {
 	case viewMenu:
 		return m.updateMenu(msg)
+	case viewNoConfig:
+		return m.updateNoConfig(msg)
 	default:
 		return m.updateDashboard(msg)
 	}
@@ -227,8 +233,25 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	m.menu.list, cmd = m.menu.list.Update(msg)
+	updatedMenu, cmd := m.menu.list.Update(msg)
+	m.menu.list = updatedMenu
 	return m, cmd
+}
+
+func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, keys.Quit):
+			m.quitting = true
+			m.result = &Result{Action: ActionQuit}
+			return m, tea.Quit
+		case key.Matches(msg, key.NewBinding(key.WithKeys("i"), key.WithKeys("enter"))):
+			m.result = &Result{Action: ActionInit}
+			return m, tea.Quit
+		}
+	}
+	return m, nil
 }
 
 func (m *Model) updateFilter() {
@@ -262,6 +285,8 @@ func (m Model) View() string {
 	switch m.currentView {
 	case viewMenu:
 		return m.menu.View()
+	case viewNoConfig:
+		return m.noconfig.View()
 	default:
 		return m.viewDashboard()
 	}
