@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,12 +30,14 @@ type State struct {
 // Model is the main container for the dashboard.
 // It holds all the sub-components and manages the overall layout and state.
 type Model struct {
-	state      State
-	width      int
-	height     int
-	quitting   bool
-	result     *Result
-	filterMode bool
+	state           State
+	width           int
+	height          int
+	quitting        bool
+	result          *Result
+	filterMode      bool
+	filterText      string
+	selectedConfigs map[string]bool
 
 	// Components
 	header  Header
@@ -45,14 +49,16 @@ type Model struct {
 
 // New creates a new dashboard model.
 func New(s State) Model {
-	return Model{
-		state:   s,
-		header:  NewHeader(s),
-		summary: NewSummary(s),
-		sidebar: NewSidebar(s),
-		details: NewDetails(s),
-		footer:  NewFooter(),
+	m := Model{
+		state:           s,
+		selectedConfigs: make(map[string]bool),
 	}
+	m.header = NewHeader(s)
+	m.summary = NewSummary(s)
+	m.sidebar = NewSidebar(s, m.selectedConfigs)
+	m.details = NewDetails(s)
+	m.footer = NewFooter()
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -68,8 +74,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.filterMode {
-			// TODO: Handle filter input
-			m.filterMode = false
+			switch {
+			case key.Matches(msg, keys.Quit): // esc
+				m.filterMode = false
+			case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+				m.filterMode = false
+			case key.Matches(msg, key.NewBinding(key.WithKeys("backspace"))):
+				if len(m.filterText) > 0 {
+					m.filterText = m.filterText[:len(m.filterText)-1]
+				}
+			default:
+				m.filterText += msg.String()
+			}
+			m.updateFilter()
 			return m, nil
 		}
 
@@ -102,6 +119,39 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Enter):
 			m.result = &Result{Action: ActionSyncConfig, ConfigName: m.state.Configs[m.sidebar.selectedIdx].Name}
 			return m, tea.Quit
+		case key.Matches(msg, keys.Select):
+			cfgName := m.state.Configs[m.sidebar.selectedIdx].Name
+			if m.selectedConfigs[cfgName] {
+				delete(m.selectedConfigs, cfgName)
+			} else {
+				m.selectedConfigs[cfgName] = true
+			}
+		case key.Matches(msg, keys.All):
+			allSelected := true
+			for _, idx := range m.sidebar.filteredIdxs {
+				if !m.selectedConfigs[m.state.Configs[idx].Name] {
+					allSelected = false
+					break
+				}
+			}
+			if allSelected {
+				for _, idx := range m.sidebar.filteredIdxs {
+					delete(m.selectedConfigs, m.state.Configs[idx].Name)
+				}
+			} else {
+				for _, idx := range m.sidebar.filteredIdxs {
+					m.selectedConfigs[m.state.Configs[idx].Name] = true
+				}
+			}
+		case key.Matches(msg, keys.Bulk):
+			if len(m.selectedConfigs) > 0 {
+				names := make([]string, 0, len(m.selectedConfigs))
+				for name := range m.selectedConfigs {
+					names = append(names, name)
+				}
+				m.result = &Result{Action: ActionBulkSync, ConfigNames: names}
+				return m, tea.Quit
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -119,6 +169,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.details.selectedIdx = m.sidebar.selectedIdx
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) updateFilter() {
+	filtered := []int{}
+	if m.filterText == "" {
+		for i := range m.state.Configs {
+			filtered = append(filtered, i)
+		}
+	} else {
+		for i, cfg := range m.state.Configs {
+			if strings.Contains(strings.ToLower(cfg.Name), strings.ToLower(m.filterText)) {
+				filtered = append(filtered, i)
+			}
+		}
+	}
+	m.sidebar.filteredIdxs = filtered
+	if len(filtered) > 0 {
+		m.sidebar.selectedIdx = filtered[0]
+	}
 }
 
 func (m Model) View() string {

@@ -16,19 +16,27 @@ import (
 
 // Sidebar is the model for the sidebar component.
 type Sidebar struct {
-	state       State
-	width       int
-	height      int
-	selectedIdx int
-	listOffset  int // Scroll offset for the config list
+	state        State
+	width        int
+	height       int
+	selectedIdx  int
+	listOffset   int // Scroll offset for the config list
+	filteredIdxs []int
+	selected     map[string]bool
 }
 
 // NewSidebar creates a new sidebar component.
-func NewSidebar(s State) Sidebar {
+func NewSidebar(s State, selected map[string]bool) Sidebar {
+	filteredIdxs := make([]int, len(s.Configs))
+	for i := range s.Configs {
+		filteredIdxs[i] = i
+	}
 	return Sidebar{
-		state:       s,
-		selectedIdx: 0,
-		listOffset:  0,
+		state:        s,
+		selectedIdx:  0,
+		listOffset:   0,
+		filteredIdxs: filteredIdxs,
+		selected:     selected,
 	}
 }
 
@@ -36,15 +44,23 @@ func NewSidebar(s State) Sidebar {
 func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		currentPos := -1
+		for i, idx := range s.filteredIdxs {
+			if idx == s.selectedIdx {
+				currentPos = i
+				break
+			}
+		}
+
 		switch {
 		case key.Matches(msg, keys.Up):
-			if s.selectedIdx > 0 {
-				s.selectedIdx--
+			if currentPos > 0 {
+				s.selectedIdx = s.filteredIdxs[currentPos-1]
 				s.ensureVisible()
 			}
 		case key.Matches(msg, keys.Down):
-			if s.selectedIdx < len(s.state.Configs)-1 {
-				s.selectedIdx++
+			if currentPos < len(s.filteredIdxs)-1 {
+				s.selectedIdx = s.filteredIdxs[currentPos+1]
 				s.ensureVisible()
 			}
 		}
@@ -54,13 +70,21 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 
 // ensureVisible ensures the selected item is within the visible area of the list
 func (s *Sidebar) ensureVisible() {
-	if s.height <= 0 {
+	currentPos := -1
+	for i, idx := range s.filteredIdxs {
+		if idx == s.selectedIdx {
+			currentPos = i
+			break
+		}
+	}
+
+	if s.height <= 0 || currentPos == -1 {
 		return
 	}
-	if s.selectedIdx < s.listOffset {
-		s.listOffset = s.selectedIdx
-	} else if s.selectedIdx >= s.listOffset+s.height {
-		s.listOffset = s.selectedIdx - s.height + 1
+	if currentPos < s.listOffset {
+		s.listOffset = currentPos
+	} else if currentPos >= s.listOffset+s.height {
+		s.listOffset = currentPos - s.height + 1
 	}
 }
 
@@ -70,7 +94,7 @@ func (s Sidebar) View() string {
 
 	normalStyle := ui.TextStyle
 	selectedStyle := ui.SelectedItemStyle.Width(s.width - 2)
-	// okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
 
 	// Build a map of drift results for quick lookup
 	driftMap := make(map[string]*stow.DriftResult)
@@ -83,22 +107,23 @@ func (s Sidebar) View() string {
 
 	// Calculate visible range
 	endIdx := s.listOffset + s.height
-	if endIdx > len(s.state.Configs) {
-		endIdx = len(s.state.Configs)
+	if endIdx > len(s.filteredIdxs) {
+		endIdx = len(s.filteredIdxs)
 	}
 
 	for i := s.listOffset; i < endIdx; i++ {
-		cfg := s.state.Configs[i]
+		idx := s.filteredIdxs[i]
+		cfg := s.state.Configs[idx]
 
 		prefix := "  "
-		if i == s.selectedIdx {
+		if idx == s.selectedIdx {
 			prefix = "> "
 		}
 
 		checkbox := "[ ]"
-		// if m.selectedConfigs[cfg.Name] {
-		// 	checkbox = okStyle.Render("[✓]")
-		// }
+		if s.selected[cfg.Name] {
+			checkbox = okStyle.Render("[✓]")
+		}
 
 		// Get link status for this config
 		linkStatus := s.state.LinkStatus[cfg.Name]
@@ -128,7 +153,7 @@ func (s Sidebar) View() string {
 
 		content = fmt.Sprintf("%-*s", s.width-2, content)
 
-		if i == s.selectedIdx {
+		if idx == s.selectedIdx {
 			lines = append(lines, selectedStyle.Render(content))
 		} else {
 			lines = append(lines, normalStyle.Render(content))
