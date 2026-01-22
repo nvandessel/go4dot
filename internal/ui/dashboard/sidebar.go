@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/stow"
@@ -30,13 +32,45 @@ func NewSidebar(s State) Sidebar {
 	}
 }
 
+// Update handles messages for the sidebar.
+func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, keys.Up):
+			if s.selectedIdx > 0 {
+				s.selectedIdx--
+				s.ensureVisible()
+			}
+		case key.Matches(msg, keys.Down):
+			if s.selectedIdx < len(s.state.Configs)-1 {
+				s.selectedIdx++
+				s.ensureVisible()
+			}
+		}
+	}
+	return nil
+}
+
+// ensureVisible ensures the selected item is within the visible area of the list
+func (s *Sidebar) ensureVisible() {
+	if s.height <= 0 {
+		return
+	}
+	if s.selectedIdx < s.listOffset {
+		s.listOffset = s.selectedIdx
+	} else if s.selectedIdx >= s.listOffset+s.height {
+		s.listOffset = s.selectedIdx - s.height + 1
+	}
+}
+
 // View renders the sidebar.
 func (s Sidebar) View() string {
 	var lines []string
 
 	normalStyle := ui.TextStyle
 	selectedStyle := ui.SelectedItemStyle.Width(s.width - 2)
-	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	// okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
 
 	// Build a map of drift results for quick lookup
 	driftMap := make(map[string]*stow.DriftResult)

@@ -28,11 +28,12 @@ type State struct {
 // Model is the main container for the dashboard.
 // It holds all the sub-components and manages the overall layout and state.
 type Model struct {
-	state    State
-	width    int
-	height   int
-	quitting bool
-	result   *Result
+	state      State
+	width      int
+	height     int
+	quitting   bool
+	result     *Result
+	filterMode bool
 
 	// Components
 	header  Header
@@ -58,13 +59,48 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.filterMode {
+			// TODO: Handle filter input
+			m.filterMode = false
+			return m, nil
+		}
+
 		switch {
 		case key.Matches(msg, keys.Quit):
 			m.quitting = true
 			m.result = &Result{Action: ActionQuit}
+			return m, tea.Quit
+		case key.Matches(msg, keys.Filter):
+			m.filterMode = true
+			return m, nil
+		case key.Matches(msg, keys.Sync):
+			m.result = &Result{Action: ActionSync}
+			return m, tea.Quit
+		case key.Matches(msg, keys.Doctor):
+			m.result = &Result{Action: ActionDoctor}
+			return m, tea.Quit
+		case key.Matches(msg, keys.Install):
+			m.result = &Result{Action: ActionInstall}
+			return m, tea.Quit
+		case key.Matches(msg, keys.Machine):
+			m.result = &Result{Action: ActionMachineConfig}
+			return m, tea.Quit
+		case key.Matches(msg, keys.Update):
+			m.result = &Result{Action: ActionUpdate}
+			return m, tea.Quit
+		case key.Matches(msg, keys.Menu):
+			m.result = &Result{Action: ActionList}
+			return m, tea.Quit
+		case key.Matches(msg, keys.Enter):
+			m.result = &Result{Action: ActionSyncConfig, ConfigName: m.state.Configs[m.sidebar.selectedIdx].Name}
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
@@ -77,8 +113,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.footer.width = msg.Width
 	}
 
-	// TODO: Update components
-	return m, nil
+	cmd = m.sidebar.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.details.selectedIdx = m.sidebar.selectedIdx
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) View() string {
@@ -154,12 +194,12 @@ type MachineStatus struct {
 // Run starts the dashboard and returns the selected action
 func Run(s State) (*Result, error) {
 	m := New(s)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(&m, tea.WithAltScreen())
 
 	finalModel, err := p.Run()
 	if err != nil {
 		return nil, err
 	}
 
-	return finalModel.(Model).result, nil
+	return finalModel.(*Model).result, nil
 }
