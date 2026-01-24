@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/nvandessel/go4dot/internal/config"
@@ -53,15 +54,21 @@ func runSync(cmd *cobra.Command, args []string) {
 
 	// If a specific config is specified, sync just that one
 	if len(args) > 0 {
-		syncSingleConfig(args[0], cfg, dotfilesPath, st)
+		if err := syncSingleConfig(args[0], cfg, dotfilesPath, st); err != nil {
+			ui.Error("%v", err)
+			os.Exit(1)
+		}
 		return
 	}
 
 	// Sync all configs
-	syncAllConfigs(cfg, dotfilesPath, st)
+	if err := syncAllConfigs(cfg, dotfilesPath, st); err != nil {
+		ui.Error("%v", err)
+		os.Exit(1)
+	}
 }
 
-func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string, st *state.State) {
+func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string, st *state.State) error {
 	// Find the config
 	var configItem *config.ConfigItem
 	for _, c := range cfg.GetAllConfigs() {
@@ -72,15 +79,13 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 	}
 
 	if configItem == nil {
-		ui.Error("Config '%s' not found", configName)
-		os.Exit(1)
+		return fmt.Errorf("config '%s' not found", configName)
 	}
 
 	// Check what will be synced
 	summary, err := stow.FullDriftCheck(cfg, dotfilesPath)
 	if err != nil {
-		ui.Error("Failed to check drift: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to check drift: %w", err)
 	}
 
 	var drift *stow.DriftResult
@@ -92,10 +97,16 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 	}
 
 	// Show what will be synced
-	if drift != nil && len(drift.NewFiles) > 0 {
-		fmt.Printf("\nNew files to sync for %s:\n", configName)
+	if drift != nil && drift.HasDrift {
+		fmt.Printf("\nChanges to sync for %s:\n", configName)
 		for _, f := range drift.NewFiles {
-			fmt.Printf("  + %s\n", f)
+			fmt.Printf("  + %s (new)\n", f)
+		}
+		for _, f := range drift.ConflictFiles {
+			fmt.Printf("  ! %s (conflict)\n", f)
+		}
+		for _, f := range drift.MissingFiles {
+			fmt.Printf("  - %s (missing/orphaned)\n", f)
 		}
 		fmt.Println()
 	} else {
@@ -117,7 +128,7 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 
 		if err != nil || !proceed {
 			fmt.Println("Sync cancelled.")
-			return
+			return nil
 		}
 	}
 
@@ -133,30 +144,44 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 	})
 
 	if err != nil {
-		ui.Error("Failed to sync %s: %v", configName, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to sync %s: %w", configName, err)
 	}
 
 	ui.Success("Synced %s", configName)
+	return nil
 }
 
-func syncAllConfigs(cfg *config.Config, dotfilesPath string, st *state.State) {
+func syncAllConfigs(cfg *config.Config, dotfilesPath string, st *state.State) error {
 	// Check what will be synced
 	summary, err := stow.FullDriftCheck(cfg, dotfilesPath)
 	if err != nil {
-		ui.Error("Failed to check drift: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to check drift: %w", err)
 	}
 
 	drifted := stow.GetDriftedConfigs(summary.Results)
 
 	// Show what will be synced
-	if len(drifted) > 0 {
-		fmt.Println("\nConfigs with new files:")
-		for _, r := range drifted {
-			fmt.Printf("  %s: %d new file(s)\n", r.ConfigName, len(r.NewFiles))
-			for _, f := range r.NewFiles {
-				fmt.Printf("    + %s\n", f)
+	if summary.HasDrift() {
+		if len(drifted) > 0 {
+			fmt.Println("\nConfigs with changes:")
+			for _, r := range drifted {
+				fmt.Printf("  %s:\n", r.ConfigName)
+				for _, f := range r.NewFiles {
+					fmt.Printf("    + %s (new)\n", f)
+				}
+				for _, f := range r.ConflictFiles {
+					fmt.Printf("    ! %s (conflict)\n", f)
+				}
+				for _, f := range r.MissingFiles {
+					fmt.Printf("    - %s (missing/orphaned)\n", f)
+				}
+			}
+		}
+
+		if len(summary.RemovedConfigs) > 0 {
+			fmt.Println("\nRemoved configs still stowed:")
+			for _, name := range summary.RemovedConfigs {
+				fmt.Printf("  - %s (removed from YAML)\n", name)
 			}
 		}
 		fmt.Println()
@@ -181,7 +206,7 @@ func syncAllConfigs(cfg *config.Config, dotfilesPath string, st *state.State) {
 
 		if err != nil || !proceed {
 			fmt.Println("Sync cancelled.")
-			return
+			return nil
 		}
 	}
 
@@ -197,17 +222,17 @@ func syncAllConfigs(cfg *config.Config, dotfilesPath string, st *state.State) {
 	})
 
 	if err != nil {
-		ui.Error("%v", err)
-		os.Exit(1)
+		return fmt.Errorf("sync operation failed: %w", err)
 	}
 
 	if len(result.Failed) > 0 {
-		ui.Error("Failed to sync %d config(s)", len(result.Failed))
+		var errs []string
 		for _, f := range result.Failed {
-			fmt.Printf("  %s: %v\n", f.ConfigName, f.Error)
+			errs = append(errs, fmt.Sprintf("%s: %v", f.ConfigName, f.Error))
 		}
-		os.Exit(1)
+		return fmt.Errorf("failed to sync %d config(s):\n  %s", len(result.Failed), strings.Join(errs, "\n  "))
 	}
 
 	ui.Success("Synced %d config(s)", len(result.Success))
+	return nil
 }

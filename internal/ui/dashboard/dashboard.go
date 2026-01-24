@@ -129,9 +129,6 @@ func (m *Model) setResult(action Action, names ...string) {
 		for name := range m.selectedConfigs {
 			m.result.SelectedConfig = name
 		}
-	} else if len(m.selectedConfigs) > 1 {
-		// If multiple are selected, don't set a single SelectedConfig
-		// The action handler will use ConfigNames
 	}
 }
 

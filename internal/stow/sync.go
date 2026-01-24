@@ -2,6 +2,8 @@ package stow
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/state"
@@ -34,8 +36,65 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 	allConfigs := cfg.GetAllConfigs()
 	result := RestowConfigs(dotfilesPath, allConfigs, opts)
 
-	// Update symlink counts in state
+	// Unstow removed configs
 	if st != nil {
+		home := os.Getenv("HOME")
+		summary, err := FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
+		if err == nil {
+			// Unstow removed configs
+			if len(summary.RemovedConfigs) > 0 {
+				for _, name := range summary.RemovedConfigs {
+					if opts.ProgressFunc != nil {
+						opts.ProgressFunc(0, 0, fmt.Sprintf("Unstowing removed config %s...", name))
+					}
+					var removedPath string
+					for _, sc := range st.Configs {
+						if sc.Name == name {
+							removedPath = sc.Path
+							break
+						}
+					}
+
+					if removedPath != "" {
+						err := Unstow(dotfilesPath, removedPath, opts)
+						if err == nil {
+							st.RemoveConfig(name)
+							st.RemoveSymlinkCount(name)
+						} else if opts.ProgressFunc != nil {
+							opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to unstow removed config %s: %v", name, err))
+						}
+					}
+				}
+			}
+
+			// Clean up orphaned symlinks for active configs
+			for _, res := range summary.Results {
+				if len(res.MissingFiles) > 0 {
+					for _, relPath := range res.MissingFiles {
+						if opts.ProgressFunc != nil {
+							opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
+						}
+						if !opts.DryRun {
+							targetPath := filepath.Join(home, relPath)
+							if err := os.Remove(targetPath); err != nil {
+								if opts.ProgressFunc != nil {
+									opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to remove orphaned symlink %s: %v", relPath, err))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Update state
+	if st != nil {
+		// Update configs in state
+		for _, cfgItem := range allConfigs {
+			st.AddConfig(cfgItem.Name, cfgItem.Path, true) // Assume core if in main config
+		}
+
 		if err := UpdateSymlinkCounts(cfg, dotfilesPath, st); err != nil {
 			return result, fmt.Errorf("failed to update symlink counts: %w", err)
 		}
@@ -68,8 +127,36 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 		return err
 	}
 
-	// Update symlink count for this config
+	// Clean up orphaned symlinks for this config
+	home := os.Getenv("HOME")
+	summary, err := FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
+	if err != nil {
+		if opts.ProgressFunc != nil {
+			opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: drift check failed: %v", err))
+		}
+	} else {
+		for _, res := range summary.Results {
+			if res.ConfigName == configName && len(res.MissingFiles) > 0 {
+				for _, relPath := range res.MissingFiles {
+					if opts.ProgressFunc != nil {
+						opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
+					}
+					if !opts.DryRun {
+						targetPath := filepath.Join(home, relPath)
+						if err := os.Remove(targetPath); err != nil {
+							if opts.ProgressFunc != nil {
+								opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to remove orphaned symlink %s: %v", relPath, err))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Update state for this config
 	if st != nil {
+		st.AddConfig(configItem.Name, configItem.Path, true)
 		if err := UpdateSymlinkCounts(cfg, dotfilesPath, st); err != nil {
 			return fmt.Errorf("failed to update symlink counts: %w", err)
 		}
@@ -78,7 +165,8 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 	return nil
 }
 
-// SyncResultSummary returns a human-readable summary of the sync result
+// SyncResultSummary returns a human-readable summary of the sync result.
+// It displays the number of successfully synced configs or a failure message.
 func SyncResultSummary(result *StowResult) string {
 	if len(result.Failed) > 0 {
 		return fmt.Sprintf("Failed to sync %d config(s)", len(result.Failed))
