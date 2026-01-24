@@ -2,20 +2,22 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/state"
+	"github.com/nvandessel/go4dot/internal/stow"
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
 func TestSyncCommands(t *testing.T) {
-	// Skip if stow is not installed to avoid CI failures
-	if _, err := exec.LookPath("stow"); err != nil {
-		t.Skip("stow not installed, skipping integration tests")
-	}
+	// Use mock commander for all stow operations during tests
+	origCommander := stow.CurrentCommander
+	stow.CurrentCommander = &stow.MockCommander{}
+	defer func() {
+		stow.CurrentCommander = origCommander
+	}()
 
 	tmpDir := t.TempDir()
 	dotfilesPath := filepath.Join(tmpDir, "dotfiles")

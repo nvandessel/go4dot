@@ -2,7 +2,6 @@ package stow
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -13,10 +12,9 @@ import (
 func setupSyncTestEnv(t *testing.T) (dotfilesPath, homeDir string, cleanup func()) {
 	t.Helper()
 
-	// Skip if stow is not installed to avoid CI failures
-	if _, err := exec.LookPath("stow"); err != nil {
-		t.Skip("stow not installed, skipping integration tests")
-	}
+	// Use mock commander for all stow operations during tests
+	origCommander := CurrentCommander
+	CurrentCommander = &MockCommander{}
 
 	tmpDir := t.TempDir()
 	dotfilesPath = filepath.Join(tmpDir, "dotfiles")
@@ -32,6 +30,7 @@ func setupSyncTestEnv(t *testing.T) (dotfilesPath, homeDir string, cleanup func(
 	}
 
 	cleanup = func() {
+		CurrentCommander = origCommander
 		if err := os.Setenv("HOME", origHome); err != nil {
 			t.Errorf("failed to restore HOME: %v", err)
 		}

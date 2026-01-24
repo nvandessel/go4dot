@@ -30,6 +30,138 @@ type StowOptions struct {
 	ProgressFunc func(current, total int, msg string) // Callback for progress updates
 }
 
+// Commander defines the interface for executing stow commands.
+type Commander interface {
+	Run(name string, args ...string) ([]byte, error)
+}
+
+// ExecCommander is the default implementation that uses os/exec.
+type ExecCommander struct{}
+
+// Run executes a command using os/exec.
+func (e *ExecCommander) Run(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	return cmd.CombinedOutput()
+}
+
+// MockCommander simulates GNU Stow behavior for testing.
+type MockCommander struct {
+	LastArgs []string
+}
+
+// Run parses stow-like arguments and manipulates the filesystem to simulate stow.
+func (m *MockCommander) Run(name string, args ...string) ([]byte, error) {
+	m.LastArgs = args
+
+	if name != "stow" {
+		return nil, fmt.Errorf("unexpected command: %s", name)
+	}
+
+	// Handle --version
+	for _, arg := range args {
+		if arg == "--version" {
+			return []byte("stow (GNU Stow) version 2.3.1"), nil
+		}
+	}
+
+	// Parse arguments
+	var targetDir, dotfilesDir string
+	var deleteMode, restowMode, dryRun bool
+	var packages []string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-t":
+			i++
+			if i < len(args) {
+				targetDir = args[i]
+			}
+		case "-d":
+			i++
+			if i < len(args) {
+				dotfilesDir = args[i]
+			}
+		case "-D":
+			deleteMode = true
+		case "-R":
+			restowMode = true
+		case "-n":
+			dryRun = true
+		case "-v":
+			// ignore
+		default:
+			if !strings.HasPrefix(arg, "-") {
+				packages = append(packages, arg)
+			}
+		}
+	}
+
+	if targetDir == "" {
+		targetDir = os.Getenv("HOME")
+	}
+
+	if dryRun {
+		return []byte("Dry run: no changes made"), nil
+	}
+
+	for _, pkg := range packages {
+		pkgPath := filepath.Join(dotfilesDir, pkg)
+
+		if deleteMode || restowMode {
+			// Simulate Unstow
+			_ = filepath.Walk(pkgPath, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil
+				}
+				rel, _ := filepath.Rel(pkgPath, path)
+				targetPath := filepath.Join(targetDir, rel)
+
+				// Check if it's a symlink pointing to our source
+				if linkInfo, err := os.Lstat(targetPath); err == nil && linkInfo.Mode()&os.ModeSymlink != 0 {
+					if dest, err := os.Readlink(targetPath); err == nil {
+						absDest := dest
+						if !filepath.IsAbs(dest) {
+							absDest = filepath.Clean(filepath.Join(filepath.Dir(targetPath), dest))
+						}
+						if absDest == filepath.Clean(path) {
+							_ = os.Remove(targetPath)
+						}
+					}
+				}
+				return nil
+			})
+		}
+
+		if !deleteMode {
+			// Simulate Stow
+			_ = filepath.Walk(pkgPath, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil
+				}
+				rel, _ := filepath.Rel(pkgPath, path)
+				targetPath := filepath.Join(targetDir, rel)
+
+				// Ensure parent directory exists
+				_ = os.MkdirAll(filepath.Dir(targetPath), 0755)
+
+				// Create symlink (relative path preferred by stow)
+				relSrc, _ := filepath.Rel(filepath.Dir(targetPath), path)
+				_ = os.Symlink(relSrc, targetPath)
+				return nil
+			})
+		}
+	}
+
+	return []byte("Mock stow finished successfully"), nil
+}
+
+var (
+	// CurrentCommander is the commander instance used for all stow operations.
+	// It can be replaced in tests with a mock implementation.
+	CurrentCommander Commander = &ExecCommander{}
+)
+
 // Stow symlinks a config directory using GNU stow.
 // It uses default settings and processes the specified config package.
 func Stow(dotfilesPath string, configName string, opts StowOptions) error {
@@ -58,8 +190,7 @@ func StowWithCount(dotfilesPath string, configName string, current, total int, o
 	args = append(args, "-d", dotfilesPath)      // Directory containing packages
 	args = append(args, configName)              // Package to stow
 
-	cmd := exec.Command("stow", args...)
-	output, err := cmd.CombinedOutput()
+	output, err := CurrentCommander.Run("stow", args...)
 
 	if err != nil {
 		return fmt.Errorf("stow failed: %w\nOutput: %s", err, string(output))
@@ -95,8 +226,7 @@ func UnstowWithCount(dotfilesPath string, configName string, current, total int,
 	args = append(args, "-d", dotfilesPath)
 	args = append(args, configName)
 
-	cmd := exec.Command("stow", args...)
-	output, err := cmd.CombinedOutput()
+	output, err := CurrentCommander.Run("stow", args...)
 
 	if err != nil {
 		return fmt.Errorf("unstow failed: %w\nOutput: %s", err, string(output))
@@ -136,8 +266,7 @@ func RestowWithCount(dotfilesPath string, configName string, current, total int,
 	args = append(args, "-d", dotfilesPath)
 	args = append(args, configName)
 
-	cmd := exec.Command("stow", args...)
-	output, err := cmd.CombinedOutput()
+	output, err := CurrentCommander.Run("stow", args...)
 
 	if err != nil {
 		return fmt.Errorf("restow failed: %w\nOutput: %s", err, string(output))
@@ -251,8 +380,7 @@ func ValidateStow() error {
 	}
 
 	// Try to get stow version
-	cmd := exec.Command("stow", "--version")
-	output, err := cmd.CombinedOutput()
+	output, err := CurrentCommander.Run("stow", "--version")
 	if err != nil {
 		return fmt.Errorf("stow command failed: %w", err)
 	}
