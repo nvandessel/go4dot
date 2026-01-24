@@ -366,7 +366,10 @@ func (r *InstallResult) Summary() string {
 
 // SaveState saves the installation state to the standard location.
 func SaveState(cfg *config.Config, dotfilesPath string, result *InstallResult) error {
-	st := state.New()
+	st, err := state.Load()
+	if err != nil || st == nil {
+		st = state.New()
+	}
 	st.DotfilesPath = dotfilesPath
 
 	// Save platform info

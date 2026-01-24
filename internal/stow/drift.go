@@ -330,7 +330,7 @@ func DetectConflicts(cfg *config.Config, dotfilesPath string) ([]ConflictFile, e
 				return nil
 			}
 
-			// If it's already a symlink pointing to the right place, no conflict
+			// Check if it's already a symlink pointing to the right place, no conflict
 			if targetInfo.Mode()&os.ModeSymlink != 0 {
 				linkDest, err := os.Readlink(targetPath)
 				if err == nil {
@@ -342,6 +342,13 @@ func DetectConflicts(cfg *config.Config, dotfilesPath string) ([]ConflictFile, e
 						// Already correctly symlinked
 						return nil
 					}
+				}
+			} else {
+				// Not a symlink - check if it's the same file (handles directory folding)
+				sourceInfo, err := os.Stat(path)
+				if err == nil && os.SameFile(sourceInfo, targetInfo) {
+					// It's the same file (synced via parent directory symlink) - OK
+					return nil
 				}
 			}
 
