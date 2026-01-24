@@ -154,6 +154,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterText += msg.String()
 			}
 			m.updateFilter()
+			m.details.selectedIdx = m.sidebar.selectedIdx // Ensure details are updated
 			return m, nil
 		}
 

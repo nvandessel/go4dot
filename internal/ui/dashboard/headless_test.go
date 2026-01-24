@@ -44,3 +44,132 @@ func TestDashboard_Headless(t *testing.T) {
 	// Wait for program to finish
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
+
+func TestDashboard_Interaction(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "alpha", Description: "First config"},
+			{Name: "beta", Description: "Second config"},
+			{Name: "gamma", Description: "Third config"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	// Wait for initial render
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "alpha")
+	})
+
+	// Test Navigation (Down)
+	// Send "j" to move down
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+
+	// We can't easily verify selection visually without parsing ANSI codes for colors/styles,
+	// but we can verify the Description update in the details pane if it changes.
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "Second config")
+	}, teatest.WithCheckInterval(time.Millisecond*50), teatest.WithDuration(time.Second))
+
+	// Test Selection
+	// Send "space" to select
+	tm.Send(tea.KeyMsg{Type: tea.KeySpace})
+
+	// Move down to gamma
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "Third config")
+	}, teatest.WithDuration(time.Second))
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+
+func TestDashboard_Filtering(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "neovim", Description: "Neovim config"},
+			{Name: "tmux", Description: "Tmux config"},
+			{Name: "zsh", Description: "Zsh config"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "neovim")
+	})
+
+	// Enter filter mode
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+
+	// Type "tm" to filter for tmux
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+
+	// Verify only tmux shows (or at least tmux shows and others might be hidden/dimmed depending on impl)
+	// Assuming the list updates to show filtered items.
+	// We can check if "neovim" and "zsh" are NO LONGER present or if "tmux" is the selected one.
+	// Since teatest captures the whole view, checking absence is tricky if they are just hidden.
+	// But let's check if the details pane updates to "Tmux config" since it should be the top match.
+
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "Tmux config")
+	}, teatest.WithDuration(time.Second))
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc}) // Exit filter mode
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc}) // Quit app
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+
+func TestDashboard_ViewSwitching(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "vim")
+	})
+
+	// Switch to Help (? key)
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+
+	// Verify Help content
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "Keyboard Shortcuts")
+	}, teatest.WithDuration(time.Second))
+
+	// Switch back (Esc)
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+
+	// Verify back to dashboard
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "vim")
+	}, teatest.WithDuration(time.Second))
+
+	// Switch to Menu (m key)
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc}) // Back to dashboard
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc}) // Quit app
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}

@@ -115,6 +115,34 @@ func TestSomething(t *testing.T) {
 }
 ```
 
+### TUI Testing
+
+For TUI components (using Bubble Tea), use the `teatest` framework for headless testing. This ensures that the UI renders correctly and responds to input without needing a physical terminal.
+
+Example pattern:
+```go
+func TestDashboard_Interaction(t *testing.T) {
+    m := NewModel()
+    tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
+    
+    // Wait for initial render
+    teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+        return strings.Contains(string(out), "Expected Content")
+    })
+
+    // Send keystrokes
+    tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+    
+    // Verify changes
+    teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+        return strings.Contains(string(out), "New Selection")
+    })
+    
+    tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+    tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+```
+
 ## Development Notes
 
 - GNU stow must be installed on the system (not bundled)
