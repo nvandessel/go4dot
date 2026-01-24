@@ -92,10 +92,16 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 	}
 
 	// Show what will be synced
-	if drift != nil && len(drift.NewFiles) > 0 {
-		fmt.Printf("\nNew files to sync for %s:\n", configName)
+	if drift != nil && drift.HasDrift {
+		fmt.Printf("\nChanges to sync for %s:\n", configName)
 		for _, f := range drift.NewFiles {
-			fmt.Printf("  + %s\n", f)
+			fmt.Printf("  + %s (new)\n", f)
+		}
+		for _, f := range drift.ConflictFiles {
+			fmt.Printf("  ! %s (conflict)\n", f)
+		}
+		for _, f := range drift.MissingFiles {
+			fmt.Printf("  - %s (missing/orphaned)\n", f)
 		}
 		fmt.Println()
 	} else {
@@ -151,12 +157,27 @@ func syncAllConfigs(cfg *config.Config, dotfilesPath string, st *state.State) {
 	drifted := stow.GetDriftedConfigs(summary.Results)
 
 	// Show what will be synced
-	if len(drifted) > 0 {
-		fmt.Println("\nConfigs with new files:")
-		for _, r := range drifted {
-			fmt.Printf("  %s: %d new file(s)\n", r.ConfigName, len(r.NewFiles))
-			for _, f := range r.NewFiles {
-				fmt.Printf("    + %s\n", f)
+	if summary.HasDrift() {
+		if len(drifted) > 0 {
+			fmt.Println("\nConfigs with changes:")
+			for _, r := range drifted {
+				fmt.Printf("  %s:\n", r.ConfigName)
+				for _, f := range r.NewFiles {
+					fmt.Printf("    + %s (new)\n", f)
+				}
+				for _, f := range r.ConflictFiles {
+					fmt.Printf("    ! %s (conflict)\n", f)
+				}
+				for _, f := range r.MissingFiles {
+					fmt.Printf("    - %s (missing/orphaned)\n", f)
+				}
+			}
+		}
+
+		if len(summary.RemovedConfigs) > 0 {
+			fmt.Println("\nRemoved configs still stowed:")
+			for _, name := range summary.RemovedConfigs {
+				fmt.Printf("  - %s (removed from YAML)\n", name)
 			}
 		}
 		fmt.Println()

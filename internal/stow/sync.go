@@ -2,6 +2,8 @@ package stow
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/state"
@@ -33,6 +35,51 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 
 	allConfigs := cfg.GetAllConfigs()
 	result := RestowConfigs(dotfilesPath, allConfigs, opts)
+
+	// Unstow removed configs
+	if st != nil {
+		summary, err := FullDriftCheckWithHome(cfg, dotfilesPath, os.Getenv("HOME"), st)
+		if err == nil {
+			// Unstow removed configs
+			if len(summary.RemovedConfigs) > 0 {
+				for _, name := range summary.RemovedConfigs {
+					if opts.ProgressFunc != nil {
+						opts.ProgressFunc(0, 0, fmt.Sprintf("Unstowing removed config %s...", name))
+					}
+					var removedPath string
+					for _, sc := range st.Configs {
+						if sc.Name == name {
+							removedPath = sc.Path
+							break
+						}
+					}
+
+					if removedPath != "" {
+						err := Unstow(dotfilesPath, removedPath, opts)
+						if err == nil {
+							st.RemoveConfig(name)
+							st.RemoveSymlinkCount(name)
+						}
+					}
+				}
+			}
+
+			// Clean up orphaned symlinks for active configs
+			home := os.Getenv("HOME")
+			for _, res := range summary.Results {
+				if len(res.MissingFiles) > 0 {
+					for _, relPath := range res.MissingFiles {
+						if opts.ProgressFunc != nil {
+							opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
+						}
+						if !opts.DryRun {
+							_ = os.Remove(filepath.Join(home, relPath))
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// Update symlink counts in state
 	if st != nil {
@@ -66,6 +113,24 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 	err := Restow(dotfilesPath, configItem.Path, opts)
 	if err != nil {
 		return err
+	}
+
+	// Clean up orphaned symlinks for this config
+	home := os.Getenv("HOME")
+	summary, err := FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
+	if err == nil {
+		for _, res := range summary.Results {
+			if res.ConfigName == configName && len(res.MissingFiles) > 0 {
+				for _, relPath := range res.MissingFiles {
+					if opts.ProgressFunc != nil {
+						opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
+					}
+					if !opts.DryRun {
+						_ = os.Remove(filepath.Join(home, relPath))
+					}
+				}
+			}
+		}
 	}
 
 	// Update symlink count for this config

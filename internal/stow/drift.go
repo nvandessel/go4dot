@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/state"
@@ -27,18 +28,25 @@ type DriftSummary struct {
 	DriftedConfigs int
 	TotalNewFiles  int
 	Results        []DriftResult
+	RemovedConfigs []string // Configs in state but not in current config
 }
 
-// HasDrift returns true if any config has drift
+// HasDrift returns true if any config has drift or if there are removed configs
 func (s *DriftSummary) HasDrift() bool {
-	return s.DriftedConfigs > 0
+	return s.DriftedConfigs > 0 || len(s.RemovedConfigs) > 0
 }
 
 // FullDriftCheck performs a complete analysis of all configs.
 // It identifies exactly which files are new, missing, or in conflict.
 func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, error) {
-	var results []DriftResult
 	home := os.Getenv("HOME")
+	st, _ := state.Load() // Try to load state, ignore error if not found
+	return FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
+}
+
+// FullDriftCheckWithHome performs a complete analysis of all configs using a specific home directory.
+func FullDriftCheckWithHome(cfg *config.Config, dotfilesPath, home string, st *state.State) (*DriftSummary, error) {
+	var results []DriftResult
 
 	allConfigs := cfg.GetAllConfigs()
 	for _, configItem := range allConfigs {
@@ -120,16 +128,31 @@ func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, err
 		}
 
 		// Check for symlinks in home that point to deleted files in dotfiles
-		// (This would require scanning home directory, which is expensive)
-		// For now, we focus on files in dotfiles that need syncing
+		// We can do this by walking the target directories that we know about
+		// from the current config structure.
+		result.MissingFiles = findOrphanedSymlinks(configPath, home)
 
-		result.HasDrift = len(result.NewFiles) > 0 || len(result.ConflictFiles) > 0
+		result.HasDrift = len(result.NewFiles) > 0 || len(result.ConflictFiles) > 0 || len(result.MissingFiles) > 0
 		results = append(results, result)
 	}
 
 	summary := &DriftSummary{
 		TotalConfigs: len(results),
 		Results:      results,
+	}
+
+	if st != nil {
+		currentConfigNames := make(map[string]bool)
+		for _, c := range allConfigs {
+			currentConfigNames[c.Name] = true
+		}
+
+		for _, sc := range st.Configs {
+			if !currentConfigNames[sc.Name] {
+				summary.RemovedConfigs = append(summary.RemovedConfigs, sc.Name)
+				summary.DriftedConfigs++
+			}
+		}
 	}
 
 	for _, r := range results {
@@ -140,6 +163,64 @@ func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, err
 	}
 
 	return summary, nil
+}
+
+// findOrphanedSymlinks finds symlinks in home that point to the given config directory
+// but no longer have a corresponding file in that directory.
+func findOrphanedSymlinks(configPath, home string) []string {
+	var orphans []string
+
+	// We need to find which directories in home might contain symlinks to configPath.
+	// A simple approach is to walk the configPath to see what directories it HAS,
+	// and then check those same directories in home.
+	dirsToCheck := make(map[string]bool)
+	dirsToCheck["."] = true
+	_ = filepath.Walk(configPath, func(path string, info os.FileInfo, err error) error {
+		if err == nil && info.IsDir() {
+			rel, err := filepath.Rel(configPath, path)
+			if err == nil {
+				dirsToCheck[rel] = true
+			}
+		}
+		return nil
+	})
+
+	for relDir := range dirsToCheck {
+		targetDir := filepath.Join(home, relDir)
+		entries, err := os.ReadDir(targetDir)
+		if err != nil {
+			continue
+		}
+
+		for _, entry := range entries {
+			// We only care about symlinks
+			if entry.Type()&os.ModeSymlink != 0 {
+				targetPath := filepath.Join(targetDir, entry.Name())
+				linkDest, err := os.Readlink(targetPath)
+				if err != nil {
+					continue
+				}
+
+				// Resolve to absolute path
+				absLinkDest := linkDest
+				if !filepath.IsAbs(absLinkDest) {
+					absLinkDest = filepath.Join(targetDir, linkDest)
+				}
+				absLinkDest = filepath.Clean(absLinkDest)
+
+				// If it points into our configPath
+				if strings.HasPrefix(absLinkDest, configPath) {
+					// Check if the source file still exists
+					if _, err := os.Stat(absLinkDest); os.IsNotExist(err) {
+						relToHome, _ := filepath.Rel(home, targetPath)
+						orphans = append(orphans, relToHome)
+					}
+				}
+			}
+		}
+	}
+
+	return orphans
 }
 
 // UpdateSymlinkCounts updates the stored file counts for all configs
