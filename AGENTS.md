@@ -140,3 +140,83 @@ make sandbox   # Run Docker/Podman container for isolated testing
 - ensure you're writting unit tests
 - ensure you're implmenting good Architecture
 - focus on SOLID principles
+
+## Issue Tracking with Beads
+
+This repository uses **Beads** for AI-native issue tracking. Issues live in `.beads/` and sync with git.
+
+### Using bv (Beads Viewer) - Required for AI Agents
+
+`bv` is a graph-aware triage engine optimized for AI agents. **Always use `--robot-*` flags** - bare `bv` launches an interactive TUI that blocks your session.
+
+**Start with triage:**
+```bash
+bv --robot-triage              # THE MEGA-COMMAND: ranked recommendations, quick wins, blockers
+bv --robot-next                # Minimal: single top pick + claim command
+```
+
+**Planning & analysis:**
+```bash
+bv --robot-plan                # Parallel execution tracks with unblocks lists
+bv --robot-insights            # Full graph metrics: PageRank, cycles, critical path
+bv --robot-alerts              # Stale issues, blocking cascades, priority mismatches
+```
+
+**Scoping:**
+```bash
+bv --robot-plan --label backend           # Scope to label's subgraph
+bv --recipe actionable --robot-plan       # Pre-filter: ready to work (no blockers)
+```
+
+### bd Commands (for mutations)
+
+```bash
+bd create "Issue title"                   # Create a new issue
+bd show <id>                              # Show issue details
+bd update <id> --status in_progress       # Update status
+bd close <id>                             # Close an issue
+bd sync                                   # Export changes for git commit
+```
+
+### Workflow
+
+1. **Triage first:** `bv --robot-triage` to understand priorities and what to work on
+2. **Claim work:** Use the command from `bv --robot-next` output
+3. **Update status:** `bd update <id> --status in_progress`
+4. **Close when done:** `bd close <id>`
+5. **Sync before commit:** `bd sync`
+
+### Syncing
+
+Beads uses a `beads-sync` branch for synchronization. When ending a session:
+```bash
+bd sync          # Export database to JSONL
+git add .beads/  # Stage beads files
+git commit       # Commit with your changes
+```
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd sync
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds

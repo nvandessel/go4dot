@@ -38,3 +38,6 @@ release/
 # Sandbox configuration
 .sandbox.env
 
+
+# bv (beads viewer) local config and caches
+.bv/
