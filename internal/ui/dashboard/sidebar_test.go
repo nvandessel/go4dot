@@ -78,12 +78,18 @@ func TestSidebar_Update_Navigation(t *testing.T) {
 		},
 	}
 
-	// Override default keys for testing
-	keys.Up.SetKeys("k")
-	keys.Down.SetKeys("j")
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Override default keys for testing
+			originalUp := keys.Up.Keys()
+			originalDown := keys.Down.Keys()
+			keys.Up.SetKeys("k")
+			keys.Down.SetKeys("j")
+			defer func() {
+				keys.Up.SetKeys(originalUp...)
+				keys.Down.SetKeys(originalDown...)
+			}()
+
 			s := tt.initialSidebar
 			s.Update(tt.msg)
 			if s.selectedIdx != tt.expectedSelectedIdx {

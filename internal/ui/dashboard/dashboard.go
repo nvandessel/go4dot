@@ -188,14 +188,18 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Menu):
 			m.currentView = viewMenu
 		case key.Matches(msg, keys.Enter):
-			m.setResult(ActionSyncConfig, m.state.Configs[m.sidebar.selectedIdx].Name)
-			return m, tea.Quit
+			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) {
+				m.setResult(ActionSyncConfig, m.state.Configs[m.sidebar.selectedIdx].Name)
+				return m, tea.Quit
+			}
 		case key.Matches(msg, keys.Select):
-			cfgName := m.state.Configs[m.sidebar.selectedIdx].Name
-			if m.selectedConfigs[cfgName] {
-				delete(m.selectedConfigs, cfgName)
-			} else {
-				m.selectedConfigs[cfgName] = true
+			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) {
+				cfgName := m.state.Configs[m.sidebar.selectedIdx].Name
+				if m.selectedConfigs[cfgName] {
+					delete(m.selectedConfigs, cfgName)
+				} else {
+					m.selectedConfigs[cfgName] = true
+				}
 			}
 		case key.Matches(msg, keys.All):
 			allSelected := true
