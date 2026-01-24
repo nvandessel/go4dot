@@ -106,7 +106,20 @@ func runInteractive(cmd *cobra.Command, args []string) {
 			}
 
 			allConfigs := cfg.GetAllConfigs()
-			result, err = dashboard.Run(p, driftSummary, linkStatus, dashStatus, allConfigs, dotfilesPath, updateMsg, hasBaseline, lastFilter, lastSelected)
+			state := dashboard.State{
+				Platform:       p,
+				DriftSummary:   driftSummary,
+				LinkStatus:     linkStatus,
+				MachineStatus:  dashStatus,
+				Configs:        allConfigs,
+				DotfilesPath:   dotfilesPath,
+				UpdateMsg:      updateMsg,
+				HasBaseline:    hasBaseline,
+				HasConfig:      len(allConfigs) > 0,
+				FilterText:     lastFilter,
+				SelectedConfig: lastSelected,
+			}
+			result, err = dashboard.Run(state)
 		}
 
 		if err != nil {
