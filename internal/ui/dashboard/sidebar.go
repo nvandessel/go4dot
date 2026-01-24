@@ -206,17 +206,15 @@ func (s Sidebar) getConfigStatusInfo(cfg config.ConfigItem, linkStatus *stow.Con
 		}
 
 		info.statusText = fmt.Sprintf("%d/%d", linkStatus.LinkedCount, linkStatus.TotalCount)
-	} else if drift != nil {
-		if drift.HasDrift {
+	} else {
+		// Fallback if LinkStatus is missing (should be rare)
+		if drift != nil && drift.HasDrift {
 			info.icon = warnStyle.Render("◆")
 			info.statusText = fmt.Sprintf("%d new", len(drift.NewFiles))
 		} else {
-			info.icon = okStyle.Render("✓")
-			info.statusText = fmt.Sprintf("%d files", drift.CurrentCount)
+			info.icon = ui.SubtleStyle.Render("•")
+			info.statusText = "unknown"
 		}
-	} else {
-		info.icon = ui.SubtleStyle.Render("•")
-		info.statusText = "unknown"
 	}
 
 	if len(cfg.ExternalDeps) > 0 {

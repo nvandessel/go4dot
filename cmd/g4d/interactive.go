@@ -222,7 +222,7 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 			if st == nil {
 				st = state.New()
 			}
-			_, err := stow.SyncAll(dotfilesPath, cfg, st, true, stow.StowOptions{
+			res, err := stow.SyncAll(dotfilesPath, cfg, st, true, stow.StowOptions{
 				ProgressFunc: func(current, total int, msg string) {
 					if total > 0 && current > 0 {
 						fmt.Printf("  [%d/%d] %s\n", current, total, msg)
@@ -233,6 +233,11 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 			})
 			if err != nil {
 				ui.Error("%v", err)
+			} else if len(res.Failed) > 0 {
+				ui.Warning("Sync completed with %d failure(s):", len(res.Failed))
+				for _, fail := range res.Failed {
+					ui.Error("  • %s: %v", fail.ConfigName, fail.Error)
+				}
 			} else {
 				ui.Success("Sync complete")
 			}

@@ -2,12 +2,15 @@ package setup
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/deps"
 	"github.com/nvandessel/go4dot/internal/machine"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/state"
 	"github.com/nvandessel/go4dot/internal/stow"
 )
 
@@ -234,4 +237,63 @@ func TestProgressNoCallback(t *testing.T) {
 
 	// Should not panic with nil callback
 	progress(opts, "test message")
+}
+
+func TestSaveState_PreservesExistingData(t *testing.T) {
+	// Setup temp home directory
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	// create the state directory
+	stateDir := filepath.Join(tmpHome, ".config", "go4dot")
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	// 1. Create an initial state with some data
+	initialState := state.New()
+	initialState.AddConfig("existing-config", "path/to/existing", true)
+	if err := initialState.Save(); err != nil {
+		t.Fatalf("Failed to save initial state: %v", err)
+	}
+
+	// 2. Prepare inputs for SaveState
+	cfg := &config.Config{
+		SchemaVersion: "1.0",
+		Configs: config.ConfigGroups{
+			Core: []config.ConfigItem{
+				{Name: "new-config", Path: "new/path"},
+			},
+		},
+	}
+
+	result := &InstallResult{
+		Platform: &platform.Platform{
+			OS:             "linux",
+			PackageManager: "apt",
+		},
+		ConfigsStowed: []string{"new-config"},
+	}
+
+	// 3. Call SaveState
+	// This currently (before fix) overwrites the state with state.New()
+	if err := SaveState(cfg, "/tmp/dotfiles", result); err != nil {
+		t.Fatalf("SaveState failed: %v", err)
+	}
+
+	// 4. Verify results
+	loadedState, err := state.Load()
+	if err != nil {
+		t.Fatalf("Failed to reload state: %v", err)
+	}
+
+	// Check if "existing-config" is still there
+	if !loadedState.HasConfig("existing-config") {
+		t.Error("FAIL: Existing config 'existing-config' was lost (state overwritten)")
+	}
+
+	// Check if "new-config" was added
+	if !loadedState.HasConfig("new-config") {
+		t.Error("FAIL: New config 'new-config' was not added")
+	}
 }
