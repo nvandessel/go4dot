@@ -9,130 +9,151 @@ import (
 )
 
 func TestDetectConflicts_DirectoryFolding_DataLoss(t *testing.T) {
-	// Setup directories
-	tmpDir := t.TempDir()
-	dotfilesDir := filepath.Join(tmpDir, "dotfiles")
-	homeDir := filepath.Join(tmpDir, "home")
-
-	t.Setenv("HOME", homeDir)
-
-	if err := os.MkdirAll(dotfilesDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(homeDir, 0755); err != nil {
-		t.Fatal(err)
+	type testCase struct {
+		name              string
+		setupFunc         func(t *testing.T, dotfilesDir, homeDir string)
+		expectedConflicts int
+		description       string
 	}
 
-	// Create a config package "pkg" with a file
-	pkgDir := filepath.Join(dotfilesDir, "pkg")
-	if err := os.Mkdir(pkgDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	sourceFile := filepath.Join(pkgDir, "file.txt")
-	if err := os.WriteFile(sourceFile, []byte("content"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	tests := []testCase{
+		{
+			name: "Directory Folding (Correctly Linked)",
+			setupFunc: func(t *testing.T, dotfilesDir, homeDir string) {
+				// dotfiles/testpkg/config/settings.txt
+				srcDir := filepath.Join(dotfilesDir, "testpkg", "config")
+				if err := os.MkdirAll(srcDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				srcFile := filepath.Join(srcDir, "settings.txt")
+				if err := os.WriteFile(srcFile, []byte("important data"), 0644); err != nil {
+					t.Fatal(err)
+				}
 
-	// Create a directory symlink in home (directory folding)
-	// ~/.config/pkg -> ~/dotfiles/pkg
-	// Note: stow usually folds deeper, but let's simulate a direct dir link
-	// effectively making ~/file.txt -> dotfiles/pkg/file.txt via ~/pkg/file.txt
+				// ~/config -> dotfiles/testpkg/config
+				homeConfigDir := filepath.Join(homeDir, "config")
+				if err := os.MkdirAll(homeDir, 0755); err != nil {
+					t.Fatal(err)
+				}
 
-	// Actually, let's match stow structure closer.
-	// pkg/file.txt
-	// target: ~/file.txt (if stowed at top level)
-
-	// Create the "conflict" situation:
-	// We manually create a symlink for the DIRECTORY 'pkg' in home to point to 'dotfiles/pkg'
-	// But go4dot config expects to manage 'pkg/file.txt'.
-
-	// Wait, DetectConflicts iterates files.
-	// Config: Name: "pkg", Path: "pkg"
-	// Files: "file.txt"
-	// Target: ~/file.txt
-
-	// If I have ~/file.txt as a symlink to .../dotfiles/pkg/file.txt, that's normal stowing.
-
-	// The directory folding case is:
-	// Config: Name "nvim", Path "nvim"
-	// Files: ".config/nvim/init.lua"
-	// In dotfiles: nvim/.config/nvim/init.lua
-	// In home: ~/.config/nvim -> dotfiles/nvim/.config/nvim (The directory is linked)
-
-	// Let's set up that structure.
-
-	// 1. Config setup
-	cfg := &config.Config{
-		Configs: config.ConfigGroups{
-			Core: []config.ConfigItem{
-				{Name: "testpkg", Path: "testpkg"},
+				// Create the directory symlink
+				if err := os.Symlink(srcDir, homeConfigDir); err != nil {
+					t.Fatal(err)
+				}
 			},
+			expectedConflicts: 0,
+			description:       "Symlinked directory (fold) should not be reported as conflict",
+		},
+		{
+			name: "Real Conflict (Regular File)",
+			setupFunc: func(t *testing.T, dotfilesDir, homeDir string) {
+				// dotfiles/testpkg/file.txt
+				srcDir := filepath.Join(dotfilesDir, "testpkg")
+				if err := os.MkdirAll(srcDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("source"), 0644); err != nil {
+					t.Fatal(err)
+				}
+
+				// ~/file.txt (regular file)
+				if err := os.MkdirAll(homeDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(homeDir, "file.txt"), []byte("conflict"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			expectedConflicts: 1,
+			description:       "Regular file in place of symlink should be a conflict",
+		},
+		{
+			name: "Correct Direct Symlink",
+			setupFunc: func(t *testing.T, dotfilesDir, homeDir string) {
+				// dotfiles/testpkg/link.txt
+				srcDir := filepath.Join(dotfilesDir, "testpkg")
+				if err := os.MkdirAll(srcDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				srcFile := filepath.Join(srcDir, "link.txt")
+				if err := os.WriteFile(srcFile, []byte("source"), 0644); err != nil {
+					t.Fatal(err)
+				}
+
+				// ~/link.txt -> dotfiles/testpkg/link.txt
+				if err := os.MkdirAll(homeDir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(srcFile, filepath.Join(homeDir, "link.txt")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			expectedConflicts: 0,
+			description:       "Correct direct symlink should not be a conflict",
 		},
 	}
 
-	// 2. Filesystem setup
-	// dotfiles/testpkg/config/settings.txt
-	srcDir := filepath.Join(dotfilesDir, "testpkg", "config")
-	if err := os.MkdirAll(srcDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	srcFile := filepath.Join(srcDir, "settings.txt")
-	if err := os.WriteFile(srcFile, []byte("important data"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup isolated directories for each test case
+			tmpDir := t.TempDir()
+			dotfilesDir := filepath.Join(tmpDir, "dotfiles")
+			homeDir := filepath.Join(tmpDir, "home")
 
-	// 3. Create directory fold in home
-	// ~/config -> dotfiles/testpkg/config
-	homeConfigDir := filepath.Join(homeDir, "config")
-	// Make sure parent exists
-	if err := os.MkdirAll(homeDir, 0755); err != nil {
-		t.Fatal(err)
-	}
+			// Very important: Set HOME to temp dir for isolation
+			t.Setenv("HOME", homeDir)
 
-	// Create the symlink
-	if err := os.Symlink(srcDir, homeConfigDir); err != nil {
-		t.Fatal(err)
-	}
+			// Common setup
+			if err := os.MkdirAll(dotfilesDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(homeDir, 0755); err != nil {
+				t.Fatal(err)
+			}
 
-	// Verify access via symlink
-	targetFile := filepath.Join(homeConfigDir, "settings.txt")
-	if _, err := os.Stat(targetFile); err != nil {
-		t.Fatalf("Failed to access file via directory symlink: %v", err)
-	}
+			// Run scenario-specific setup
+			tc.setupFunc(t, dotfilesDir, homeDir)
 
-	// 4. Run DetectConflicts
-	conflicts, err := DetectConflicts(cfg, dotfilesDir)
-	if err != nil {
-		t.Fatalf("DetectConflicts failed: %v", err)
-	}
+			// Config setup (matches the paths used in setupFuncs)
+			// Note: "testpkg" is hardcoded in the setupFuncs as the package name
+			cfg := &config.Config{
+				Configs: config.ConfigGroups{
+					Core: []config.ConfigItem{
+						{Name: "testpkg", Path: "testpkg"},
+					},
+				},
+			}
 
-	// 5. Assertions
+			// Run detection
+			conflicts, err := DetectConflicts(cfg, dotfilesDir)
+			if err != nil {
+				t.Fatalf("DetectConflicts failed: %v", err)
+			}
 
-	// Current BUG: It detects a conflict
-	if len(conflicts) > 0 {
-		t.Errorf("BUG REPRODUCED: Found %d conflicts for correctly folded directory", len(conflicts))
+			// Verify count
+			if len(conflicts) != tc.expectedConflicts {
+				t.Errorf("Expected %d conflicts, got %d. (%s)", tc.expectedConflicts, len(conflicts), tc.description)
+			}
 
-		// Simulate "Delete" action on the conflict
-		// THIS IS THE DANGEROUS PART
-		conflict := conflicts[0]
+			// For the "Directory Folding" case specifically, we want to ensure data safety
+			// If it HAD failed (returned conflicts), we verify that deleting them works (for the conflict case)
+			// or warns us (for the bug case).
+			if tc.name == "Directory Folding (Correctly Linked)" && len(conflicts) > 0 {
+				// This block only runs if the bug reappears
+				t.Errorf("BUG REPRODUCED: Found conflicts for directory fold")
 
-		// Verify target is what we think it is
-		if conflict.TargetPath != targetFile {
-			t.Errorf("Unexpected conflict path: %s", conflict.TargetPath)
-		}
+				// Prove data loss would happen
+				conflict := conflicts[0]
+				if err := RemoveConflict(conflict); err != nil {
+					t.Fatalf("Failed to remove conflict: %v", err)
+				}
 
-		// Try to remove it (simulate user choosing 'delete')
-		if err := RemoveConflict(conflict); err != nil {
-			t.Fatalf("RemoveConflict failed: %v", err)
-		}
-
-		// Check if SOURCE file is gone
-		if _, err := os.Stat(srcFile); os.IsNotExist(err) {
-			t.Errorf("CRITICAL: Source file was deleted! Data loss occurred.")
-		} else {
-			t.Log("Source file survived (unexpected given the hypothesis, or lucky OS behavior)")
-		}
-	} else {
-		t.Log("No conflicts found (Behavior is correct)")
+				// Check source file
+				srcFile := filepath.Join(dotfilesDir, "testpkg", "config", "settings.txt")
+				if _, err := os.Stat(srcFile); os.IsNotExist(err) {
+					t.Errorf("CRITICAL: Source file was deleted! Data loss occurred.")
+				}
+			}
+		})
 	}
 }
