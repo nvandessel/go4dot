@@ -38,7 +38,8 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 
 	// Unstow removed configs
 	if st != nil {
-		summary, err := FullDriftCheckWithHome(cfg, dotfilesPath, os.Getenv("HOME"), st)
+		home := os.Getenv("HOME")
+		summary, err := FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
 		if err == nil {
 			// Unstow removed configs
 			if len(summary.RemovedConfigs) > 0 {
@@ -65,7 +66,6 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 			}
 
 			// Clean up orphaned symlinks for active configs
-			home := os.Getenv("HOME")
 			for _, res := range summary.Results {
 				if len(res.MissingFiles) > 0 {
 					for _, relPath := range res.MissingFiles {
@@ -73,7 +73,12 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 							opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
 						}
 						if !opts.DryRun {
-							_ = os.Remove(filepath.Join(home, relPath))
+							targetPath := filepath.Join(home, relPath)
+							if err := os.Remove(targetPath); err != nil {
+								if opts.ProgressFunc != nil {
+									opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to remove orphaned symlink %s: %v", relPath, err))
+								}
+							}
 						}
 					}
 				}
@@ -81,8 +86,13 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 		}
 	}
 
-	// Update symlink counts in state
+	// Update state
 	if st != nil {
+		// Update configs in state
+		for _, cfgItem := range allConfigs {
+			st.AddConfig(cfgItem.Name, cfgItem.Path, true) // Assume core if in main config
+		}
+
 		if err := UpdateSymlinkCounts(cfg, dotfilesPath, st); err != nil {
 			return result, fmt.Errorf("failed to update symlink counts: %w", err)
 		}
@@ -126,15 +136,21 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 						opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
 					}
 					if !opts.DryRun {
-						_ = os.Remove(filepath.Join(home, relPath))
+						targetPath := filepath.Join(home, relPath)
+						if err := os.Remove(targetPath); err != nil {
+							if opts.ProgressFunc != nil {
+								opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to remove orphaned symlink %s: %v", relPath, err))
+							}
+						}
 					}
 				}
 			}
 		}
 	}
 
-	// Update symlink count for this config
+	// Update state for this config
 	if st != nil {
+		st.AddConfig(configItem.Name, configItem.Path, true)
 		if err := UpdateSymlinkCounts(cfg, dotfilesPath, st); err != nil {
 			return fmt.Errorf("failed to update symlink counts: %w", err)
 		}

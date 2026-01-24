@@ -10,28 +10,28 @@ import (
 	"github.com/nvandessel/go4dot/internal/state"
 )
 
-// DriftResult represents the drift status for a single config
+// DriftResult represents the drift status for a single config.
 type DriftResult struct {
 	ConfigName    string   // Name of the config (e.g., "nvim")
 	ConfigPath    string   // Path within dotfiles (e.g., "nvim")
 	CurrentCount  int      // Current file count in the config directory
 	StoredCount   int      // File count stored in state
-	HasDrift      bool     // True if counts differ
+	HasDrift      bool     // True if counts differ or files are missing/conflicting
 	NewFiles      []string // Files in dotfiles but not symlinked (populated by FullDriftCheck)
 	MissingFiles  []string // Symlinks pointing to deleted files
 	ConflictFiles []string // Files that exist in home but aren't symlinks
 }
 
-// DriftSummary provides an overview of drift across all configs
+// DriftSummary provides an overview of drift across all configs.
 type DriftSummary struct {
-	TotalConfigs   int
-	DriftedConfigs int
-	TotalNewFiles  int
-	Results        []DriftResult
-	RemovedConfigs []string // Configs in state but not in current config
+	TotalConfigs   int           // Total number of configs analyzed
+	DriftedConfigs int           // Number of configs with detected drift
+	TotalNewFiles  int           // Total number of new files across all configs
+	Results        []DriftResult // Detailed results for each config
+	RemovedConfigs []string      // Configs in state but not in current config
 }
 
-// HasDrift returns true if any config has drift or if there are removed configs
+// HasDrift returns true if any config has drift or if there are removed configs.
 func (s *DriftSummary) HasDrift() bool {
 	return s.DriftedConfigs > 0 || len(s.RemovedConfigs) > 0
 }
@@ -40,7 +40,11 @@ func (s *DriftSummary) HasDrift() bool {
 // It identifies exactly which files are new, missing, or in conflict.
 func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, error) {
 	home := os.Getenv("HOME")
-	st, _ := state.Load() // Try to load state, ignore error if not found
+	st, err := state.Load()
+	if err != nil && !os.IsNotExist(err) {
+		// Log error if it's not just "file not found"
+		fmt.Fprintf(os.Stderr, "Warning: failed to load state: %v\n", err)
+	}
 	return FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
 }
 
@@ -209,7 +213,8 @@ func findOrphanedSymlinks(configPath, home string) []string {
 				absLinkDest = filepath.Clean(absLinkDest)
 
 				// If it points into our configPath
-				if strings.HasPrefix(absLinkDest, configPath) {
+				relToConfig, err := filepath.Rel(configPath, absLinkDest)
+				if err == nil && !strings.HasPrefix(relToConfig, "..") && relToConfig != ".." {
 					// Check if the source file still exists
 					if _, err := os.Stat(absLinkDest); os.IsNotExist(err) {
 						relToHome, _ := filepath.Rel(home, targetPath)
@@ -223,7 +228,7 @@ func findOrphanedSymlinks(configPath, home string) []string {
 	return orphans
 }
 
-// UpdateSymlinkCounts updates the stored file counts for all configs
+// UpdateSymlinkCounts updates the stored file counts for all configs in state.
 func UpdateSymlinkCounts(cfg *config.Config, dotfilesPath string, st *state.State) error {
 	allConfigs := cfg.GetAllConfigs()
 
@@ -243,7 +248,7 @@ func UpdateSymlinkCounts(cfg *config.Config, dotfilesPath string, st *state.Stat
 	return st.Save()
 }
 
-// countFiles counts the number of files (not directories) in a directory tree
+// countFiles counts the number of files (not directories) in a directory tree.
 func countFiles(dir string) (int, error) {
 	count := 0
 
@@ -264,7 +269,7 @@ func countFiles(dir string) (int, error) {
 	return count, nil
 }
 
-// GetDriftedConfigs returns only configs that have drift
+// GetDriftedConfigs returns only configs that have drift.
 func GetDriftedConfigs(results []DriftResult) []DriftResult {
 	var drifted []DriftResult
 	for _, r := range results {
@@ -275,7 +280,7 @@ func GetDriftedConfigs(results []DriftResult) []DriftResult {
 	return drifted
 }
 
-// ConflictFile represents a file that would conflict with stow
+// ConflictFile represents a file that would conflict with stow.
 type ConflictFile struct {
 	ConfigName string // Which config this belongs to
 	SourcePath string // Path in dotfiles
@@ -283,7 +288,7 @@ type ConflictFile struct {
 	IsDir      bool   // True if the conflict is a directory
 }
 
-// DetectConflicts checks for existing files in home that would block stow
+// DetectConflicts checks for existing files in home that would block stow.
 func DetectConflicts(cfg *config.Config, dotfilesPath string) ([]ConflictFile, error) {
 	var conflicts []ConflictFile
 	home := os.Getenv("HOME")
@@ -354,7 +359,7 @@ func DetectConflicts(cfg *config.Config, dotfilesPath string) ([]ConflictFile, e
 	return conflicts, nil
 }
 
-// BackupConflict moves a conflicting file to a backup location
+// BackupConflict moves a conflicting file to a backup location.
 func BackupConflict(conflict ConflictFile) error {
 	backupPath := conflict.TargetPath + ".g4d-backup"
 
@@ -366,7 +371,7 @@ func BackupConflict(conflict ConflictFile) error {
 	return os.Rename(conflict.TargetPath, backupPath)
 }
 
-// RemoveConflict deletes a conflicting file
+// RemoveConflict deletes a conflicting file.
 func RemoveConflict(conflict ConflictFile) error {
 	if conflict.IsDir {
 		return os.RemoveAll(conflict.TargetPath)
