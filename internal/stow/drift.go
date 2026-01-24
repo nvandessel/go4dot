@@ -42,8 +42,7 @@ func (s *DriftSummary) HasDrift() bool {
 func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, error) {
 	home := os.Getenv("HOME")
 	st, err := state.Load()
-	if err != nil && !os.IsNotExist(err) {
-		// Log error if it's not just "file not found"
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load state: %v\n", err)
 	}
 	return FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
@@ -81,7 +80,10 @@ func FullDriftCheckWithHome(cfg *config.Config, dotfilesPath, home string, st *s
 			result.CurrentCount++
 
 			// Calculate expected target path in home
-			relPath, _ := filepath.Rel(configPath, path)
+			relPath, err := filepath.Rel(configPath, path)
+			if err != nil {
+				return nil // Skip this file if we can't compute relative path
+			}
 			targetPath := filepath.Join(home, relPath)
 
 			// Check target status
@@ -285,10 +287,10 @@ func GetDriftedConfigs(results []DriftResult) []DriftResult {
 
 // ConflictFile represents a file that would conflict with stow.
 type ConflictFile struct {
-	ConfigName string // Which config this belongs to
-	SourcePath string // Path in dotfiles
-	TargetPath string // Path in home that has conflict
-	IsDir      bool   // True if the conflict is a directory
+	ConfigName string // Name of the config this file belongs to
+	SourcePath string // Absolute path to the source file in dotfiles
+	TargetPath string // Absolute path to the conflicting file in home
+	IsDir      bool   // True if the conflict is a directory, false if it's a file
 }
 
 // DetectConflicts checks for existing files in home that would block stow.

@@ -321,6 +321,17 @@ func UnstowConfigs(dotfilesPath string, configs []config.ConfigItem, opts StowOp
 
 	for i, cfg := range configs {
 		current := i + 1
+
+		// Check if config directory exists
+		configPath := filepath.Join(dotfilesPath, cfg.Path)
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			result.Skipped = append(result.Skipped, cfg.Name)
+			if opts.ProgressFunc != nil {
+				opts.ProgressFunc(current, total, fmt.Sprintf("⊘ Skipped %s (directory not found)", cfg.Name))
+			}
+			continue
+		}
+
 		err := UnstowWithCount(dotfilesPath, cfg.Path, current, total, opts)
 		if err != nil {
 			result.Failed = append(result.Failed, StowError{
@@ -386,7 +397,7 @@ func ValidateStow() error {
 	}
 
 	// Check if it's actually GNU stow
-	if !strings.Contains(string(output), "GNU Stow") && !strings.Contains(string(output), "stow") {
+	if !strings.Contains(string(output), "stow (GNU Stow)") && !strings.Contains(string(output), "GNU Stow") {
 		return fmt.Errorf("unexpected stow version output: %s", string(output))
 	}
 
