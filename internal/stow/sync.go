@@ -60,6 +60,8 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 						if err == nil {
 							st.RemoveConfig(name)
 							st.RemoveSymlinkCount(name)
+						} else if opts.ProgressFunc != nil {
+							opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to unstow removed config %s: %v", name, err))
 						}
 					}
 				}
@@ -128,7 +130,11 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 	// Clean up orphaned symlinks for this config
 	home := os.Getenv("HOME")
 	summary, err := FullDriftCheckWithHome(cfg, dotfilesPath, home, st)
-	if err == nil {
+	if err != nil {
+		if opts.ProgressFunc != nil {
+			opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: drift check failed: %v", err))
+		}
+	} else {
 		for _, res := range summary.Results {
 			if res.ConfigName == configName && len(res.MissingFiles) > 0 {
 				for _, relPath := range res.MissingFiles {
@@ -159,7 +165,8 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 	return nil
 }
 
-// SyncResultSummary returns a human-readable summary of the sync result
+// SyncResultSummary returns a human-readable summary of the sync result.
+// It displays the number of successfully synced configs or a failure message.
 func SyncResultSummary(result *StowResult) string {
 	if len(result.Failed) > 0 {
 		return fmt.Sprintf("Failed to sync %d config(s)", len(result.Failed))

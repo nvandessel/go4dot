@@ -2,6 +2,7 @@ package stow
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -9,29 +10,42 @@ import (
 	"github.com/nvandessel/go4dot/internal/state"
 )
 
-func TestSyncAll_OrphanedCleanup(t *testing.T) {
-	tmpDir := t.TempDir()
-	dotfilesPath := filepath.Join(tmpDir, "dotfiles")
-	homeDir := filepath.Join(tmpDir, "home")
+func setupSyncTestEnv(t *testing.T) (dotfilesPath, homeDir string, cleanup func()) {
+	t.Helper()
 
-	// Set HOME env var for tests
+	// Skip if stow is not installed to avoid CI failures
+	if _, err := exec.LookPath("stow"); err != nil {
+		t.Skip("stow not installed, skipping integration tests")
+	}
+
+	tmpDir := t.TempDir()
+	dotfilesPath = filepath.Join(tmpDir, "dotfiles")
+	homeDir = filepath.Join(tmpDir, "home")
+
 	origHome := os.Getenv("HOME")
 	if err := os.Setenv("HOME", homeDir); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+
+	if err := os.MkdirAll(homeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanup = func() {
 		if err := os.Setenv("HOME", origHome); err != nil {
 			t.Errorf("failed to restore HOME: %v", err)
 		}
-	}()
+	}
+
+	return dotfilesPath, homeDir, cleanup
+}
+
+func TestSyncAll_OrphanedCleanup(t *testing.T) {
+	dotfilesPath, homeDir, cleanup := setupSyncTestEnv(t)
+	defer cleanup()
 
 	pkg1Path := filepath.Join(dotfilesPath, "pkg1")
-	err := os.MkdirAll(pkg1Path, 0755)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = os.MkdirAll(homeDir, 0755)
-	if err != nil {
+	if err := os.MkdirAll(pkg1Path, 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -50,10 +64,9 @@ func TestSyncAll_OrphanedCleanup(t *testing.T) {
 	}
 
 	st := state.New()
-	st.AddConfig("pkg1", "pkg1", false)
 
 	// 1. Sync for the first time
-	_, err = SyncAll(dotfilesPath, cfg, st, false, StowOptions{})
+	_, err := SyncAll(dotfilesPath, cfg, st, false, StowOptions{})
 	if err != nil {
 		t.Fatalf("SyncAll failed: %v", err)
 	}
@@ -82,19 +95,8 @@ func TestSyncAll_OrphanedCleanup(t *testing.T) {
 }
 
 func TestSyncAll_RemovedConfig(t *testing.T) {
-	tmpDir := t.TempDir()
-	dotfilesPath := filepath.Join(tmpDir, "dotfiles")
-	homeDir := filepath.Join(tmpDir, "home")
-
-	origHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Setenv("HOME", origHome); err != nil {
-			t.Errorf("failed to restore HOME: %v", err)
-		}
-	}()
+	dotfilesPath, homeDir, cleanup := setupSyncTestEnv(t)
+	defer cleanup()
 
 	// Setup pkg1 and pkg2
 	for _, pkg := range []string{"pkg1", "pkg2"} {
@@ -105,9 +107,6 @@ func TestSyncAll_RemovedConfig(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(pkgPath, pkg+".txt"), []byte(pkg), 0644); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := os.MkdirAll(homeDir, 0755); err != nil {
-		t.Fatal(err)
 	}
 
 	cfg := &config.Config{
@@ -163,28 +162,14 @@ func TestSyncAll_RemovedConfig(t *testing.T) {
 }
 
 func TestSyncSingle(t *testing.T) {
-	tmpDir := t.TempDir()
-	dotfilesPath := filepath.Join(tmpDir, "dotfiles")
-	homeDir := filepath.Join(tmpDir, "home")
-
-	origHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Setenv("HOME", origHome); err != nil {
-			t.Errorf("failed to restore HOME: %v", err)
-		}
-	}()
+	dotfilesPath, homeDir, cleanup := setupSyncTestEnv(t)
+	defer cleanup()
 
 	pkg1Path := filepath.Join(dotfilesPath, "pkg1")
 	if err := os.MkdirAll(pkg1Path, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(pkg1Path, "f1.txt"), []byte("f1"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(homeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 

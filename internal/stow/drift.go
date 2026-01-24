@@ -37,7 +37,8 @@ func (s *DriftSummary) HasDrift() bool {
 }
 
 // FullDriftCheck performs a complete analysis of all configs.
-// It identifies exactly which files are new, missing, or in conflict.
+// It identifies exactly which files are new, missing, or in conflict by comparing
+// the dotfiles directory with the user's home directory.
 func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, error) {
 	home := os.Getenv("HOME")
 	st, err := state.Load()
@@ -49,6 +50,8 @@ func FullDriftCheck(cfg *config.Config, dotfilesPath string) (*DriftSummary, err
 }
 
 // FullDriftCheckWithHome performs a complete analysis of all configs using a specific home directory.
+// It iterates through all configurations defined in the config object and checks each file
+// for existence and correct symlinking in the provided home directory.
 func FullDriftCheckWithHome(cfg *config.Config, dotfilesPath, home string, st *state.State) (*DriftSummary, error) {
 	var results []DriftResult
 

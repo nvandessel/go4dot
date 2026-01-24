@@ -222,7 +222,7 @@ func syncAllConfigs(cfg *config.Config, dotfilesPath string, st *state.State) er
 	})
 
 	if err != nil {
-		return err
+		return fmt.Errorf("sync operation failed: %w", err)
 	}
 
 	if len(result.Failed) > 0 {

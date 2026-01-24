@@ -10,32 +10,34 @@ import (
 	"github.com/nvandessel/go4dot/internal/config"
 )
 
-// StowResult represents the result of a stow operation
+// StowResult represents the result of a stow operation across multiple configurations.
 type StowResult struct {
-	Success []string // Successfully stowed configs
-	Failed  []StowError
-	Skipped []string // Skipped (already stowed, conflicts, etc.)
+	Success []string    // List of successfully stowed config names
+	Failed  []StowError // List of configs that failed to stow with their errors
+	Skipped []string    // List of configs that were skipped (e.g., directory not found)
 }
 
-// StowError represents a stow operation error
+// StowError represents an error that occurred during a stow operation for a specific config.
 type StowError struct {
-	ConfigName string
-	Error      error
+	ConfigName string // Name of the configuration that failed
+	Error      error  // The error that occurred
 }
 
-// StowOptions configures stow behavior
+// StowOptions configures behavior for stow operations.
 type StowOptions struct {
-	DryRun       bool
-	Force        bool                                 // Overwrite conflicts
-	ProgressFunc func(current, total int, msg string) // Called for progress updates with item counts
+	DryRun       bool                                 // If true, don't make any changes, just show what would happen
+	Force        bool                                 // If true, use --adopt to take over existing files
+	ProgressFunc func(current, total int, msg string) // Callback for progress updates
 }
 
-// Stow symlinks a config directory using GNU stow
+// Stow symlinks a config directory using GNU stow.
+// It uses default settings and processes the specified config package.
 func Stow(dotfilesPath string, configName string, opts StowOptions) error {
 	return StowWithCount(dotfilesPath, configName, 1, 1, opts)
 }
 
-// StowWithCount symlinks a config directory using GNU stow with progress tracking
+// StowWithCount symlinks a config directory using GNU stow with progress tracking.
+// It allows specifying the current and total item counts for progress reporting.
 func StowWithCount(dotfilesPath string, configName string, current, total int, opts StowOptions) error {
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(current, total, fmt.Sprintf("Stowing %s...", configName))
@@ -70,12 +72,14 @@ func StowWithCount(dotfilesPath string, configName string, current, total int, o
 	return nil
 }
 
-// Unstow removes symlinks for a config
+// Unstow removes symlinks for a config using GNU stow.
+// It effectively reverses a previous stow operation for the specified package.
 func Unstow(dotfilesPath string, configName string, opts StowOptions) error {
 	return UnstowWithCount(dotfilesPath, configName, 1, 1, opts)
 }
 
-// UnstowWithCount removes symlinks for a config with progress tracking
+// UnstowWithCount removes symlinks for a config with progress tracking.
+// It uses the -D flag of GNU stow to remove the symlinks created for a package.
 func UnstowWithCount(dotfilesPath string, configName string, current, total int, opts StowOptions) error {
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(current, total, fmt.Sprintf("Unstowing %s...", configName))
@@ -105,12 +109,14 @@ func UnstowWithCount(dotfilesPath string, configName string, current, total int,
 	return nil
 }
 
-// Restow refreshes symlinks for a config (unstow + stow)
+// Restow refreshes symlinks for a config (unstow + stow).
+// It's useful when files have been added to or removed from the source config directory.
 func Restow(dotfilesPath string, configName string, opts StowOptions) error {
 	return RestowWithCount(dotfilesPath, configName, 1, 1, opts)
 }
 
-// RestowWithCount refreshes symlinks for a config with progress tracking
+// RestowWithCount refreshes symlinks for a config with progress tracking.
+// It uses the -R flag of GNU stow to rebuild the symlink tree.
 func RestowWithCount(dotfilesPath string, configName string, current, total int, opts StowOptions) error {
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(current, total, fmt.Sprintf("Restowing %s...", configName))
@@ -144,7 +150,8 @@ func RestowWithCount(dotfilesPath string, configName string, current, total int,
 	return nil
 }
 
-// StowConfigs stows multiple configs
+// StowConfigs stows multiple configurations in sequence.
+// It returns a comprehensive result object detailing successes, failures, and skips.
 func StowConfigs(dotfilesPath string, configs []config.ConfigItem, opts StowOptions) *StowResult {
 	result := &StowResult{}
 	total := len(configs)
@@ -177,7 +184,8 @@ func StowConfigs(dotfilesPath string, configs []config.ConfigItem, opts StowOpti
 	return result
 }
 
-// UnstowConfigs unstows multiple configs
+// UnstowConfigs unstows multiple configurations in sequence.
+// It uses GNU stow -D for each configuration.
 func UnstowConfigs(dotfilesPath string, configs []config.ConfigItem, opts StowOptions) *StowResult {
 	result := &StowResult{}
 	total := len(configs)
@@ -198,7 +206,8 @@ func UnstowConfigs(dotfilesPath string, configs []config.ConfigItem, opts StowOp
 	return result
 }
 
-// RestowConfigs restows multiple configs
+// RestowConfigs restows multiple configurations in sequence.
+// It uses GNU stow -R for each configuration.
 func RestowConfigs(dotfilesPath string, configs []config.ConfigItem, opts StowOptions) *StowResult {
 	result := &StowResult{}
 	total := len(configs)
@@ -228,13 +237,14 @@ func RestowConfigs(dotfilesPath string, configs []config.ConfigItem, opts StowOp
 	return result
 }
 
-// IsStowInstalled checks if GNU stow is available
+// IsStowInstalled checks if the GNU stow executable is available in the system PATH.
 func IsStowInstalled() bool {
 	_, err := exec.LookPath("stow")
 	return err == nil
 }
 
-// ValidateStow checks if stow is installed and working
+// ValidateStow checks if GNU stow is installed and correctly reports its version.
+// It ensures that the 'stow' command is available and identifies as GNU Stow.
 func ValidateStow() error {
 	if !IsStowInstalled() {
 		return fmt.Errorf("GNU stow is not installed")
