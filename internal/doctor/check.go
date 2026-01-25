@@ -41,7 +41,7 @@ type CheckResult struct {
 	DepsResult            *deps.CheckResult
 	ExternalStatus        []deps.ExternalStatus
 	MachineStatus         []machine.MachineConfigStatus
-	SymlinkStatus         []SymlinkCheck
+	DriftSummary          *stow.DriftSummary
 	UnmanagedLinks        []UnmanagedSymlink
 	AdoptionOpportunities []AdoptionOpportunity
 }
@@ -121,10 +121,19 @@ func RunChecks(cfg *config.Config, opts CheckOptions) (*CheckResult, error) {
 	// Step 5: Check symlinks
 	progress(opts, "Checking symlinks...")
 	if opts.DotfilesPath != "" && !stowCheck.Status.isError() {
-		symlinkStatus := checkSymlinks(cfg, opts.DotfilesPath)
-		result.SymlinkStatus = symlinkStatus
-		symlinkCheck := summarizeSymlinkCheck(symlinkStatus)
-		result.Checks = append(result.Checks, symlinkCheck)
+		driftSummary, err := stow.FullDriftCheck(cfg, opts.DotfilesPath)
+		if err != nil {
+			result.Checks = append(result.Checks, Check{
+				Name:        "Symlinks",
+				Description: "Check stowed config symlinks",
+				Status:      StatusError,
+				Message:     fmt.Sprintf("Drift check failed: %v", err),
+			})
+		} else {
+			result.DriftSummary = driftSummary
+			symlinkCheck := summarizeDriftCheck(driftSummary)
+			result.Checks = append(result.Checks, symlinkCheck)
+		}
 	} else {
 		result.Checks = append(result.Checks, Check{
 			Name:        "Symlinks",
@@ -276,145 +285,44 @@ func summarizeDepsCheck(result *deps.CheckResult) Check {
 	return check
 }
 
-// checkSymlinks verifies all stowed symlinks are valid
-func checkSymlinks(cfg *config.Config, dotfilesPath string) []SymlinkCheck {
-	var checks []SymlinkCheck
-	home := os.Getenv("HOME")
-
-	allConfigs := cfg.GetAllConfigs()
-	for _, configItem := range allConfigs {
-		configPath := filepath.Join(dotfilesPath, configItem.Path)
-
-		// Check if config directory exists in dotfiles
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			checks = append(checks, SymlinkCheck{
-				Config:  configItem.Name,
-				Status:  StatusSkipped,
-				Message: "Config directory not found in dotfiles",
-			})
-			continue
-		}
-
-		// Walk the config directory and check each file's symlink
-		err := filepath.Walk(configPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return nil // Skip on error
-			}
-			if info.IsDir() {
-				return nil // Skip directories
-			}
-
-			// Calculate expected target path
-			relPath, _ := filepath.Rel(configPath, path)
-			targetPath := filepath.Join(home, relPath)
-
-			check := SymlinkCheck{
-				Config:     configItem.Name,
-				TargetPath: targetPath,
-			}
-
-			// Check if target exists
-			targetInfo, err := os.Lstat(targetPath)
-			if os.IsNotExist(err) {
-				check.Status = StatusWarning
-				check.Message = "Symlink missing"
-				checks = append(checks, check)
-				return nil
-			}
-
-			// Check if it's a symlink
-			if targetInfo.Mode()&os.ModeSymlink == 0 {
-				// If not a symlink, check if it's the same file (handles directory folding)
-				sourceInfo, err := os.Stat(path)
-				if err == nil && os.SameFile(sourceInfo, targetInfo) {
-					// It's the same file (synced via parent directory symlink) - OK
-					check.Status = StatusOK
-					check.Message = "Valid (via directory fold)"
-					checks = append(checks, check)
-					return nil
-				}
-
-				check.Status = StatusWarning
-				check.Message = "Not a symlink (conflict)"
-				checks = append(checks, check)
-				return nil
-			}
-
-			// Check if symlink points to correct location
-			linkDest, err := os.Readlink(targetPath)
-			if err != nil {
-				check.Status = StatusError
-				check.Message = fmt.Sprintf("Cannot read symlink: %v", err)
-				checks = append(checks, check)
-				return nil
-			}
-
-			// Resolve to absolute path
-			if !filepath.IsAbs(linkDest) {
-				linkDest = filepath.Join(filepath.Dir(targetPath), linkDest)
-			}
-			linkDest = filepath.Clean(linkDest)
-
-			if linkDest != path {
-				check.Status = StatusWarning
-				check.Message = fmt.Sprintf("Points to wrong location: %s", linkDest)
-				checks = append(checks, check)
-				return nil
-			}
-
-			check.Status = StatusOK
-			check.Message = "Valid symlink"
-			checks = append(checks, check)
-			return nil
-		})
-
-		if err != nil {
-			checks = append(checks, SymlinkCheck{
-				Config:  configItem.Name,
-				Status:  StatusError,
-				Message: fmt.Sprintf("Error checking: %v", err),
-			})
-		}
-	}
-
-	return checks
-}
-
-// summarizeSymlinkCheck creates a check summary from symlink results
-func summarizeSymlinkCheck(checks []SymlinkCheck) Check {
+// summarizeDriftCheck creates a check summary from drift check result
+func summarizeDriftCheck(summary *stow.DriftSummary) Check {
 	check := Check{
 		Name:        "Symlinks",
 		Description: "Stowed config symlinks",
 	}
 
-	var ok, warning, errors int
-	for _, c := range checks {
-		switch c.Status {
-		case StatusOK:
-			ok++
-		case StatusWarning:
-			warning++
-		case StatusError:
-			errors++
+	if summary.DriftedConfigs > 0 {
+		var conflicts, missing, news int
+		for _, r := range summary.Results {
+			conflicts += len(r.ConflictFiles)
+			missing += len(r.MissingFiles)
+			news += len(r.NewFiles)
 		}
-	}
 
-	if errors > 0 {
-		check.Status = StatusError
-		check.Message = fmt.Sprintf("%d errors, %d warnings, %d ok", errors, warning, ok)
-		check.Fix = "Run 'g4d stow refresh' to fix symlinks"
+		if conflicts > 0 {
+			check.Status = StatusError
+			check.Message = fmt.Sprintf("%d configs have drift (%d conflicts, %d missing, %d new)",
+				summary.DriftedConfigs, conflicts, missing, news)
+			check.Fix = "Run 'g4d stow refresh' to fix symlinks"
+		} else {
+			check.Status = StatusWarning
+			check.Message = fmt.Sprintf("%d configs have drift (%d missing, %d new)",
+				summary.DriftedConfigs, missing, news)
+			check.Fix = "Run 'g4d stow refresh' to update symlinks"
+		}
 		return check
 	}
 
-	if warning > 0 {
+	if len(summary.RemovedConfigs) > 0 {
 		check.Status = StatusWarning
-		check.Message = fmt.Sprintf("%d warnings, %d ok", warning, ok)
-		check.Fix = "Run 'g4d stow add <config>' to create missing symlinks"
+		check.Message = fmt.Sprintf("%d configs in state are missing from configuration", len(summary.RemovedConfigs))
+		check.Fix = "Run 'g4d stow remove' or update your config"
 		return check
 	}
 
 	check.Status = StatusOK
-	check.Message = fmt.Sprintf("%d symlinks verified", ok)
+	check.Message = fmt.Sprintf("%d configs verified", summary.TotalConfigs)
 	return check
 }
 
@@ -554,34 +462,74 @@ func checkUnmanagedSymlinks(cfg *config.Config, dotfilesPath string) []Unmanaged
 	for _, configItem := range allConfigs {
 		configPath := filepath.Join(absDotfiles, configItem.Path)
 		_ = filepath.Walk(configPath, func(path string, info os.FileInfo, err error) error {
-			if err == nil && !info.IsDir() {
+			if err == nil {
 				relPath, _ := filepath.Rel(configPath, path)
-				targetPath := filepath.Join(home, relPath)
-				managedTargets[filepath.Clean(targetPath)] = true
+				if relPath != "." {
+					targetPath := filepath.Join(home, relPath)
+					managedTargets[filepath.Clean(targetPath)] = true
+				}
 			}
 			return nil
 		})
 	}
 
-	// Scan home and ~/.config
-	scanDirs := []string{home, filepath.Join(home, ".config")}
-	for _, dir := range scanDirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
+	// Directories to scan for symlinks
+	scanDirs := []string{
+		home,
+		filepath.Join(home, ".config"),
+		filepath.Join(home, ".local", "bin"),
+		filepath.Join(home, ".local", "share"),
+	}
+
+	for _, scanDir := range scanDirs {
+		if _, err := os.Stat(scanDir); os.IsNotExist(err) {
 			continue
 		}
 
-		for _, entry := range entries {
-			path := filepath.Join(dir, entry.Name())
-			info, err := os.Lstat(path)
-			if err != nil || info.Mode()&os.ModeSymlink == 0 {
-				continue
+		// Use a simple walk to catch symlinks in these directories
+		// We limit depth manually to avoid scanning the entire home dir
+		_ = filepath.Walk(scanDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return filepath.SkipDir
+			}
+
+			// Calculate depth relative to scanDir
+			rel, _ := filepath.Rel(scanDir, path)
+			depth := 0
+			if rel != "." {
+				depth = len(strings.Split(rel, string(filepath.Separator)))
+			}
+
+			// Limit depth
+			if info.IsDir() {
+				// Don't go deep into directories that are not common config locations
+				if depth > 2 {
+					return filepath.SkipDir
+				}
+				// Skip hidden directories in home except .config etc
+				if scanDir == home && strings.HasPrefix(info.Name(), ".") &&
+					info.Name() != ".config" && info.Name() != ".local" && info.Name() != ".ssh" && info.Name() != ".gnupg" {
+					if depth == 1 {
+						// We still want to check top-level hidden files, so don't skip yet,
+						// but don't recurse into them if they are not the ones we want.
+						// Actually, most hidden files are just files, not dirs.
+						// If it's a dir like .cache, skip it.
+						if info.Name() == ".cache" || info.Name() == ".git" || info.Name() == ".mozilla" || info.Name() == ".var" {
+							return filepath.SkipDir
+						}
+					}
+				}
+				return nil
+			}
+
+			if info.Mode()&os.ModeSymlink == 0 {
+				return nil
 			}
 
 			// It's a symlink, check where it points
 			linkDest, err := os.Readlink(path)
 			if err != nil {
-				continue
+				return nil
 			}
 
 			// Resolve to absolute path
@@ -599,7 +547,8 @@ func checkUnmanagedSymlinks(cfg *config.Config, dotfilesPath string) []Unmanaged
 					})
 				}
 			}
-		}
+			return nil
+		})
 	}
 
 	return unmanaged

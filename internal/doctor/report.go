@@ -73,24 +73,36 @@ func (r *CheckResult) DetailedReport() string {
 	// Start with standard report
 	sb.WriteString(r.Report())
 
-	// Add detailed symlink status if any have issues
-	if len(r.SymlinkStatus) > 0 {
-		hasIssues := false
-		for _, s := range r.SymlinkStatus {
-			if s.Status != StatusOK {
-				hasIssues = true
-				break
+	// Add detailed symlink drift if any
+	if r.DriftSummary != nil && r.DriftSummary.HasDrift() {
+		sb.WriteString("\n── Symlink Drift Details ──\n\n")
+		for _, res := range r.DriftSummary.Results {
+			if res.HasDrift {
+				sb.WriteString(fmt.Sprintf("• %s:\n", res.ConfigName))
+				if len(res.ConflictFiles) > 0 {
+					sb.WriteString(fmt.Sprintf("  Conflicts (%d):\n", len(res.ConflictFiles)))
+					for _, f := range res.ConflictFiles {
+						sb.WriteString(fmt.Sprintf("    ! %s\n", f))
+					}
+				}
+				if len(res.MissingFiles) > 0 {
+					sb.WriteString(fmt.Sprintf("  Missing (%d):\n", len(res.MissingFiles)))
+					for _, f := range res.MissingFiles {
+						sb.WriteString(fmt.Sprintf("    - %s\n", f))
+					}
+				}
+				if len(res.NewFiles) > 0 {
+					sb.WriteString(fmt.Sprintf("  New (%d):\n", len(res.NewFiles)))
+					for _, f := range res.NewFiles {
+						sb.WriteString(fmt.Sprintf("    + %s\n", f))
+					}
+				}
 			}
 		}
-
-		if hasIssues {
-			sb.WriteString("\n── Symlink Details ──\n\n")
-			for _, s := range r.SymlinkStatus {
-				if s.Status != StatusOK {
-					icon := statusIcon(s.Status)
-					sb.WriteString(fmt.Sprintf("%s [%s] %s\n", icon, s.Config, s.TargetPath))
-					sb.WriteString(fmt.Sprintf("  %s\n", s.Message))
-				}
+		if len(r.DriftSummary.RemovedConfigs) > 0 {
+			sb.WriteString("\nRemoved Configs (in state but not in configuration):\n")
+			for _, c := range r.DriftSummary.RemovedConfigs {
+				sb.WriteString(fmt.Sprintf("  - %s\n", c))
 			}
 		}
 	}

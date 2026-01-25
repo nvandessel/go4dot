@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/stow"
 )
 
 func TestStatusIcon(t *testing.T) {
@@ -85,12 +86,15 @@ func TestCheckResultDetailedReport(t *testing.T) {
 				Message: "OK",
 			},
 		},
-		SymlinkStatus: []SymlinkCheck{
-			{
-				Config:     "git",
-				TargetPath: "~/.gitconfig",
-				Status:     StatusWarning,
-				Message:    "Symlink missing",
+		DriftSummary: &stow.DriftSummary{
+			TotalConfigs:   1,
+			DriftedConfigs: 1,
+			Results: []stow.DriftResult{
+				{
+					ConfigName:   "git",
+					HasDrift:     true,
+					MissingFiles: []string{".gitconfig"},
+				},
 			},
 		},
 	}
@@ -98,8 +102,8 @@ func TestCheckResultDetailedReport(t *testing.T) {
 	report := result.DetailedReport()
 
 	// Should contain symlink details since there's an issue
-	if !strings.Contains(report, "Symlink Details") {
-		t.Error("DetailedReport should contain symlink details for issues")
+	if !strings.Contains(report, "Symlink Drift Details") {
+		t.Error("DetailedReport should contain symlink drift details for issues")
 	}
 
 	if !strings.Contains(report, "git") {

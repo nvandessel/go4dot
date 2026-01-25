@@ -8,6 +8,7 @@ import (
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/deps"
 	"github.com/nvandessel/go4dot/internal/machine"
+	"github.com/nvandessel/go4dot/internal/stow"
 )
 
 func TestCheckStatusIsError(t *testing.T) {
@@ -302,41 +303,56 @@ func TestSummarizeMachineCheck(t *testing.T) {
 	}
 }
 
-func TestSummarizeSymlinkCheck(t *testing.T) {
+func TestSummarizeDriftCheck(t *testing.T) {
 	tests := []struct {
 		name           string
-		checks         []SymlinkCheck
+		summary        *stow.DriftSummary
 		expectedStatus CheckStatus
 	}{
 		{
 			name: "All OK",
-			checks: []SymlinkCheck{
-				{Status: StatusOK},
-				{Status: StatusOK},
+			summary: &stow.DriftSummary{
+				TotalConfigs:   2,
+				DriftedConfigs: 0,
 			},
 			expectedStatus: StatusOK,
 		},
 		{
-			name: "Some warnings",
-			checks: []SymlinkCheck{
-				{Status: StatusOK},
-				{Status: StatusWarning},
+			name: "Some warnings (missing/new)",
+			summary: &stow.DriftSummary{
+				TotalConfigs:   2,
+				DriftedConfigs: 1,
+				Results: []stow.DriftResult{
+					{ConfigName: "pkg1", HasDrift: true, NewFiles: []string{"test.txt"}},
+				},
 			},
 			expectedStatus: StatusWarning,
 		},
 		{
-			name: "Has errors",
-			checks: []SymlinkCheck{
-				{Status: StatusOK},
-				{Status: StatusError},
+			name: "Has errors (conflicts)",
+			summary: &stow.DriftSummary{
+				TotalConfigs:   2,
+				DriftedConfigs: 1,
+				Results: []stow.DriftResult{
+					{ConfigName: "pkg1", HasDrift: true, ConflictFiles: []string{"test.txt"}},
+				},
 			},
 			expectedStatus: StatusError,
+		},
+		{
+			name: "Removed configs",
+			summary: &stow.DriftSummary{
+				TotalConfigs:   1,
+				DriftedConfigs: 1,
+				RemovedConfigs: []string{"oldpkg"},
+			},
+			expectedStatus: StatusWarning,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			check := summarizeSymlinkCheck(tt.checks)
+			check := summarizeDriftCheck(tt.summary)
 			if check.Status != tt.expectedStatus {
 				t.Errorf("Status = %v, want %v", check.Status, tt.expectedStatus)
 			}
@@ -344,12 +360,11 @@ func TestSummarizeSymlinkCheck(t *testing.T) {
 	}
 }
 
-func TestCheckSymlinks(t *testing.T) {
+func TestDriftCheck(t *testing.T) {
 	tmpDir := t.TempDir()
-	home := os.Getenv("HOME")
 
 	// Create a fake dotfiles structure
-	configDir := filepath.Join(tmpDir, "testconfig", ".config")
+	configDir := filepath.Join(tmpDir, "testconfig")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("Failed to create config dir: %v", err)
 	}
@@ -368,37 +383,36 @@ func TestCheckSymlinks(t *testing.T) {
 		},
 	}
 
-	checks := checkSymlinks(cfg, tmpDir)
-
-	// Should have at least one check
-	if len(checks) == 0 {
-		t.Error("Expected at least one symlink check")
+	// RunChecks should now use FullDriftCheck
+	opts := CheckOptions{
+		DotfilesPath: tmpDir,
+	}
+	result, err := RunChecks(cfg, opts)
+	if err != nil {
+		t.Fatalf("RunChecks failed: %v", err)
 	}
 
-	// Log results
-	for _, c := range checks {
-		t.Logf("Symlink check: config=%s, target=%s, status=%v, msg=%s",
-			c.Config, c.TargetPath, c.Status, c.Message)
+	if result.DriftSummary == nil {
+		t.Fatal("Expected DriftSummary to be populated")
 	}
 
-	// The symlink should be "missing" since we haven't created it
+	// Should have detected pkg1 as new/missing symlink
 	found := false
-	for _, c := range checks {
-		if c.Config == "testconfig" {
+	for _, r := range result.DriftSummary.Results {
+		if r.ConfigName == "testconfig" {
 			found = true
-			// It should be warning (missing) since the symlink doesn't exist
-			if c.Status != StatusWarning && c.Status != StatusOK {
-				// It might be OK if there's already a symlink in the home directory
-				t.Logf("Expected warning or ok status for missing symlink, got %v", c.Status)
+			if !r.HasDrift {
+				t.Error("Expected drift for unlinked config")
+			}
+			if len(r.NewFiles) == 0 {
+				t.Error("Expected test.conf to be reported as new file")
 			}
 		}
 	}
 
 	if !found {
-		t.Error("Expected to find check for 'testconfig'")
+		t.Error("Expected results for 'testconfig'")
 	}
-
-	_ = home // Used implicitly by checkSymlinks via $HOME env var
 }
 
 func TestRunChecks(t *testing.T) {
@@ -438,6 +452,78 @@ func TestRunChecks(t *testing.T) {
 	// Log the checks
 	for _, check := range result.Checks {
 		t.Logf("Check: %s - %v - %s", check.Name, check.Status, check.Message)
+	}
+}
+
+func TestCheckUnmanagedSymlinks(t *testing.T) {
+	tmpDir := t.TempDir()
+	homeDir := t.TempDir()
+
+	// Setup environment
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	defer func() { _ = os.Unsetenv("HOME") }()
+
+	// Create dotfiles
+	dotfilesDir := filepath.Join(tmpDir, "dotfiles")
+	if err := os.MkdirAll(dotfilesDir, 0755); err != nil {
+		t.Fatalf("Failed to create dotfiles dir: %v", err)
+	}
+
+	managedPkg := filepath.Join(dotfilesDir, "managed")
+	if err := os.MkdirAll(managedPkg, 0755); err != nil {
+		t.Fatalf("Failed to create managed pkg dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(managedPkg, "file1"), []byte("managed"), 0644); err != nil {
+		t.Fatalf("Failed to write managed file: %v", err)
+	}
+
+	unmanagedPkg := filepath.Join(dotfilesDir, "unmanaged")
+	if err := os.MkdirAll(unmanagedPkg, 0755); err != nil {
+		t.Fatalf("Failed to create unmanaged pkg dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(unmanagedPkg, "file2"), []byte("unmanaged"), 0644); err != nil {
+		t.Fatalf("Failed to write unmanaged file: %v", err)
+	}
+
+	// Create symlinks in home
+	// 1. Managed symlink
+	managedTarget := filepath.Join(homeDir, "file1")
+	if err := os.Symlink(filepath.Join(managedPkg, "file1"), managedTarget); err != nil {
+		t.Fatalf("Failed to create managed symlink: %v", err)
+	}
+
+	// 2. Unmanaged symlink (points to dotfiles but not in config)
+	unmanagedTarget := filepath.Join(homeDir, "file2")
+	if err := os.Symlink(filepath.Join(unmanagedPkg, "file2"), unmanagedTarget); err != nil {
+		t.Fatalf("Failed to create unmanaged symlink: %v", err)
+	}
+
+	// 3. Random symlink (does not point to dotfiles)
+	randomTarget := filepath.Join(homeDir, "random")
+	if err := os.Symlink("/tmp", randomTarget); err != nil {
+		t.Fatalf("Failed to create random symlink: %v", err)
+	}
+
+	cfg := &config.Config{
+		Configs: config.ConfigGroups{
+			Core: []config.ConfigItem{
+				{Name: "managed", Path: "managed"},
+			},
+		},
+	}
+
+	unmanaged := checkUnmanagedSymlinks(cfg, dotfilesDir)
+
+	if len(unmanaged) != 1 {
+		t.Errorf("Expected 1 unmanaged symlink, got %d", len(unmanaged))
+	}
+
+	if len(unmanaged) > 0 {
+		if unmanaged[0].TargetPath != unmanagedTarget {
+			t.Errorf("Expected unmanaged target %s, got %s", unmanagedTarget, unmanaged[0].TargetPath)
+		}
 	}
 }
 
