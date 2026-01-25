@@ -3,14 +3,18 @@
 This guide outlines the best practices for Go development within this project, modeled after high-quality TUI applications.
 
 ## 1. Project Structure
-- **cmd/**: Contains the main applications. Each subdirectory should be a main package (e.g., `cmd/bv/main.go`).
-- **pkg/**: Library code organized by domain. This project uses `pkg/` for all packages:
-  - **pkg/ui/**: User Interface components (Bubble Tea models, views).
-  - **pkg/model/**: Domain models and data structures.
-  - **pkg/analysis/**: Graph analysis and metrics computation.
-  - **pkg/loader/**: Beads file discovery and parsing.
-  - **pkg/export/**: Export functionality (Markdown, HTML, SQLite).
-- **tests/**: End-to-end and integration tests.
+- **cmd/**: Contains the main applications. Each subdirectory should be a main package (e.g., `cmd/g4d/main.go`).
+- **internal/**: Private application and library code. This project uses `internal/` for all domain logic:
+  - **internal/platform/**: OS/distro detection and package manager abstraction.
+  - **internal/config/**: Configuration loading, validation, and schema.
+  - **internal/stow/**: GNU Stow wrapper and symlink management.
+  - **internal/deps/**: Dependency checking and installation logic.
+  - **internal/doctor/**: Health checking and reporting.
+  - **internal/ui/**: TUI components (Bubble Tea models, views, styles).
+  - **internal/machine/**: Machine-specific configuration and templates.
+  - **internal/state/**: Installation state tracking.
+- **pkg/**: Public library code (currently unused/reserved).
+- **test/**: End-to-end and integration tests.
 
 ## 2. Code Style
 - **Formatting**: Always use `gofmt` (or `goimports`).
@@ -18,7 +22,7 @@ This guide outlines the best practices for Go development within this project, m
   - Use `CamelCase` for exported identifiers.
   - Use `camelCase` for unexported identifiers.
   - Keep variable names short but descriptive (e.g., `i` for index, `ctx` for context).
-  - Package names should be short, lowercase, and singular (e.g., `model`, `ui`, `auth`).
+  - Package names should be short, lowercase, and singular (e.g., `platform`, `ui`, `config`).
 - **Error Handling**:
   - Return errors as the last return value.
   - Check errors immediately.
@@ -27,23 +31,22 @@ This guide outlines the best practices for Go development within this project, m
 
 ## 3. TUI Development (Charmbracelet Stack)
 - **Architecture**: Follow The Elm Architecture (Model, View, Update) via `bubbletea`.
-- **Components**: Break down complex UIs into smaller, reusable `tea.Model` components (e.g., `ListView`, `DetailView`, `FilterBar`).
-- **Styling**: Use `lipgloss` for all styling. Define a central `styles.go` to maintain consistency (colors, margins, padding).
+- **Components**: Break down complex UIs into smaller, reusable `tea.Model` components (e.g., `ConfigList`, `Spinner`, `Progress`).
+- **Styling**: Use `lipgloss` for all styling. Define a central `styles.go` in `internal/ui` to maintain consistency.
 - **State**: Keep the main model clean. Delegate update logic to sub-models.
 
 ## 4. Configuration & Data
-- **Config**: Use struct-based configuration. Load from environment variables or config files (YAML/JSON).
-- **Data Access**: separate data loading (Loader/Repository pattern) from the UI logic. The UI should receive data, not fetch it directly if possible.
+- **Config**: Use struct-based configuration (`internal/config`). Load from YAML files.
+- **Data Access**: Separate data loading (Loader/Repository pattern) from the UI logic. The UI should receive data, not fetch it directly if possible.
 
 ## 5. Testing
 - Write unit tests for logic-heavy packages.
 - Use table-driven tests for parser/validator logic.
-- Run tests with `go test ./...`.
+- Run tests with `go test ./...` or `make test`.
 
 ## 6. Dependencies
 - Use `go mod` for dependency management.
-- specific versions should be pinned in `go.mod`.
-- Vendor dependencies if necessary for offline builds, but standard `go mod` is usually sufficient.
+- Specific versions should be pinned in `go.mod`.
 
 ## 7. Documentation
 - Add comments to exported functions and types (`// TypeName represents...`).
