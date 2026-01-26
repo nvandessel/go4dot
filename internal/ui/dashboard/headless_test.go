@@ -165,8 +165,8 @@ func TestDashboard_ViewSwitching(t *testing.T) {
 		return strings.Contains(string(out), "vim")
 	}, teatest.WithDuration(time.Second))
 
-	// Switch to Menu (m key)
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	// Switch to Menu (Tab)
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
 
 	// Quit
 	tm.Send(tea.KeyMsg{Type: tea.KeyEsc}) // Back to dashboard
