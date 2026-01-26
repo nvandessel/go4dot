@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/nvandessel/go4dot/internal/config"
@@ -32,14 +34,26 @@ func runInteractive(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Check for updates in background
+	// Check for updates in background with proper lifecycle management
+	// Use a context with timeout to ensure the goroutine can be cancelled
+	updateCtx, cancelUpdate := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelUpdate()
+
 	updateMsgChan := make(chan string, 1)
 	go func() {
-		res, err := version.CheckForUpdates(Version)
+		res, err := version.CheckForUpdates(updateCtx, Version)
 		if err == nil && res != nil && res.IsOutdated {
-			updateMsgChan <- fmt.Sprintf("Update: %s -> %s", res.CurrentVersion, res.LatestVersion)
+			select {
+			case updateMsgChan <- fmt.Sprintf("Update: %s -> %s", res.CurrentVersion, res.LatestVersion):
+			case <-updateCtx.Done():
+				// Context cancelled, don't block on channel send
+			}
 		} else {
-			updateMsgChan <- ""
+			select {
+			case updateMsgChan <- "":
+			case <-updateCtx.Done():
+				// Context cancelled, don't block on channel send
+			}
 		}
 	}()
 
