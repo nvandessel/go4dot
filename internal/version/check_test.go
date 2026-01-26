@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+// setTestURL safely sets the GitHub API URL for testing and returns a cleanup function.
+func setTestURL(t *testing.T, url string) {
+	t.Helper()
+	githubAPIURLMu.Lock()
+	original := githubAPIURL
+	githubAPIURL = url
+	githubAPIURLMu.Unlock()
+
+	t.Cleanup(func() {
+		githubAPIURLMu.Lock()
+		githubAPIURL = original
+		githubAPIURLMu.Unlock()
+	})
+}
+
 func TestCheckForUpdates_DevVersion(t *testing.T) {
 	ctx := context.Background()
 
@@ -41,10 +56,7 @@ func TestCheckForUpdates_ContextCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Override the URL for testing
-	originalURL := githubAPIURL
-	githubAPIURL = server.URL
-	defer func() { githubAPIURL = originalURL }()
+	setTestURL(t, server.URL)
 
 	// Create an already-cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -64,10 +76,7 @@ func TestCheckForUpdates_ContextTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Override the URL for testing
-	originalURL := githubAPIURL
-	githubAPIURL = server.URL
-	defer func() { githubAPIURL = originalURL }()
+	setTestURL(t, server.URL)
 
 	// Create a context with short timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -95,9 +104,7 @@ func TestCheckForUpdates_OutdatedVersion(t *testing.T) {
 	}))
 	defer server.Close()
 
-	originalURL := githubAPIURL
-	githubAPIURL = server.URL
-	defer func() { githubAPIURL = originalURL }()
+	setTestURL(t, server.URL)
 
 	ctx := context.Background()
 	result, err := CheckForUpdates(ctx, "1.0.0")
@@ -117,6 +124,9 @@ func TestCheckForUpdates_OutdatedVersion(t *testing.T) {
 	if result.CurrentVersion != "1.0.0" {
 		t.Errorf("expected CurrentVersion '1.0.0', got '%s'", result.CurrentVersion)
 	}
+	if result.ReleaseURL != "https://github.com/nvandessel/go4dot/releases/tag/v2.0.0" {
+		t.Errorf("expected ReleaseURL to be set, got '%s'", result.ReleaseURL)
+	}
 }
 
 func TestCheckForUpdates_CurrentVersion(t *testing.T) {
@@ -135,9 +145,7 @@ func TestCheckForUpdates_CurrentVersion(t *testing.T) {
 	}))
 	defer server.Close()
 
-	originalURL := githubAPIURL
-	githubAPIURL = server.URL
-	defer func() { githubAPIURL = originalURL }()
+	setTestURL(t, server.URL)
 
 	ctx := context.Background()
 	result, err := CheckForUpdates(ctx, "v1.0.0")
@@ -156,9 +164,7 @@ func TestCheckForUpdates_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	originalURL := githubAPIURL
-	githubAPIURL = server.URL
-	defer func() { githubAPIURL = originalURL }()
+	setTestURL(t, server.URL)
 
 	ctx := context.Background()
 	_, err := CheckForUpdates(ctx, "1.0.0")
@@ -175,9 +181,7 @@ func TestCheckForUpdates_InvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	originalURL := githubAPIURL
-	githubAPIURL = server.URL
-	defer func() { githubAPIURL = originalURL }()
+	setTestURL(t, server.URL)
 
 	ctx := context.Background()
 	_, err := CheckForUpdates(ctx, "1.0.0")
@@ -203,9 +207,7 @@ func TestCheckForUpdates_VersionWithoutPrefix(t *testing.T) {
 	}))
 	defer server.Close()
 
-	originalURL := githubAPIURL
-	githubAPIURL = server.URL
-	defer func() { githubAPIURL = originalURL }()
+	setTestURL(t, server.URL)
 
 	ctx := context.Background()
 	result, err := CheckForUpdates(ctx, "1.0.0")
@@ -218,5 +220,17 @@ func TestCheckForUpdates_VersionWithoutPrefix(t *testing.T) {
 	}
 	if result.LatestVersion != "2.0.0" {
 		t.Errorf("expected LatestVersion '2.0.0', got '%s'", result.LatestVersion)
+	}
+}
+
+func TestCheckForUpdates_ServerUnreachable(t *testing.T) {
+	// Use a URL that will refuse connection
+	setTestURL(t, "http://127.0.0.1:1")
+
+	ctx := context.Background()
+	_, err := CheckForUpdates(ctx, "1.0.0")
+
+	if err == nil {
+		t.Error("expected error for unreachable server, got nil")
 	}
 }

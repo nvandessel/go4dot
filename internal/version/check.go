@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,8 +18,12 @@ type CheckResult struct {
 	ReleaseURL     string
 }
 
-// githubAPIURL is the endpoint for checking releases. Package-level for testing.
-var githubAPIURL = "https://api.github.com/repos/nvandessel/go4dot/releases/latest"
+// githubAPIURL is the endpoint for checking releases.
+// Protected by githubAPIURLMu for safe concurrent test execution.
+var (
+	githubAPIURLMu sync.RWMutex
+	githubAPIURL   = "https://api.github.com/repos/nvandessel/go4dot/releases/latest"
+)
 
 // CheckForUpdates queries GitHub for the latest release.
 // The context allows the caller to cancel the request if needed.
@@ -28,7 +33,10 @@ func CheckForUpdates(ctx context.Context, currentVersion string) (*CheckResult, 
 	}
 
 	// Create request with context for cancellation support
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPIURL, nil)
+	githubAPIURLMu.RLock()
+	url := githubAPIURL
+	githubAPIURLMu.RUnlock()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
