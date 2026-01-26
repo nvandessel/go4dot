@@ -163,6 +163,8 @@ func TestFormatProgressWithIcon(t *testing.T) {
 func TestProgressBarModel_Init(t *testing.T) {
 	updateChan := make(chan progressUpdate, 10)
 	doneChan := make(chan error, 1)
+	defer close(updateChan)
+	defer close(doneChan)
 
 	m := newProgressBarModel("Testing progress", updateChan, doneChan)
 	cmd := m.Init()
@@ -170,14 +172,13 @@ func TestProgressBarModel_Init(t *testing.T) {
 	if cmd == nil {
 		t.Error("expected Init to return a command batch")
 	}
-
-	close(updateChan)
-	close(doneChan)
 }
 
 func TestProgressBarModel_Update_Quit(t *testing.T) {
 	updateChan := make(chan progressUpdate, 10)
 	doneChan := make(chan error, 1)
+	defer close(updateChan)
+	defer close(doneChan)
 
 	tests := []struct {
 		name string
@@ -209,9 +210,6 @@ func TestProgressBarModel_Update_Quit(t *testing.T) {
 			}
 		})
 	}
-
-	close(updateChan)
-	close(doneChan)
 }
 
 func TestProgressBarModel_Update_WindowSize(t *testing.T) {

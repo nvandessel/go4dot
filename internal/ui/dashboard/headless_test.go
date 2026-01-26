@@ -276,8 +276,10 @@ func TestDashboard_SelectAll(t *testing.T) {
 	// Select all with shift+A
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
 
-	// Wait briefly for selection to register
-	time.Sleep(100 * time.Millisecond)
+	// Wait for UI to process the selection
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return len(out) > 0
+	}, teatest.WithDuration(time.Second))
 
 	// Quit
 	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
@@ -340,7 +342,9 @@ func TestDashboard_MenuNavigation(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
 
 	// Wait for menu to appear
-	time.Sleep(100 * time.Millisecond)
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return len(out) > 0
+	}, teatest.WithDuration(time.Second))
 
 	// Navigate in menu
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})

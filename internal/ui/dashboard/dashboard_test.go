@@ -290,7 +290,10 @@ func TestModel_Update_SelectAll(t *testing.T) {
 		HasConfig: true,
 	}
 	m := New(s)
-	// Initialize filtered indexes
+	// Initialize filtered indexes directly because the sidebar's filteredIdxs
+	// is normally populated by updateFilter() which requires filter mode entry.
+	// For unit testing SelectAll behavior in isolation, we set this internal
+	// state to avoid coupling this test to filter mode mechanics.
 	m.sidebar.filteredIdxs = []int{0, 1, 2}
 
 	// Select all with shift+A
