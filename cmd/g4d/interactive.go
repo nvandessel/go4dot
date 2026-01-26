@@ -35,8 +35,8 @@ func runInteractive(cmd *cobra.Command, args []string) {
 	}
 
 	// Check for updates in background with proper lifecycle management
-	// Use a context with timeout to ensure the goroutine can be cancelled
-	updateCtx, cancelUpdate := context.WithTimeout(context.Background(), 5*time.Second)
+	// Derive from cmd.Context() so SIGINT and other cancellations propagate
+	updateCtx, cancelUpdate := context.WithTimeout(cmd.Context(), 5*time.Second)
 	defer cancelUpdate()
 
 	updateMsgChan := make(chan string, 1)
