@@ -29,7 +29,6 @@ func TestSpinnerModel_Init(t *testing.T) {
 
 func TestSpinnerModel_Update_Quit(t *testing.T) {
 	action := func() error { return nil }
-	m := initialSpinnerModel("Testing", action)
 
 	tests := []struct {
 		name string
@@ -64,8 +63,6 @@ func TestSpinnerModel_Update_Quit(t *testing.T) {
 			}
 		})
 	}
-
-	_ = m
 }
 
 func TestSpinnerModel_Update_Error(t *testing.T) {
