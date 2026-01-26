@@ -173,3 +173,188 @@ func TestDashboard_ViewSwitching(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyEsc}) // Quit app
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
+
+func TestDashboard_NoConfig(t *testing.T) {
+	s := dashboard.State{
+		Platform:     &platform.Platform{OS: "linux"},
+		HasConfig:    false,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	// Verify NoConfig view is shown
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		s := string(out)
+		return strings.Contains(s, "No configuration") || strings.Contains(s, "init")
+	}, teatest.WithDuration(time.Second))
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+
+func TestDashboard_SingleConfig(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "only-one", Description: "The only config"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	// Verify single config is shown
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "only-one")
+	}, teatest.WithDuration(time.Second))
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+
+func TestDashboard_BulkSelection(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "config-a", Description: "First"},
+			{Name: "config-b", Description: "Second"},
+			{Name: "config-c", Description: "Third"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "config-a")
+	})
+
+	// Select first config with space
+	tm.Send(tea.KeyMsg{Type: tea.KeySpace})
+
+	// Move down and select second
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	tm.Send(tea.KeyMsg{Type: tea.KeySpace})
+
+	// Wait for UI to update
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "Second")
+	}, teatest.WithDuration(time.Second))
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+
+func TestDashboard_SelectAll(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "cfg1"},
+			{Name: "cfg2"},
+			{Name: "cfg3"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "cfg1")
+	})
+
+	// Select all with shift+A
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+
+	// Wait briefly for selection to register
+	time.Sleep(100 * time.Millisecond)
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+
+func TestDashboard_FilterMode(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim-config"},
+			{Name: "zsh-config"},
+			{Name: "tmux-config"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	// Wait for initial render
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "vim-config")
+	}, teatest.WithDuration(time.Second))
+
+	// Enter filter mode and type
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+
+	// Wait for filter to be visible (zsh should match)
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "zsh")
+	}, teatest.WithDuration(time.Second))
+
+	// Exit filter mode and quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
+
+func TestDashboard_MenuNavigation(t *testing.T) {
+	s := dashboard.State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "config"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := dashboard.New(s)
+	tm := teatest.NewTestModel(t, &m, teatest.WithInitialTermSize(100, 40))
+
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "config")
+	})
+
+	// Open menu with tab
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+
+	// Wait for menu to appear
+	time.Sleep(100 * time.Millisecond)
+
+	// Navigate in menu
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+
+	// Go back to dashboard
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+
+	// Verify we're back on dashboard
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(string(out), "config")
+	}, teatest.WithDuration(time.Second))
+
+	// Quit
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+}
