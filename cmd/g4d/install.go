@@ -6,8 +6,12 @@ import (
 	"path/filepath"
 
 	"github.com/nvandessel/go4dot/internal/config"
+	"github.com/nvandessel/go4dot/internal/machine"
+	"github.com/nvandessel/go4dot/internal/platform"
 	"github.com/nvandessel/go4dot/internal/setup"
+	"github.com/nvandessel/go4dot/internal/stow"
 	"github.com/nvandessel/go4dot/internal/ui"
+	"github.com/nvandessel/go4dot/internal/ui/dashboard"
 	"github.com/spf13/cobra"
 )
 
@@ -58,6 +62,21 @@ Use flags to customize the installation:
 		skipStow, _ := cmd.Flags().GetBool("skip-stow")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
 
+		// Use unified dashboard UI for interactive mode
+		if ui.IsInteractive() && !auto {
+			runInstallDashboard(cfg, dotfilesPath, dashboard.InstallOptions{
+				Auto:         auto,
+				Minimal:      minimal,
+				SkipDeps:     skipDeps,
+				SkipExternal: skipExternal,
+				SkipMachine:  skipMachine,
+				SkipStow:     skipStow,
+				Overwrite:    overwrite,
+			})
+			return
+		}
+
+		// Non-interactive mode: use legacy stdout-based flow
 		opts := setup.InstallOptions{
 			Auto:         auto,
 			Minimal:      minimal,
@@ -168,6 +187,44 @@ Use flags to customize the installation:
 			}
 		}
 	},
+}
+
+// runInstallDashboard runs the install process within the unified dashboard UI
+func runInstallDashboard(cfg *config.Config, dotfilesPath string, opts dashboard.InstallOptions) {
+	p, _ := platform.Detect()
+
+	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
+	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
+	machineStatus := machine.CheckMachineConfigStatus(cfg)
+
+	var dashStatus []dashboard.MachineStatus
+	for _, s := range machineStatus {
+		dashStatus = append(dashStatus, dashboard.MachineStatus{
+			ID:          s.ID,
+			Description: s.Description,
+			Status:      s.Status,
+		})
+	}
+
+	state := dashboard.State{
+		Platform:      p,
+		DriftSummary:  driftSummary,
+		LinkStatus:    linkStatus,
+		MachineStatus: dashStatus,
+		Configs:       cfg.GetAllConfigs(),
+		DotfilesPath:  dotfilesPath,
+		HasConfig:     true,
+	}
+
+	_, err := dashboard.RunWithOperation(state, dashboard.OpInstall, "", nil, func(runner *dashboard.OperationRunner) error {
+		_, err := dashboard.RunInstallOperation(runner, cfg, dotfilesPath, opts)
+		return err
+	})
+
+	if err != nil {
+		ui.Error("Installation failed: %v", err)
+		os.Exit(1)
+	}
 }
 
 func init() {

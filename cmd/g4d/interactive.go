@@ -223,105 +223,27 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 						return false
 					}
 				}
-				installCmd.Run(installCmd, nil)
+				// Run install within dashboard
+				runInstallInDashboard(newCfg, dotfilesPath)
 			}
 		}
-
-		waitForEnter()
 
 	case dashboard.ActionSync:
 		if cfg != nil && configPath != "" {
 			dotfilesPath := filepath.Dir(configPath)
-			st, _ := state.Load()
-			if st == nil {
-				st = state.New()
-			}
-			res, err := stow.SyncAll(dotfilesPath, cfg, st, true, stow.StowOptions{
-				ProgressFunc: func(current, total int, msg string) {
-					if total > 0 && current > 0 {
-						fmt.Printf("  [%d/%d] %s\n", current, total, msg)
-					} else {
-						fmt.Printf("  %s\n", msg)
-					}
-				},
-			})
-			if err != nil {
-				ui.Error("%v", err)
-			} else if len(res.Failed) > 0 {
-				ui.Warning("Sync completed with %d failure(s):", len(res.Failed))
-				for _, fail := range res.Failed {
-					ui.Error("  • %s: %v", fail.ConfigName, fail.Error)
-				}
-			} else {
-				ui.Success("Sync complete")
-			}
-			waitForEnter()
+			runSyncInDashboard(cfg, dotfilesPath, "", nil)
 		}
 
 	case dashboard.ActionSyncConfig:
 		if cfg != nil && configPath != "" {
 			dotfilesPath := filepath.Dir(configPath)
-			st, _ := state.Load()
-			if st == nil {
-				st = state.New()
-			}
-			err := stow.SyncSingle(dotfilesPath, result.ConfigName, cfg, st, stow.StowOptions{
-				ProgressFunc: func(current, total int, msg string) {
-					if total > 0 && current > 0 {
-						fmt.Printf("  [%d/%d] %s\n", current, total, msg)
-					} else {
-						fmt.Printf("  %s\n", msg)
-					}
-				},
-			})
-			if err != nil {
-				ui.Error("%v", err)
-			} else {
-				ui.Success("Sync complete")
-			}
-			waitForEnter()
+			runSyncInDashboard(cfg, dotfilesPath, result.ConfigName, nil)
 		}
 
 	case dashboard.ActionBulkSync:
 		if cfg != nil && configPath != "" {
 			dotfilesPath := filepath.Dir(configPath)
-			st, _ := state.Load()
-			if st == nil {
-				st = state.New()
-			}
-
-			total := len(result.ConfigNames)
-			successCount := 0
-
-			fmt.Printf("\n")
-			ui.Info("Starting bulk sync of %d configs...", total)
-			fmt.Printf("\n")
-
-			for i, name := range result.ConfigNames {
-				fmt.Printf("  Syncing %d/%d: %s\n", i+1, total, name)
-
-				err := stow.SyncSingle(dotfilesPath, name, cfg, st, stow.StowOptions{
-					ProgressFunc: func(current, total int, msg string) {
-						fmt.Printf("    %s\n", msg)
-					},
-				})
-
-				if err != nil {
-					ui.Error("  Failed to sync %s: %v", name, err)
-				} else {
-					ui.Success("  Synced %s", name)
-					successCount++
-				}
-				fmt.Printf("\n")
-			}
-
-			fmt.Printf("  Bulk sync complete: %d/%d succeeded\n", successCount, total)
-			if successCount < total {
-				ui.Warning("  Some configs failed to sync")
-			}
-			fmt.Printf("\n")
-
-			waitForEnter()
+			runSyncInDashboard(cfg, dotfilesPath, "", result.ConfigNames)
 		}
 
 	case dashboard.ActionDoctor:
@@ -347,30 +269,13 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 					return false
 				}
 			}
+			runInstallInDashboard(cfg, dotfilesPath)
 		}
-		installCmd.Run(installCmd, nil)
-		waitForEnter()
 
 	case dashboard.ActionUpdate:
 		if cfg != nil && configPath != "" {
 			dotfilesPath := filepath.Dir(configPath)
-			st, _ := state.Load()
-			opts := setup.UpdateOptions{
-				UpdateExternal: true,
-				ProgressFunc: func(current, total int, msg string) {
-					if total > 0 && current > 0 {
-						fmt.Printf("  [%d/%d] %s\n", current, total, msg)
-					} else {
-						fmt.Println("  " + msg)
-					}
-				},
-			}
-			if err := setup.Update(cfg, dotfilesPath, st, opts); err != nil {
-				ui.Error("%v", err)
-			} else {
-				ui.Success("Update complete")
-			}
-			waitForEnter()
+			runUpdateInDashboard(cfg, dotfilesPath)
 		}
 
 	case dashboard.ActionList:
@@ -379,6 +284,146 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 	}
 
 	return false
+}
+
+// runInstallInDashboard runs the install operation within the dashboard UI
+func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
+	p, _ := platform.Detect()
+
+	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
+	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
+	machineStatus := machine.CheckMachineConfigStatus(cfg)
+
+	var dashStatus []dashboard.MachineStatus
+	for _, s := range machineStatus {
+		dashStatus = append(dashStatus, dashboard.MachineStatus{
+			ID:          s.ID,
+			Description: s.Description,
+			Status:      s.Status,
+		})
+	}
+
+	state := dashboard.State{
+		Platform:      p,
+		DriftSummary:  driftSummary,
+		LinkStatus:    linkStatus,
+		MachineStatus: dashStatus,
+		Configs:       cfg.GetAllConfigs(),
+		DotfilesPath:  dotfilesPath,
+		HasConfig:     true,
+	}
+
+	opts := dashboard.InstallOptions{
+		Auto: !ui.IsInteractive(),
+	}
+
+	_, err := dashboard.RunWithOperation(state, dashboard.OpInstall, "", nil, func(runner *dashboard.OperationRunner) error {
+		_, err := dashboard.RunInstallOperation(runner, cfg, dotfilesPath, opts)
+		return err
+	})
+
+	if err != nil {
+		ui.Error("Dashboard error: %v", err)
+	}
+}
+
+// runSyncInDashboard runs sync operations within the dashboard UI
+func runSyncInDashboard(cfg *config.Config, dotfilesPath string, configName string, configNames []string) {
+	p, _ := platform.Detect()
+
+	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
+	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
+	machineStatus := machine.CheckMachineConfigStatus(cfg)
+
+	var dashStatus []dashboard.MachineStatus
+	for _, s := range machineStatus {
+		dashStatus = append(dashStatus, dashboard.MachineStatus{
+			ID:          s.ID,
+			Description: s.Description,
+			Status:      s.Status,
+		})
+	}
+
+	state := dashboard.State{
+		Platform:      p,
+		DriftSummary:  driftSummary,
+		LinkStatus:    linkStatus,
+		MachineStatus: dashStatus,
+		Configs:       cfg.GetAllConfigs(),
+		DotfilesPath:  dotfilesPath,
+		HasConfig:     true,
+	}
+
+	opts := dashboard.SyncOptions{
+		Force: true,
+	}
+
+	var opType dashboard.OperationType
+	if len(configNames) > 0 {
+		opType = dashboard.OpBulkSync
+	} else if configName != "" {
+		opType = dashboard.OpSyncSingle
+	} else {
+		opType = dashboard.OpSync
+	}
+
+	_, err := dashboard.RunWithOperation(state, opType, configName, configNames, func(runner *dashboard.OperationRunner) error {
+		if len(configNames) > 0 {
+			_, err := dashboard.RunBulkSyncOperation(runner, cfg, dotfilesPath, configNames, opts)
+			return err
+		} else if configName != "" {
+			_, err := dashboard.RunSyncSingleOperation(runner, cfg, dotfilesPath, configName, opts)
+			return err
+		} else {
+			_, err := dashboard.RunSyncAllOperation(runner, cfg, dotfilesPath, opts)
+			return err
+		}
+	})
+
+	if err != nil {
+		ui.Error("Dashboard error: %v", err)
+	}
+}
+
+// runUpdateInDashboard runs the update operation within the dashboard UI
+func runUpdateInDashboard(cfg *config.Config, dotfilesPath string) {
+	p, _ := platform.Detect()
+
+	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
+	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
+	machineStatus := machine.CheckMachineConfigStatus(cfg)
+
+	var dashStatus []dashboard.MachineStatus
+	for _, s := range machineStatus {
+		dashStatus = append(dashStatus, dashboard.MachineStatus{
+			ID:          s.ID,
+			Description: s.Description,
+			Status:      s.Status,
+		})
+	}
+
+	state := dashboard.State{
+		Platform:      p,
+		DriftSummary:  driftSummary,
+		LinkStatus:    linkStatus,
+		MachineStatus: dashStatus,
+		Configs:       cfg.GetAllConfigs(),
+		DotfilesPath:  dotfilesPath,
+		HasConfig:     true,
+	}
+
+	opts := dashboard.UpdateOptions{
+		UpdateExternal: true,
+	}
+
+	_, err := dashboard.RunWithOperation(state, dashboard.OpUpdate, "", nil, func(runner *dashboard.OperationRunner) error {
+		_, err := dashboard.RunUpdateOperation(runner, cfg, dotfilesPath, opts)
+		return err
+	})
+
+	if err != nil {
+		ui.Error("Dashboard error: %v", err)
+	}
 }
 
 func runMoreMenu(cfg *config.Config, configPath string) {

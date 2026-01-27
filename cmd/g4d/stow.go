@@ -19,9 +19,14 @@ var stowCmd = &cobra.Command{
 var stowAddCmd = &cobra.Command{
 	Use:   "add <config-name> [config-path]",
 	Short: "Stow a specific config",
-	Long:  "Create symlinks for a specific dotfile configuration",
-	Args:  cobra.RangeArgs(1, 2),
+	Long: `Create symlinks for a specific dotfile configuration.
+
+DEPRECATED: Consider using the unified dashboard (g4d) for a better experience.
+The dashboard provides progress tracking, conflict resolution, and visual feedback.`,
+	Args: cobra.RangeArgs(1, 2),
 	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Fprintln(os.Stderr, "Note: For a better experience, use 'g4d' to access the unified dashboard.")
+		fmt.Fprintln(os.Stderr, "")
 		configName := args[0]
 
 		// Load config
