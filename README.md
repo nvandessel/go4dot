@@ -2,10 +2,12 @@
 
 A powerful, cross-platform CLI tool for managing dotfiles with style.
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/nvandessel/go4dot)](https://go.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
+[![CI](https://github.com/nvandessel/go4dot/actions/workflows/test.yml/badge.svg)](https://github.com/nvandessel/go4dot/actions/workflows/test.yml)
 [![codecov](https://codecov.io/github/nvandessel/go4dot/graph/badge.svg?token=6M7NX2424Q)](https://codecov.io/github/nvandessel/go4dot)
+[![Go Report Card](https://goreportcard.com/badge/github.com/nvandessel/go4dot)](https://goreportcard.com/report/github.com/nvandessel/go4dot)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/nvandessel/go4dot)](https://go.dev/)
+[![Release](https://img.shields.io/github/v/release/nvandessel/go4dot)](https://github.com/nvandessel/go4dot/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## ✨ Features
 
