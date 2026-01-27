@@ -428,13 +428,23 @@ func (m Model) viewDashboard() string {
 }
 
 func (m Model) viewOperation() string {
+	// Ensure non-negative dimensions
+	safeWidth := m.width - 4
+	if safeWidth < 1 {
+		safeWidth = 1
+	}
+	safeHeight := m.height - 4
+	if safeHeight < 1 {
+		safeHeight = 1
+	}
+
 	// Container with padding and border
 	containerStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.PrimaryColor).
 		Padding(1, 2).
-		Width(m.width - 4).
-		Height(m.height - 4)
+		Width(safeWidth).
+		Height(safeHeight)
 
 	return lipgloss.Place(
 		m.width,

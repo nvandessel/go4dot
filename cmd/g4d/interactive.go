@@ -286,15 +286,15 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 	return false
 }
 
-// runInstallInDashboard runs the install operation within the dashboard UI
-func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
+// buildDashboardState creates a dashboard.State with current system information
+func buildDashboardState(cfg *config.Config, dotfilesPath string) dashboard.State {
 	p, _ := platform.Detect()
 
 	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
 	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
 	machineStatus := machine.CheckMachineConfigStatus(cfg)
 
-	var dashStatus []dashboard.MachineStatus
+	dashStatus := make([]dashboard.MachineStatus, 0, len(machineStatus))
 	for _, s := range machineStatus {
 		dashStatus = append(dashStatus, dashboard.MachineStatus{
 			ID:          s.ID,
@@ -303,7 +303,7 @@ func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
 		})
 	}
 
-	state := dashboard.State{
+	return dashboard.State{
 		Platform:      p,
 		DriftSummary:  driftSummary,
 		LinkStatus:    linkStatus,
@@ -312,6 +312,11 @@ func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
 		DotfilesPath:  dotfilesPath,
 		HasConfig:     true,
 	}
+}
+
+// runInstallInDashboard runs the install operation within the dashboard UI
+func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
+	state := buildDashboardState(cfg, dotfilesPath)
 
 	opts := dashboard.InstallOptions{
 		Auto: !ui.IsInteractive(),
@@ -329,30 +334,7 @@ func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
 
 // runSyncInDashboard runs sync operations within the dashboard UI
 func runSyncInDashboard(cfg *config.Config, dotfilesPath string, configName string, configNames []string) {
-	p, _ := platform.Detect()
-
-	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
-	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
-	machineStatus := machine.CheckMachineConfigStatus(cfg)
-
-	var dashStatus []dashboard.MachineStatus
-	for _, s := range machineStatus {
-		dashStatus = append(dashStatus, dashboard.MachineStatus{
-			ID:          s.ID,
-			Description: s.Description,
-			Status:      s.Status,
-		})
-	}
-
-	state := dashboard.State{
-		Platform:      p,
-		DriftSummary:  driftSummary,
-		LinkStatus:    linkStatus,
-		MachineStatus: dashStatus,
-		Configs:       cfg.GetAllConfigs(),
-		DotfilesPath:  dotfilesPath,
-		HasConfig:     true,
-	}
+	state := buildDashboardState(cfg, dotfilesPath)
 
 	opts := dashboard.SyncOptions{
 		Force:       true,
@@ -388,30 +370,7 @@ func runSyncInDashboard(cfg *config.Config, dotfilesPath string, configName stri
 
 // runUpdateInDashboard runs the update operation within the dashboard UI
 func runUpdateInDashboard(cfg *config.Config, dotfilesPath string) {
-	p, _ := platform.Detect()
-
-	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
-	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
-	machineStatus := machine.CheckMachineConfigStatus(cfg)
-
-	var dashStatus []dashboard.MachineStatus
-	for _, s := range machineStatus {
-		dashStatus = append(dashStatus, dashboard.MachineStatus{
-			ID:          s.ID,
-			Description: s.Description,
-			Status:      s.Status,
-		})
-	}
-
-	state := dashboard.State{
-		Platform:      p,
-		DriftSummary:  driftSummary,
-		LinkStatus:    linkStatus,
-		MachineStatus: dashStatus,
-		Configs:       cfg.GetAllConfigs(),
-		DotfilesPath:  dotfilesPath,
-		HasConfig:     true,
-	}
+	state := buildDashboardState(cfg, dotfilesPath)
 
 	opts := dashboard.UpdateOptions{
 		UpdateExternal: true,

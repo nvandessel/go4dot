@@ -66,6 +66,7 @@ func RunSyncAllOperation(runner *OperationRunner, cfg *config.Config, dotfilesPa
 	runner.Progress(1, fmt.Sprintf("Syncing %d configs...", len(cfg.GetAllConfigs())))
 
 	stowOpts := stow.StowOptions{
+		Force: opts.Force,
 		ProgressFunc: func(current, total int, msg string) {
 			runner.Log("info", msg)
 		},
@@ -153,6 +154,7 @@ func RunSyncSingleOperation(runner *OperationRunner, cfg *config.Config, dotfile
 	runner.Progress(1, fmt.Sprintf("Syncing %s...", configName))
 
 	stowOpts := stow.StowOptions{
+		Force: opts.Force,
 		ProgressFunc: func(current, total int, msg string) {
 			runner.Log("info", msg)
 		},
@@ -208,6 +210,7 @@ func RunBulkSyncOperation(runner *OperationRunner, cfg *config.Config, dotfilesP
 	runner.Progress(1, fmt.Sprintf("Syncing %d configs...", len(configNames)))
 
 	stowOpts := stow.StowOptions{
+		Force: opts.Force,
 		ProgressFunc: func(current, total int, msg string) {
 			runner.Log("info", msg)
 		},
