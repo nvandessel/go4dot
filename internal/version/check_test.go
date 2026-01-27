@@ -24,213 +24,252 @@ func setTestURL(t *testing.T, url string) {
 	})
 }
 
-func TestCheckForUpdates_DevVersion(t *testing.T) {
-	ctx := context.Background()
-
-	result, err := CheckForUpdates(ctx, "dev")
-	if err != nil {
-		t.Errorf("expected no error for dev version, got %v", err)
+func TestCheckForUpdates(t *testing.T) {
+	tests := []struct {
+		name           string
+		version        string
+		setupServer    func(t *testing.T) (url string, cleanup func())
+		ctxBuilder     func() (context.Context, context.CancelFunc)
+		wantResult     *CheckResult
+		wantErr        bool
+		skipServerURL  bool // true for dev/unknown version tests that don't need a server
+	}{
+		{
+			name:          "dev version skips check",
+			version:       "dev",
+			skipServerURL: true,
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: nil,
+			wantErr:    false,
+		},
+		{
+			name:          "unknown version skips check",
+			version:       "unknown",
+			skipServerURL: true,
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: nil,
+			wantErr:    false,
+		},
+		{
+			name:    "context already cancelled",
+			version: "1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					time.Sleep(100 * time.Millisecond)
+					w.WriteHeader(http.StatusOK)
+				}))
+				return server.URL, server.Close
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel() // Cancel immediately
+				return ctx, func() {}
+			},
+			wantResult: nil,
+			wantErr:    true,
+		},
+		{
+			name:    "context timeout",
+			version: "1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					time.Sleep(200 * time.Millisecond)
+					w.WriteHeader(http.StatusOK)
+				}))
+				return server.URL, server.Close
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 50*time.Millisecond)
+			},
+			wantResult: nil,
+			wantErr:    true,
+		},
+		{
+			name:    "outdated version detected",
+			version: "1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					response := struct {
+						TagName string `json:"tag_name"`
+						HTMLURL string `json:"html_url"`
+					}{
+						TagName: "v2.0.0",
+						HTMLURL: "https://github.com/nvandessel/go4dot/releases/tag/v2.0.0",
+					}
+					w.Header().Set("Content-Type", "application/json")
+					if err := json.NewEncoder(w).Encode(response); err != nil {
+						t.Errorf("failed to encode response: %v", err)
+					}
+				}))
+				return server.URL, server.Close
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: &CheckResult{
+				LatestVersion:  "2.0.0",
+				CurrentVersion: "1.0.0",
+				IsOutdated:     true,
+				ReleaseURL:     "https://github.com/nvandessel/go4dot/releases/tag/v2.0.0",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "current version returns nil",
+			version: "v1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					response := struct {
+						TagName string `json:"tag_name"`
+						HTMLURL string `json:"html_url"`
+					}{
+						TagName: "v1.0.0",
+						HTMLURL: "https://github.com/nvandessel/go4dot/releases/tag/v1.0.0",
+					}
+					w.Header().Set("Content-Type", "application/json")
+					if err := json.NewEncoder(w).Encode(response); err != nil {
+						t.Errorf("failed to encode response: %v", err)
+					}
+				}))
+				return server.URL, server.Close
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: nil,
+			wantErr:    false,
+		},
+		{
+			name:    "HTTP 500 error",
+			version: "1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+				}))
+				return server.URL, server.Close
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: nil,
+			wantErr:    true,
+		},
+		{
+			name:    "invalid JSON response",
+			version: "1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte("invalid json"))
+				}))
+				return server.URL, server.Close
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: nil,
+			wantErr:    true,
+		},
+		{
+			name:    "version without v prefix",
+			version: "1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					response := struct {
+						TagName string `json:"tag_name"`
+						HTMLURL string `json:"html_url"`
+					}{
+						TagName: "2.0.0", // No 'v' prefix
+						HTMLURL: "https://github.com/nvandessel/go4dot/releases/tag/2.0.0",
+					}
+					w.Header().Set("Content-Type", "application/json")
+					if err := json.NewEncoder(w).Encode(response); err != nil {
+						t.Errorf("failed to encode response: %v", err)
+					}
+				}))
+				return server.URL, server.Close
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: &CheckResult{
+				LatestVersion:  "2.0.0",
+				CurrentVersion: "1.0.0",
+				IsOutdated:     true,
+				ReleaseURL:     "https://github.com/nvandessel/go4dot/releases/tag/2.0.0",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "server unreachable",
+			version: "1.0.0",
+			setupServer: func(t *testing.T) (string, func()) {
+				// Return a URL that will refuse connection
+				return "http://127.0.0.1:1", func() {}
+			},
+			ctxBuilder: func() (context.Context, context.CancelFunc) {
+				return context.Background(), func() {}
+			},
+			wantResult: nil,
+			wantErr:    true,
+		},
 	}
-	if result != nil {
-		t.Errorf("expected nil result for dev version, got %v", result)
-	}
-}
 
-func TestCheckForUpdates_UnknownVersion(t *testing.T) {
-	ctx := context.Background()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up server if needed
+			if !tt.skipServerURL && tt.setupServer != nil {
+				serverURL, cleanup := tt.setupServer(t)
+				defer cleanup()
+				setTestURL(t, serverURL)
+			}
 
-	result, err := CheckForUpdates(ctx, "unknown")
-	if err != nil {
-		t.Errorf("expected no error for unknown version, got %v", err)
-	}
-	if result != nil {
-		t.Errorf("expected nil result for unknown version, got %v", result)
-	}
-}
+			// Build context
+			ctx, cancel := tt.ctxBuilder()
+			defer cancel()
 
-func TestCheckForUpdates_ContextCancellation(t *testing.T) {
-	// Create a server that delays response
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
+			// Call function under test
+			result, err := CheckForUpdates(ctx, tt.version)
 
-	setTestURL(t, server.URL)
+			// Check error expectation
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
 
-	// Create an already-cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+			// Check result expectation
+			if tt.wantResult == nil {
+				if result != nil {
+					t.Errorf("expected nil result, got %+v", result)
+				}
+				return
+			}
 
-	_, err := CheckForUpdates(ctx, "1.0.0")
-	if err == nil {
-		t.Error("expected error for cancelled context, got nil")
-	}
-}
-
-func TestCheckForUpdates_ContextTimeout(t *testing.T) {
-	// Create a server that delays response longer than timeout
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(200 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	setTestURL(t, server.URL)
-
-	// Create a context with short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	_, err := CheckForUpdates(ctx, "1.0.0")
-	if err == nil {
-		t.Error("expected error for context timeout, got nil")
-	}
-}
-
-func TestCheckForUpdates_OutdatedVersion(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := struct {
-			TagName string `json:"tag_name"`
-			HTMLURL string `json:"html_url"`
-		}{
-			TagName: "v2.0.0",
-			HTMLURL: "https://github.com/nvandessel/go4dot/releases/tag/v2.0.0",
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			t.Errorf("failed to encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	setTestURL(t, server.URL)
-
-	ctx := context.Background()
-	result, err := CheckForUpdates(ctx, "1.0.0")
-
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("expected result, got nil")
-	}
-	if !result.IsOutdated {
-		t.Error("expected IsOutdated to be true")
-	}
-	if result.LatestVersion != "2.0.0" {
-		t.Errorf("expected LatestVersion '2.0.0', got '%s'", result.LatestVersion)
-	}
-	if result.CurrentVersion != "1.0.0" {
-		t.Errorf("expected CurrentVersion '1.0.0', got '%s'", result.CurrentVersion)
-	}
-	if result.ReleaseURL != "https://github.com/nvandessel/go4dot/releases/tag/v2.0.0" {
-		t.Errorf("expected ReleaseURL to be set, got '%s'", result.ReleaseURL)
-	}
-}
-
-func TestCheckForUpdates_CurrentVersion(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := struct {
-			TagName string `json:"tag_name"`
-			HTMLURL string `json:"html_url"`
-		}{
-			TagName: "v1.0.0",
-			HTMLURL: "https://github.com/nvandessel/go4dot/releases/tag/v1.0.0",
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			t.Errorf("failed to encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	setTestURL(t, server.URL)
-
-	ctx := context.Background()
-	result, err := CheckForUpdates(ctx, "v1.0.0")
-
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if result != nil {
-		t.Errorf("expected nil result for current version, got %v", result)
-	}
-}
-
-func TestCheckForUpdates_HTTPError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	setTestURL(t, server.URL)
-
-	ctx := context.Background()
-	_, err := CheckForUpdates(ctx, "1.0.0")
-
-	if err == nil {
-		t.Error("expected error for HTTP 500, got nil")
-	}
-}
-
-func TestCheckForUpdates_InvalidJSON(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("invalid json"))
-	}))
-	defer server.Close()
-
-	setTestURL(t, server.URL)
-
-	ctx := context.Background()
-	_, err := CheckForUpdates(ctx, "1.0.0")
-
-	if err == nil {
-		t.Error("expected error for invalid JSON, got nil")
-	}
-}
-
-func TestCheckForUpdates_VersionWithoutPrefix(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := struct {
-			TagName string `json:"tag_name"`
-			HTMLURL string `json:"html_url"`
-		}{
-			TagName: "2.0.0", // No 'v' prefix
-			HTMLURL: "https://github.com/nvandessel/go4dot/releases/tag/2.0.0",
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			t.Errorf("failed to encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	setTestURL(t, server.URL)
-
-	ctx := context.Background()
-	result, err := CheckForUpdates(ctx, "1.0.0")
-
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("expected result, got nil")
-	}
-	if result.LatestVersion != "2.0.0" {
-		t.Errorf("expected LatestVersion '2.0.0', got '%s'", result.LatestVersion)
-	}
-}
-
-func TestCheckForUpdates_ServerUnreachable(t *testing.T) {
-	// Use a URL that will refuse connection
-	setTestURL(t, "http://127.0.0.1:1")
-
-	ctx := context.Background()
-	_, err := CheckForUpdates(ctx, "1.0.0")
-
-	if err == nil {
-		t.Error("expected error for unreachable server, got nil")
+			if result == nil {
+				t.Fatal("expected result, got nil")
+			}
+			if result.IsOutdated != tt.wantResult.IsOutdated {
+				t.Errorf("IsOutdated = %v, want %v", result.IsOutdated, tt.wantResult.IsOutdated)
+			}
+			if result.LatestVersion != tt.wantResult.LatestVersion {
+				t.Errorf("LatestVersion = %q, want %q", result.LatestVersion, tt.wantResult.LatestVersion)
+			}
+			if result.CurrentVersion != tt.wantResult.CurrentVersion {
+				t.Errorf("CurrentVersion = %q, want %q", result.CurrentVersion, tt.wantResult.CurrentVersion)
+			}
+			if result.ReleaseURL != tt.wantResult.ReleaseURL {
+				t.Errorf("ReleaseURL = %q, want %q", result.ReleaseURL, tt.wantResult.ReleaseURL)
+			}
+		})
 	}
 }
