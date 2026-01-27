@@ -4,6 +4,7 @@ A powerful, cross-platform CLI tool for managing dotfiles with style.
 
 [![Go Version](https://img.shields.io/github/go-mod/go-version/nvandessel/go4dot)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Report Card](https://goreportcard.com/badge/github.com/nvandessel/go4dot)](https://goreportcard.com/report/github.com/nvandessel/go4dot)
 
 [![codecov](https://codecov.io/github/nvandessel/go4dot/graph/badge.svg?token=6M7NX2424Q)](https://codecov.io/github/nvandessel/go4dot)
 
