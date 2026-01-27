@@ -355,7 +355,8 @@ func runSyncInDashboard(cfg *config.Config, dotfilesPath string, configName stri
 	}
 
 	opts := dashboard.SyncOptions{
-		Force: true,
+		Force:       true,
+		Interactive: true, // Enable interactive conflict resolution in dashboard
 	}
 
 	var opType dashboard.OperationType

@@ -12,7 +12,8 @@ import (
 
 // SyncOptions configures the sync operation
 type SyncOptions struct {
-	Force bool // Force restow even if no drift detected
+	Force       bool // Force restow even if no drift detected
+	Interactive bool // Enable interactive conflict resolution
 }
 
 // SyncResult holds the result of a sync operation
@@ -55,19 +56,8 @@ func RunSyncAllOperation(runner *OperationRunner, cfg *config.Config, dotfilesPa
 		st = state.New()
 	}
 
-	driftSummary, err := stow.FullDriftCheck(cfg, dotfilesPath)
-	if err != nil {
+	if _, err := stow.FullDriftCheck(cfg, dotfilesPath); err != nil {
 		runner.Log("warning", fmt.Sprintf("Drift check failed: %v", err))
-	}
-
-	// Count configs needing sync
-	needsSync := 0
-	if driftSummary != nil {
-		for _, r := range driftSummary.Results {
-			if r.HasDrift || !opts.Force {
-				needsSync++
-			}
-		}
 	}
 
 	runner.StepComplete(0, StepSuccess, fmt.Sprintf("%d configs analyzed", len(cfg.GetAllConfigs())))
@@ -81,10 +71,10 @@ func RunSyncAllOperation(runner *OperationRunner, cfg *config.Config, dotfilesPa
 		},
 	}
 
-	syncResult, err := stow.SyncAll(dotfilesPath, cfg, st, opts.Force, stowOpts)
+	syncResult, err := stow.SyncAll(dotfilesPath, cfg, st, opts.Interactive, stowOpts)
 	if err != nil {
 		runner.StepComplete(1, StepError, err.Error())
-		return nil, err
+		return nil, fmt.Errorf("sync all failed: %w", err)
 	}
 
 	result.Success = syncResult.Success
@@ -115,12 +105,23 @@ func RunSyncAllOperation(runner *OperationRunner, cfg *config.Config, dotfilesPa
 
 	// Report completion
 	if result.HasErrors() {
-		runner.Done(false, result.Summary(), fmt.Errorf("sync completed with errors"))
+		runner.Done(false, result.Summary(), collectSyncErrors(result.Failed))
 	} else {
 		runner.Done(true, result.Summary(), nil)
 	}
 
 	return result, nil
+}
+
+// collectSyncErrors combines multiple sync errors into one
+func collectSyncErrors(failed []stow.StowError) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	if len(failed) == 1 {
+		return fmt.Errorf("sync failed for %s: %w", failed[0].ConfigName, failed[0].Error)
+	}
+	return fmt.Errorf("sync failed for %d configs; first error: %s: %w", len(failed), failed[0].ConfigName, failed[0].Error)
 }
 
 // RunSyncSingleOperation runs a sync operation for a single config
@@ -170,7 +171,7 @@ func RunSyncSingleOperation(runner *OperationRunner, cfg *config.Config, dotfile
 
 	// Report completion
 	if result.HasErrors() {
-		runner.Done(false, result.Summary(), fmt.Errorf("sync failed"))
+		runner.Done(false, result.Summary(), collectSyncErrors(result.Failed))
 	} else {
 		runner.Done(true, result.Summary(), nil)
 	}
@@ -235,7 +236,7 @@ func RunBulkSyncOperation(runner *OperationRunner, cfg *config.Config, dotfilesP
 
 	// Report completion
 	if result.HasErrors() {
-		runner.Done(false, result.Summary(), fmt.Errorf("bulk sync completed with errors"))
+		runner.Done(false, result.Summary(), collectSyncErrors(result.Failed))
 	} else {
 		runner.Done(true, result.Summary(), nil)
 	}
@@ -330,7 +331,7 @@ func RunUpdateOperation(runner *OperationRunner, cfg *config.Config, dotfilesPat
 
 	// Report completion
 	if len(result.Failed) > 0 {
-		runner.Done(false, result.Summary(), fmt.Errorf("update completed with errors"))
+		runner.Done(false, result.Summary(), fmt.Errorf("update failed for %d dependencies", len(result.Failed)))
 	} else {
 		runner.Done(true, result.Summary(), nil)
 	}

@@ -229,9 +229,20 @@ func (o *Operations) Update(msg tea.Msg) (Operations, tea.Cmd) {
 	return *o, nil
 }
 
+// safeWidth returns a non-negative width value
+func safeWidth(w int) int {
+	if w < 0 {
+		return 0
+	}
+	return w
+}
+
 // View renders the operations component
 func (o Operations) View() string {
 	var b strings.Builder
+
+	// Calculate safe box width
+	boxWidth := safeWidth(o.width - 4)
 
 	// Title
 	title := o.operationType.String()
@@ -293,7 +304,7 @@ func (o Operations) View() string {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ui.SubtleColor).
 			Padding(0, 1).
-			Width(o.width - 4)
+			Width(boxWidth)
 
 		var logLines []string
 		for _, log := range o.logs {
@@ -322,14 +333,14 @@ func (o Operations) View() string {
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(ui.SecondaryColor).
 				Padding(0, 1).
-				Width(o.width - 4)
+				Width(boxWidth)
 			b.WriteString(successBox.Render(ui.SuccessStyle.Render("✓ ") + o.summary))
 		} else if o.err != nil {
 			errorBox := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(ui.ErrorColor).
 				Padding(0, 1).
-				Width(o.width - 4)
+				Width(boxWidth)
 			b.WriteString(errorBox.Render(ui.ErrorStyle.Render("✗ Error: ") + o.err.Error()))
 		}
 		b.WriteString("\n\n")

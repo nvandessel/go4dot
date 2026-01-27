@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -354,12 +355,6 @@ func (m *Model) StartOperation(opType OperationType, configName string, configNa
 	return m.operations.Init()
 }
 
-// GetProgram returns the underlying program for operation runners
-// This must be called after Run() starts the program
-func (m *Model) GetProgram() *tea.Program {
-	return nil // Will be set externally
-}
-
 func (m *Model) updateFilter() {
 	filtered := []int{}
 	if m.filterText == "" {
@@ -510,9 +505,14 @@ func RunWithOperation(s State, opType OperationType, configName string, configNa
 	m := New(s)
 	p := tea.NewProgram(&m, tea.WithAltScreen())
 
-	// Start the operation in a goroutine
+	// Start the operation in a goroutine with panic recovery
 	go func() {
 		runner := NewOperationRunner(p)
+		defer func() {
+			if r := recover(); r != nil {
+				runner.Done(false, "", fmt.Errorf("operation panicked: %v", r))
+			}
+		}()
 		err := operationFunc(runner)
 		if err != nil {
 			runner.Done(false, "", err)

@@ -44,11 +44,14 @@ func (r *InstallResult) HasErrors() bool {
 
 // Summary returns a summary string of the installation
 func (r *InstallResult) Summary() string {
-	summary := fmt.Sprintf("Platform: %s", r.Platform.OS)
-	if r.Platform.Distro != "" {
-		summary += fmt.Sprintf(" (%s)", r.Platform.Distro)
+	var summary string
+	if r.Platform != nil {
+		summary = fmt.Sprintf("Platform: %s", r.Platform.OS)
+		if r.Platform.Distro != "" {
+			summary += fmt.Sprintf(" (%s)", r.Platform.Distro)
+		}
+		summary += "\n"
 	}
-	summary += "\n"
 
 	if len(r.DepsInstalled) > 0 || len(r.DepsFailed) > 0 {
 		summary += fmt.Sprintf("Dependencies: %d installed, %d failed\n",
@@ -203,9 +206,11 @@ func runStowConfigs(runner *OperationRunner, cfg *config.Config, dotfilesPath st
 	}
 
 	// Check for existing symlinks
-	adoptSummary, _ := stow.ScanExistingSymlinks(cfg, dotfilesPath)
+	adoptSummary, err := stow.ScanExistingSymlinks(cfg, dotfilesPath)
 	fullyLinkedMap := make(map[string]bool)
-	if adoptSummary != nil {
+	if err != nil {
+		runner.Log("warning", fmt.Sprintf("Failed to scan existing symlinks: %v", err))
+	} else if adoptSummary != nil {
 		for _, ar := range adoptSummary.GetFullyLinked() {
 			fullyLinkedMap[ar.ConfigName] = true
 			result.ConfigsAdopted = append(result.ConfigsAdopted, ar.ConfigName)
@@ -283,12 +288,10 @@ func runCloneExternal(runner *OperationRunner, cfg *config.Config, dotfilesPath 
 		for _, f := range extResult.Failed {
 			runner.Log("error", fmt.Sprintf("Failed: %s - %v", f.Dep.Name, f.Error))
 		}
-	} else {
-		total := len(extResult.Cloned) + len(extResult.Skipped)
+	} else if len(extResult.Cloned) > 0 || len(extResult.Skipped) > 0 {
 		runner.StepComplete(3, StepSuccess, fmt.Sprintf("%d cloned, %d already present", len(extResult.Cloned), len(extResult.Skipped)))
-		if total == 0 {
-			runner.StepComplete(3, StepSuccess, "No external dependencies to clone")
-		}
+	} else {
+		runner.StepComplete(3, StepSuccess, "All external dependencies already present")
 	}
 
 	return nil

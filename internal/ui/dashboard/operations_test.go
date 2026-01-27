@@ -295,6 +295,78 @@ func TestOperations_View_Done(t *testing.T) {
 	}
 }
 
+func TestOperations_View_WithLogs(t *testing.T) {
+	op := NewOperations(OpInstall, "", nil)
+	op.width = 80
+	op.height = 40
+	op.logs = []logEntry{
+		{level: "info", message: "Starting..."},
+		{level: "success", message: "Done!"},
+		{level: "warning", message: "Check this"},
+		{level: "error", message: "Failed!"},
+	}
+
+	view := op.View()
+
+	if !strings.Contains(view, "Starting...") {
+		t.Error("expected view to contain log message")
+	}
+}
+
+func TestOperations_View_AllStepStatuses(t *testing.T) {
+	op := NewOperations(OpInstall, "", nil)
+	op.width = 80
+	op.height = 40
+
+	// Set various step statuses
+	if len(op.steps) >= 5 {
+		op.steps[0].Status = StepSuccess
+		op.steps[0].Detail = "Platform detected"
+		op.steps[1].Status = StepRunning
+		op.steps[1].Detail = "Installing..."
+		op.steps[2].Status = StepWarning
+		op.steps[3].Status = StepError
+		op.steps[4].Status = StepSkipped
+	}
+
+	view := op.View()
+
+	if view == "" {
+		t.Error("expected non-empty view")
+	}
+}
+
+func TestOperations_View_DoneWithError(t *testing.T) {
+	op := NewOperations(OpInstall, "", nil)
+	op.width = 80
+	op.height = 40
+	op.done = true
+	op.success = false
+	op.err = &TestError{msg: "installation failed"}
+
+	view := op.View()
+
+	if !strings.Contains(view, "installation failed") {
+		t.Error("expected view to contain error message")
+	}
+}
+
+func TestOperations_View_NegativeWidth(t *testing.T) {
+	op := NewOperations(OpInstall, "", nil)
+	op.width = -10 // Negative width to test safeWidth
+	op.height = 40
+	op.logs = []logEntry{{level: "info", message: "Test"}}
+	op.done = true
+	op.success = true
+	op.summary = "Done"
+
+	// Should not panic
+	view := op.View()
+	if view == "" {
+		t.Error("expected non-empty view even with negative width")
+	}
+}
+
 func TestOperations_IsDone(t *testing.T) {
 	op := NewOperations(OpInstall, "", nil)
 
