@@ -124,6 +124,17 @@ func collectSyncErrors(failed []stow.StowError) error {
 	return fmt.Errorf("sync failed for %d configs; first error: %s: %w", len(failed), failed[0].ConfigName, failed[0].Error)
 }
 
+// collectUpdateErrors combines multiple update errors into one
+func collectUpdateErrors(failed []deps.ExternalError) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	if len(failed) == 1 {
+		return fmt.Errorf("update failed for %s: %w", failed[0].Dep.Name, failed[0].Error)
+	}
+	return fmt.Errorf("update failed for %d dependencies; first error: %s: %w", len(failed), failed[0].Dep.Name, failed[0].Error)
+}
+
 // RunSyncSingleOperation runs a sync operation for a single config
 func RunSyncSingleOperation(runner *OperationRunner, cfg *config.Config, dotfilesPath string, configName string, opts SyncOptions) (*SyncResult, error) {
 	result := &SyncResult{}
@@ -330,8 +341,8 @@ func RunUpdateOperation(runner *OperationRunner, cfg *config.Config, dotfilesPat
 	}
 
 	// Report completion
-	if len(result.Failed) > 0 {
-		runner.Done(false, result.Summary(), fmt.Errorf("update failed for %d dependencies", len(result.Failed)))
+	if len(updateResult.Failed) > 0 {
+		runner.Done(false, result.Summary(), collectUpdateErrors(updateResult.Failed))
 	} else {
 		runner.Done(true, result.Summary(), nil)
 	}

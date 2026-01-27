@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nvandessel/go4dot/internal/config"
+	"github.com/nvandessel/go4dot/internal/deps"
 	"github.com/nvandessel/go4dot/internal/stow"
 )
 
@@ -188,6 +190,55 @@ func TestCollectSyncErrors(t *testing.T) {
 			}
 			if err == nil {
 				t.Error("collectSyncErrors() = nil, expected error")
+				return
+			}
+			if !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Errorf("error = %q, expected to contain %q", err.Error(), tt.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestCollectUpdateErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		failed     []deps.ExternalError
+		wantNil    bool
+		wantSubstr string
+	}{
+		{
+			name:    "Empty failed list",
+			failed:  nil,
+			wantNil: true,
+		},
+		{
+			name: "Single error",
+			failed: []deps.ExternalError{
+				{Dep: config.ExternalDep{Name: "repo1"}, Error: errors.New("clone failed")},
+			},
+			wantSubstr: "update failed for repo1",
+		},
+		{
+			name: "Multiple errors",
+			failed: []deps.ExternalError{
+				{Dep: config.ExternalDep{Name: "repo1"}, Error: errors.New("clone failed")},
+				{Dep: config.ExternalDep{Name: "repo2"}, Error: errors.New("network error")},
+			},
+			wantSubstr: "update failed for 2 dependencies",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := collectUpdateErrors(tt.failed)
+			if tt.wantNil {
+				if err != nil {
+					t.Errorf("collectUpdateErrors() = %v, expected nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Error("collectUpdateErrors() = nil, expected error")
 				return
 			}
 			if !strings.Contains(err.Error(), tt.wantSubstr) {

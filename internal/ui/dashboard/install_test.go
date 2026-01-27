@@ -7,6 +7,7 @@ import (
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/deps"
+	"github.com/nvandessel/go4dot/internal/machine"
 	"github.com/nvandessel/go4dot/internal/platform"
 	"github.com/nvandessel/go4dot/internal/stow"
 )
@@ -115,6 +116,28 @@ func TestInstallResult_Summary(t *testing.T) {
 				ExternalCloned: []config.ExternalDep{{Name: "repo1"}, {Name: "repo2"}},
 			},
 			contains: []string{"External: 2 cloned"},
+		},
+		{
+			name: "With external failed",
+			result: &InstallResult{
+				ExternalCloned: []config.ExternalDep{{Name: "repo1"}},
+				ExternalFailed: []deps.ExternalError{{Dep: config.ExternalDep{Name: "repo2"}, Error: errors.New("test")}},
+			},
+			contains: []string{"External: 1 cloned, 1 failed"},
+		},
+		{
+			name: "With configs failed only",
+			result: &InstallResult{
+				ConfigsFailed: []stow.StowError{{ConfigName: "vim", Error: errors.New("test")}},
+			},
+			contains: []string{"Configs: 0 stowed, 1 failed"},
+		},
+		{
+			name: "With machine configs",
+			result: &InstallResult{
+				MachineConfigs: []machine.RenderResult{{ID: "ssh", Destination: "/etc/ssh"}},
+			},
+			contains: []string{"Machine configs: 1 configured"},
 		},
 	}
 
