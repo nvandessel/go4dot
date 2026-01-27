@@ -477,27 +477,57 @@ func TestModel_Init_OperationMode(t *testing.T) {
 }
 
 func TestModel_UpdateOperation_Done(t *testing.T) {
-	s := State{
-		AutoStart:      true,
-		StartOperation: OpInstall,
-		HasConfig:      true,
-	}
-	m := New(s)
-	m.width = 80
-	m.height = 40
+	// Test with AutoStart = true: should quit on Enter
+	t.Run("AutoStart_Quit", func(t *testing.T) {
+		s := State{
+			AutoStart:      true,
+			StartOperation: OpInstall,
+			HasConfig:      true,
+		}
+		m := New(s)
+		m.width = 80
+		m.height = 40
 
-	// Mark operation as done
-	m.operations.done = true
-	m.operations.success = true
+		// Mark operation as done
+		m.operations.done = true
+		m.operations.success = true
 
-	// Press enter should return to dashboard
-	msg := tea.KeyMsg{Type: tea.KeyEnter}
-	updatedModel, _ := m.Update(msg)
-	model := updatedModel.(*Model)
+		// Press enter should quit when AutoStart is true
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+		model := updatedModel.(*Model)
 
-	if model.currentView != viewDashboard {
-		t.Errorf("expected currentView to be viewDashboard after Enter on completed operation, got %v", model.currentView)
-	}
+		if !model.quitting {
+			t.Error("expected quitting to be true after Enter on completed AutoStart operation")
+		}
+	})
+
+	// Test with AutoStart = false: should return to dashboard on Enter
+	t.Run("NonAutoStart_ReturnToDashboard", func(t *testing.T) {
+		s := State{
+			AutoStart:      false,
+			StartOperation: OpInstall,
+			HasConfig:      true,
+		}
+		m := New(s)
+		m.width = 80
+		m.height = 40
+		m.currentView = viewOperation // Manually set to operation view
+
+		// Initialize operations
+		m.operations = NewOperations(OpInstall, "", nil)
+		m.operations.done = true
+		m.operations.success = true
+
+		// Press enter should return to dashboard when AutoStart is false
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updatedModel, _ := m.Update(msg)
+		model := updatedModel.(*Model)
+
+		if model.currentView != viewDashboard {
+			t.Errorf("expected currentView to be viewDashboard after Enter on completed non-AutoStart operation, got %v", model.currentView)
+		}
+	})
 }
 
 func TestModel_UpdateOperation_Quit(t *testing.T) {

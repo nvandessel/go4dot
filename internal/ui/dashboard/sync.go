@@ -290,6 +290,14 @@ func (r *UpdateResult) Summary() string {
 func RunUpdateOperation(runner *OperationRunner, cfg *config.Config, dotfilesPath string, opts UpdateOptions) (*UpdateResult, error) {
 	result := &UpdateResult{}
 
+	// Check if external updates are disabled
+	if !opts.UpdateExternal {
+		runner.StepComplete(0, StepSkipped, "External updates disabled")
+		runner.StepComplete(1, StepSkipped, "Skipped by configuration")
+		runner.Done(true, "External updates skipped", nil)
+		return result, nil
+	}
+
 	if len(cfg.External) == 0 {
 		runner.StepComplete(0, StepSuccess, "No external dependencies")
 		runner.StepComplete(1, StepSkipped, "Nothing to update")

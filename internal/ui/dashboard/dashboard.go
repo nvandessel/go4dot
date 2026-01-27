@@ -315,7 +315,13 @@ func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setResult(ActionQuit)
 				return m, tea.Quit
 			case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
-				// Return to dashboard
+				// If launched via RunWithOperation (AutoStart), quit and return result
+				if m.state.AutoStart {
+					m.quitting = true
+					m.setResult(ActionQuit)
+					return m, tea.Quit
+				}
+				// Otherwise return to dashboard
 				m.currentView = viewDashboard
 				return m, nil
 			}
