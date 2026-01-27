@@ -299,8 +299,9 @@ func RunUpdateOperation(runner *OperationRunner, cfg *config.Config, dotfilesPat
 
 	p, err := platform.Detect()
 	if err != nil {
-		runner.StepComplete(0, StepError, fmt.Sprintf("Platform detection failed: %v", err))
-		return nil, err
+		wrappedErr := fmt.Errorf("platform detection failed: %w", err)
+		runner.StepComplete(0, StepError, wrappedErr.Error())
+		return nil, wrappedErr
 	}
 
 	runner.StepComplete(0, StepSuccess, fmt.Sprintf("%d dependencies found", len(cfg.External)))
@@ -319,8 +320,9 @@ func RunUpdateOperation(runner *OperationRunner, cfg *config.Config, dotfilesPat
 	// Use CloneExternal with Update: true to update existing repos
 	updateResult, err := deps.CloneExternal(cfg, p, extOpts)
 	if err != nil {
-		runner.StepComplete(1, StepError, err.Error())
-		return nil, err
+		wrappedErr := fmt.Errorf("clone external repos: %w", err)
+		runner.StepComplete(1, StepError, wrappedErr.Error())
+		return nil, wrappedErr
 	}
 
 	for _, ext := range updateResult.Updated {

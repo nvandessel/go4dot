@@ -151,11 +151,15 @@ func TestUpdateResult_Summary(t *testing.T) {
 }
 
 func TestCollectSyncErrors(t *testing.T) {
+	permDeniedErr := errors.New("permission denied")
+	fileExistsErr := errors.New("file exists")
+
 	tests := []struct {
-		name       string
-		failed     []stow.StowError
-		wantNil    bool
-		wantSubstr string
+		name          string
+		failed        []stow.StowError
+		wantNil       bool
+		wantSubstr    string
+		wantWrappedIs error // Verify errors.Is works with wrapped error
 	}{
 		{
 			name:    "Empty failed list",
@@ -165,17 +169,19 @@ func TestCollectSyncErrors(t *testing.T) {
 		{
 			name: "Single error",
 			failed: []stow.StowError{
-				{ConfigName: "vim", Error: errors.New("permission denied")},
+				{ConfigName: "vim", Error: permDeniedErr},
 			},
-			wantSubstr: "sync failed for vim",
+			wantSubstr:    "sync failed for vim",
+			wantWrappedIs: permDeniedErr,
 		},
 		{
 			name: "Multiple errors",
 			failed: []stow.StowError{
-				{ConfigName: "vim", Error: errors.New("permission denied")},
-				{ConfigName: "zsh", Error: errors.New("file exists")},
+				{ConfigName: "vim", Error: permDeniedErr},
+				{ConfigName: "zsh", Error: fileExistsErr},
 			},
-			wantSubstr: "sync failed for 2 configs",
+			wantSubstr:    "sync failed for 2 configs",
+			wantWrappedIs: permDeniedErr, // First error is wrapped
 		},
 	}
 
@@ -195,16 +201,23 @@ func TestCollectSyncErrors(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.wantSubstr) {
 				t.Errorf("error = %q, expected to contain %q", err.Error(), tt.wantSubstr)
 			}
+			if tt.wantWrappedIs != nil && !errors.Is(err, tt.wantWrappedIs) {
+				t.Errorf("errors.Is() failed: wrapped error not accessible")
+			}
 		})
 	}
 }
 
 func TestCollectUpdateErrors(t *testing.T) {
+	cloneFailedErr := errors.New("clone failed")
+	networkErr := errors.New("network error")
+
 	tests := []struct {
-		name       string
-		failed     []deps.ExternalError
-		wantNil    bool
-		wantSubstr string
+		name          string
+		failed        []deps.ExternalError
+		wantNil       bool
+		wantSubstr    string
+		wantWrappedIs error // Verify errors.Is works with wrapped error
 	}{
 		{
 			name:    "Empty failed list",
@@ -214,17 +227,19 @@ func TestCollectUpdateErrors(t *testing.T) {
 		{
 			name: "Single error",
 			failed: []deps.ExternalError{
-				{Dep: config.ExternalDep{Name: "repo1"}, Error: errors.New("clone failed")},
+				{Dep: config.ExternalDep{Name: "repo1"}, Error: cloneFailedErr},
 			},
-			wantSubstr: "update failed for repo1",
+			wantSubstr:    "update failed for repo1",
+			wantWrappedIs: cloneFailedErr,
 		},
 		{
 			name: "Multiple errors",
 			failed: []deps.ExternalError{
-				{Dep: config.ExternalDep{Name: "repo1"}, Error: errors.New("clone failed")},
-				{Dep: config.ExternalDep{Name: "repo2"}, Error: errors.New("network error")},
+				{Dep: config.ExternalDep{Name: "repo1"}, Error: cloneFailedErr},
+				{Dep: config.ExternalDep{Name: "repo2"}, Error: networkErr},
 			},
-			wantSubstr: "update failed for 2 dependencies",
+			wantSubstr:    "update failed for 2 dependencies",
+			wantWrappedIs: cloneFailedErr, // First error is wrapped
 		},
 	}
 
@@ -243,6 +258,9 @@ func TestCollectUpdateErrors(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantSubstr) {
 				t.Errorf("error = %q, expected to contain %q", err.Error(), tt.wantSubstr)
+			}
+			if tt.wantWrappedIs != nil && !errors.Is(err, tt.wantWrappedIs) {
+				t.Errorf("errors.Is() failed: wrapped error not accessible")
 			}
 		})
 	}

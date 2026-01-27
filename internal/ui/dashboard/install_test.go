@@ -93,7 +93,7 @@ func TestInstallResult_Summary(t *testing.T) {
 				DepsInstalled: []config.DependencyItem{{Name: "git"}, {Name: "vim"}},
 				DepsFailed:    []deps.InstallError{{Error: errors.New("test")}},
 			},
-			contains: []string{"Dependencies:"},
+			contains: []string{"Dependencies:", "2 installed", "1 failed"},
 		},
 		{
 			name: "With configs stowed",
