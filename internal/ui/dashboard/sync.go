@@ -44,6 +44,15 @@ func (r *SyncResult) Summary() string {
 	return summary
 }
 
+// loadOrCreateState loads existing state or creates a new one if unavailable
+func loadOrCreateState() *state.State {
+	st, err := state.Load()
+	if err != nil || st == nil {
+		return state.New()
+	}
+	return st
+}
+
 // RunSyncAllOperation runs a sync all operation within the dashboard
 func RunSyncAllOperation(runner *OperationRunner, cfg *config.Config, dotfilesPath string, opts SyncOptions) (*SyncResult, error) {
 	result := &SyncResult{}
@@ -51,10 +60,7 @@ func RunSyncAllOperation(runner *OperationRunner, cfg *config.Config, dotfilesPa
 	// Step 0: Check symlinks
 	runner.Progress(0, "Analyzing symlink status...")
 
-	st, err := state.Load()
-	if err != nil || st == nil {
-		st = state.New()
-	}
+	st := loadOrCreateState()
 
 	if _, err := stow.FullDriftCheck(cfg, dotfilesPath); err != nil {
 		runner.Log("warning", fmt.Sprintf("Drift check failed: %v", err))
@@ -143,10 +149,7 @@ func RunSyncSingleOperation(runner *OperationRunner, cfg *config.Config, dotfile
 	// Step 0: Check symlinks
 	runner.Progress(0, fmt.Sprintf("Checking %s...", configName))
 
-	st, err := state.Load()
-	if err != nil || st == nil {
-		st = state.New()
-	}
+	st := loadOrCreateState()
 
 	runner.StepComplete(0, StepSuccess, "Status checked")
 
@@ -160,7 +163,7 @@ func RunSyncSingleOperation(runner *OperationRunner, cfg *config.Config, dotfile
 		},
 	}
 
-	err = stow.SyncSingle(dotfilesPath, configName, cfg, st, stowOpts)
+	err := stow.SyncSingle(dotfilesPath, configName, cfg, st, stowOpts)
 	if err != nil {
 		runner.StepComplete(1, StepError, err.Error())
 		result.Failed = append(result.Failed, stow.StowError{ConfigName: configName, Error: err})
@@ -199,10 +202,7 @@ func RunBulkSyncOperation(runner *OperationRunner, cfg *config.Config, dotfilesP
 	// Step 0: Check symlinks
 	runner.Progress(0, fmt.Sprintf("Checking %d configs...", len(configNames)))
 
-	st, err := state.Load()
-	if err != nil || st == nil {
-		st = state.New()
-	}
+	st := loadOrCreateState()
 
 	runner.StepComplete(0, StepSuccess, fmt.Sprintf("%d configs to sync", len(configNames)))
 

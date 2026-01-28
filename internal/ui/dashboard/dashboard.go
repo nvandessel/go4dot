@@ -477,6 +477,7 @@ func (m *Model) StartInlineOperation(opType OperationType, configName string, co
 	}
 
 	m.operationActive = true
+	m.operations = NewOperations(opType, configName, configNames) // Reset operation state
 	m.output.Clear()
 	m.output.SetTitle(getOperationTitle(opType))
 

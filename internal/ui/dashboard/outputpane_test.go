@@ -209,7 +209,10 @@ func TestRenderPaneWithTitle(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Just verify it doesn't panic
 			result := renderPaneWithTitle(tt.content, tt.title, tt.width, tt.height, ui.PrimaryColor)
-			_ = result
+			// For valid dimensions, expect non-empty result
+			if tt.width >= 5 && tt.height >= 3 && result == "" {
+				t.Error("expected non-empty result for valid dimensions")
+			}
 		})
 	}
 }
