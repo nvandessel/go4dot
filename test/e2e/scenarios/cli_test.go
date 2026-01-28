@@ -1,3 +1,5 @@
+//go:build e2e
+
 package scenarios
 
 import (
@@ -22,30 +24,46 @@ func getProjectRoot(t *testing.T) string {
 // TestCLIHelp validates that g4d --help output matches expected golden file
 // This is a foundational test to ensure the VHS infrastructure works correctly
 func TestCLIHelp(t *testing.T) {
-	// Check if UPDATE_GOLDEN env var is set
-	updateGolden := os.Getenv("UPDATE_GOLDEN") == "1"
-
-	projectRoot := getProjectRoot(t)
-
-	cfg := helpers.VHSConfig{
-		TapePath:       filepath.Join(projectRoot, "test/e2e/tapes/dashboard_navigation.tape"),
-		OutputPath:     filepath.Join(projectRoot, "test/e2e/golden/cli_help.txt"),
-		GoldenPath:     filepath.Join(projectRoot, "test/e2e/golden/cli_help.txt"),
-		UpdateGolden:   updateGolden,
-		ScreenshotPath: filepath.Join(projectRoot, "test/e2e/screenshots/cli_help.png"),
+	tests := []struct {
+		name       string
+		tapePath   string
+		outputPath string
+		goldenPath string
+	}{
+		{
+			name:       "cli help output",
+			tapePath:   "test/e2e/tapes/cli_help.tape",
+			outputPath: "test/e2e/outputs/cli_help.txt",
+			goldenPath: "test/e2e/golden/cli_help.txt",
+		},
 	}
 
-	if err := helpers.RunVHSTape(t, cfg); err != nil {
-		t.Fatalf("VHS test failed: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Check if UPDATE_GOLDEN env var is set
+			updateGolden := os.Getenv("UPDATE_GOLDEN") == "1"
 
-	// Cleanup is handled by t.Cleanup automatically
-	t.Cleanup(func() {
-		if !updateGolden {
-			// Only cleanup temp outputs, keep golden files
-			helpers.CleanupVHSOutputs(
-				filepath.Join(projectRoot, "test/e2e/screenshots/cli_help.png"),
-			)
-		}
-	})
+			projectRoot := getProjectRoot(t)
+
+			cfg := helpers.VHSConfig{
+				TapePath:     filepath.Join(projectRoot, tt.tapePath),
+				OutputPath:   filepath.Join(projectRoot, tt.outputPath),
+				GoldenPath:   filepath.Join(projectRoot, tt.goldenPath),
+				UpdateGolden: updateGolden,
+			}
+
+			if err := helpers.RunVHSTape(t, cfg); err != nil {
+				t.Fatalf("VHS test failed: %v", err)
+			}
+
+			// Cleanup test outputs (not golden files)
+			t.Cleanup(func() {
+				if !updateGolden {
+					helpers.CleanupVHSOutputs(
+						filepath.Join(projectRoot, tt.outputPath),
+					)
+				}
+			})
+		})
+	}
 }

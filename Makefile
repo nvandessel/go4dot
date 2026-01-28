@@ -177,5 +177,6 @@ e2e-visual-update: build
 .PHONY: e2e-clean
 e2e-clean:
 	@echo "Cleaning E2E test outputs..."
-	@rm -rf test/e2e/screenshots/*.png
-	@rm -rf test/e2e/golden/*_diff.txt
+	@rm -f test/e2e/outputs/*.txt
+	@rm -f test/e2e/screenshots/*.png
+	@rm -f test/e2e/golden/*_diff.txt

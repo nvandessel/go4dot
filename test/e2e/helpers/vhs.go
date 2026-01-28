@@ -12,11 +12,10 @@ import (
 
 // VHSConfig configures VHS tape execution
 type VHSConfig struct {
-	TapePath       string
-	OutputPath     string
-	GoldenPath     string
-	UpdateGolden   bool
-	ScreenshotPath string
+	TapePath     string
+	OutputPath   string
+	GoldenPath   string
+	UpdateGolden bool
 }
 
 // RunVHSTape executes a VHS tape file and captures output
@@ -126,7 +125,9 @@ func normalizeOutput(s string) string {
 	for i, line := range lines {
 		lines[i] = strings.TrimRight(line, " \t")
 	}
-	return strings.Join(lines, "\n")
+	// Join lines and trim trailing newlines for robust comparison
+	result := strings.Join(lines, "\n")
+	return strings.TrimRight(result, "\n")
 }
 
 // generateDiff creates a simple diff between expected and actual output
