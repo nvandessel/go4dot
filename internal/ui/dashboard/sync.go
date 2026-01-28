@@ -30,7 +30,7 @@ func (r *SyncResult) HasErrors() bool {
 
 // Summary returns a summary string
 func (r *SyncResult) Summary() string {
-	if len(r.Success) == 0 && len(r.Failed) == 0 {
+	if len(r.Success) == 0 && len(r.Failed) == 0 && len(r.Skipped) == 0 {
 		return "No configs to sync"
 	}
 
@@ -272,7 +272,7 @@ type UpdateResult struct {
 
 // Summary returns a summary string
 func (r *UpdateResult) Summary() string {
-	if len(r.Updated) == 0 && len(r.Failed) == 0 {
+	if len(r.Updated) == 0 && len(r.Failed) == 0 && len(r.Skipped) == 0 {
 		return "No updates needed"
 	}
 

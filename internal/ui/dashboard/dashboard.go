@@ -315,42 +315,15 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.height = msg.Height
 
 	// Handle operation messages for inline operations
-	case OperationProgressMsg:
-		m.operationActive = true
-		m.operations, cmd = m.operations.Update(msg)
-		return m, cmd
-
-	case OperationStepCompleteMsg:
-		m.operations, cmd = m.operations.Update(msg)
-		status := "info"
-		switch msg.Status {
-		case StepSuccess:
-			status = "success"
-		case StepWarning:
-			status = "warning"
-		case StepError:
-			status = "error"
+	case OperationProgressMsg, OperationStepCompleteMsg, OperationLogMsg, OperationDoneMsg:
+		handled, cmd := m.handleOperationMsg(msg)
+		if handled {
+			// Reset output title when operation completes (inline operations only)
+			if _, ok := msg.(OperationDoneMsg); ok {
+				m.output.SetTitle("Output")
+			}
+			return m, cmd
 		}
-		if msg.Detail != "" {
-			m.output.AddLog(status, msg.Detail)
-		}
-		return m, cmd
-
-	case OperationLogMsg:
-		m.operations, cmd = m.operations.Update(msg)
-		m.output.AddLog(msg.Level, msg.Message)
-		return m, cmd
-
-	case OperationDoneMsg:
-		m.operationActive = false
-		m.operations, cmd = m.operations.Update(msg)
-		if msg.Error != nil {
-			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
-		} else if msg.Summary != "" {
-			m.output.AddLog("success", msg.Summary)
-		}
-		m.output.SetTitle("Output")
-		return m, cmd
 	}
 
 	cmd = m.sidebar.Update(msg)
@@ -398,6 +371,53 @@ func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// stepStatusToLogLevel converts a StepStatus to a log level string
+func stepStatusToLogLevel(status StepStatus) string {
+	switch status {
+	case StepSuccess:
+		return "success"
+	case StepWarning:
+		return "warning"
+	case StepError:
+		return "error"
+	default:
+		return "info"
+	}
+}
+
+// handleOperationMsg processes operation-related messages and returns whether the message was handled
+func (m *Model) handleOperationMsg(msg tea.Msg) (handled bool, cmd tea.Cmd) {
+	switch msg := msg.(type) {
+	case OperationProgressMsg:
+		m.operationActive = true
+		m.operations, cmd = m.operations.Update(msg)
+		return true, cmd
+
+	case OperationStepCompleteMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		if msg.Detail != "" {
+			m.output.AddLog(stepStatusToLogLevel(msg.Status), msg.Detail)
+		}
+		return true, cmd
+
+	case OperationLogMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		m.output.AddLog(msg.Level, msg.Message)
+		return true, cmd
+
+	case OperationDoneMsg:
+		m.operationActive = false
+		m.operations, cmd = m.operations.Update(msg)
+		if msg.Error != nil {
+			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
+		} else if msg.Summary != "" {
+			m.output.AddLog("success", msg.Summary)
+		}
+		return true, cmd
+	}
+	return false, nil
+}
+
 func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -437,44 +457,11 @@ func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.operations.width = msg.Width
 		m.operations.height = msg.Height
 
-	case OperationProgressMsg:
-		m.operationActive = true
-		m.operations, cmd = m.operations.Update(msg)
-		return m, cmd
-
-	case OperationStepCompleteMsg:
-		m.operations, cmd = m.operations.Update(msg)
-		// Also log step completion to output pane
-		status := "info"
-		switch msg.Status {
-		case StepSuccess:
-			status = "success"
-		case StepWarning:
-			status = "warning"
-		case StepError:
-			status = "error"
+	case OperationProgressMsg, OperationStepCompleteMsg, OperationLogMsg, OperationDoneMsg:
+		handled, cmd := m.handleOperationMsg(msg)
+		if handled {
+			return m, cmd
 		}
-		if msg.Detail != "" {
-			m.output.AddLog(status, msg.Detail)
-		}
-		return m, cmd
-
-	case OperationLogMsg:
-		// Forward to both operations component and output pane
-		m.operations, cmd = m.operations.Update(msg)
-		m.output.AddLog(msg.Level, msg.Message)
-		return m, cmd
-
-	case OperationDoneMsg:
-		m.operationActive = false
-		m.operations, cmd = m.operations.Update(msg)
-		// Log completion
-		if msg.Error != nil {
-			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
-		} else if msg.Summary != "" {
-			m.output.AddLog("success", msg.Summary)
-		}
-		return m, cmd
 	}
 
 	// Update spinner
