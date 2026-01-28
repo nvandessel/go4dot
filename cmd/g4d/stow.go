@@ -19,7 +19,7 @@ var stowCmd = &cobra.Command{
 var stowAddCmd = &cobra.Command{
 	Use:   "add <config-name> [config-path]",
 	Short: "Stow a specific config",
-	Long:  "Create symlinks for a specific dotfile configuration",
+	Long:  "Create symlinks for a specific dotfile configuration.",
 	Args:  cobra.RangeArgs(1, 2),
 	Run: func(cmd *cobra.Command, args []string) {
 		configName := args[0]
