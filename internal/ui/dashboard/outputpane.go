@@ -142,7 +142,8 @@ func (o *OutputPane) RenderWithBorder(focused bool) string {
 	}
 
 	// Build the pane with inline title in border
-	return renderPaneWithTitle(o.View(), o.title, o.width-2, o.height, borderColor)
+	// Use o.width directly to match SetSize calculations
+	return renderPaneWithTitle(o.View(), o.title, o.width, o.height, borderColor)
 }
 
 // renderPaneWithTitle creates a bordered pane with an inline title

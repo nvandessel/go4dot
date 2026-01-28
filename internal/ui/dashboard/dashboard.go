@@ -504,6 +504,8 @@ func (m *Model) StartInlineOperation(opType OperationType, configName string, co
 		err := operationFunc(runner)
 		if err != nil {
 			runner.Done(false, "", err)
+		} else {
+			runner.Done(true, "", nil)
 		}
 	}()
 
@@ -719,6 +721,8 @@ func RunWithOperation(s State, opType OperationType, configName string, configNa
 		err := operationFunc(runner)
 		if err != nil {
 			runner.Done(false, "", err)
+		} else {
+			runner.Done(true, "", nil)
 		}
 	}()
 
