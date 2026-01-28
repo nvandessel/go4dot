@@ -482,15 +482,6 @@ func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// StartOperation switches to operation view and starts an operation
-func (m *Model) StartOperation(opType OperationType, configName string, configNames []string) tea.Cmd {
-	m.operations = NewOperations(opType, configName, configNames)
-	m.operations.width = m.width
-	m.operations.height = m.height
-	m.currentView = viewOperation
-	return m.operations.Init()
-}
-
 // StartInlineOperation runs an operation in the background without switching views
 // Output is shown in the output pane at the bottom of the dashboard
 func (m *Model) StartInlineOperation(opType OperationType, configName string, configNames []string, operationFunc func(runner *OperationRunner) error) tea.Cmd {

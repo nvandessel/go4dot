@@ -229,23 +229,8 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 			}
 		}
 
-	case dashboard.ActionSync:
-		if cfg != nil && configPath != "" {
-			dotfilesPath := filepath.Dir(configPath)
-			runSyncInDashboard(cfg, dotfilesPath, "", nil)
-		}
-
-	case dashboard.ActionSyncConfig:
-		if cfg != nil && configPath != "" {
-			dotfilesPath := filepath.Dir(configPath)
-			runSyncInDashboard(cfg, dotfilesPath, result.ConfigName, nil)
-		}
-
-	case dashboard.ActionBulkSync:
-		if cfg != nil && configPath != "" {
-			dotfilesPath := filepath.Dir(configPath)
-			runSyncInDashboard(cfg, dotfilesPath, "", result.ConfigNames)
-		}
+	// ActionSync, ActionSyncConfig, ActionBulkSync are now handled inline in dashboard
+	// and no longer trigger handleAction
 
 	case dashboard.ActionDoctor:
 		doctorCmd.Run(doctorCmd, nil)
@@ -255,29 +240,8 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 		machine.RunInteractiveConfig(cfg)
 		waitForEnter()
 
-	case dashboard.ActionInstall:
-		if cfg != nil && configPath != "" {
-			// Check for conflicts before install
-			dotfilesPath := filepath.Dir(configPath)
-			conflicts, err := stow.DetectConflicts(cfg, dotfilesPath)
-			if err != nil {
-				ui.Error("Failed to check conflicts: %v", err)
-			} else if len(conflicts) > 0 {
-				// Resolve conflicts before proceeding
-				if !stow.ResolveConflicts(conflicts) {
-					fmt.Println("  Install cancelled.")
-					waitForEnter()
-					return false
-				}
-			}
-			runInstallInDashboard(cfg, dotfilesPath)
-		}
-
-	case dashboard.ActionUpdate:
-		if cfg != nil && configPath != "" {
-			dotfilesPath := filepath.Dir(configPath)
-			runUpdateInDashboard(cfg, dotfilesPath)
-		}
+	// ActionInstall and ActionUpdate are now handled inline in dashboard
+	// and no longer trigger handleAction
 
 	case dashboard.ActionList:
 		// This is the "More" menu
@@ -326,60 +290,6 @@ func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
 
 	_, err := dashboard.RunWithOperation(state, dashboard.OpInstall, "", nil, func(runner *dashboard.OperationRunner) error {
 		_, err := dashboard.RunInstallOperation(runner, cfg, dotfilesPath, opts)
-		return err
-	})
-
-	if err != nil {
-		ui.Error("Dashboard error: %v", err)
-	}
-}
-
-// runSyncInDashboard runs sync operations within the dashboard UI
-func runSyncInDashboard(cfg *config.Config, dotfilesPath string, configName string, configNames []string) {
-	state := buildDashboardState(cfg, dotfilesPath)
-
-	opts := dashboard.SyncOptions{
-		Force:       false, // Don't force by default; only force when explicitly requested
-		Interactive: true,  // Enable interactive conflict resolution in dashboard
-	}
-
-	var opType dashboard.OperationType
-	if len(configNames) > 0 {
-		opType = dashboard.OpBulkSync
-	} else if configName != "" {
-		opType = dashboard.OpSyncSingle
-	} else {
-		opType = dashboard.OpSync
-	}
-
-	_, err := dashboard.RunWithOperation(state, opType, configName, configNames, func(runner *dashboard.OperationRunner) error {
-		if len(configNames) > 0 {
-			_, err := dashboard.RunBulkSyncOperation(runner, cfg, dotfilesPath, configNames, opts)
-			return err
-		} else if configName != "" {
-			_, err := dashboard.RunSyncSingleOperation(runner, cfg, dotfilesPath, configName, opts)
-			return err
-		} else {
-			_, err := dashboard.RunSyncAllOperation(runner, cfg, dotfilesPath, opts)
-			return err
-		}
-	})
-
-	if err != nil {
-		ui.Error("Dashboard error: %v", err)
-	}
-}
-
-// runUpdateInDashboard runs the update operation within the dashboard UI
-func runUpdateInDashboard(cfg *config.Config, dotfilesPath string) {
-	state := buildDashboardState(cfg, dotfilesPath)
-
-	opts := dashboard.UpdateOptions{
-		UpdateExternal: true,
-	}
-
-	_, err := dashboard.RunWithOperation(state, dashboard.OpUpdate, "", nil, func(runner *dashboard.OperationRunner) error {
-		_, err := dashboard.RunUpdateOperation(runner, cfg, dotfilesPath, opts)
 		return err
 	})
 
