@@ -126,6 +126,7 @@ func runInteractive(cmd *cobra.Command, args []string) {
 				LinkStatus:     linkStatus,
 				MachineStatus:  dashStatus,
 				Configs:        allConfigs,
+				Config:         cfg, // Full config for inline operations
 				DotfilesPath:   dotfilesPath,
 				UpdateMsg:      updateMsg,
 				HasBaseline:    hasBaseline,
@@ -309,6 +310,7 @@ func buildDashboardState(cfg *config.Config, dotfilesPath string) dashboard.Stat
 		LinkStatus:    linkStatus,
 		MachineStatus: dashStatus,
 		Configs:       cfg.GetAllConfigs(),
+		Config:        cfg, // Full config for inline operations
 		DotfilesPath:  dotfilesPath,
 		HasConfig:     true,
 	}

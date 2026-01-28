@@ -72,65 +72,156 @@ func TestNew_WithSelectedConfig(t *testing.T) {
 }
 
 func TestModel_Update_Actions(t *testing.T) {
-	baseState := State{
+	// Actions that still fall back to CLI (no inline operation)
+	t.Run("Doctor action", func(t *testing.T) {
+		baseState := State{
+			Platform: &platform.Platform{OS: "linux"},
+			Configs: []config.ConfigItem{
+				{Name: "vim"},
+			},
+			HasConfig:    true,
+			DotfilesPath: "/tmp/dotfiles",
+		}
+		m := New(baseState)
+		m.width = 100
+		m.height = 40
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+		updatedModel, cmd := m.Update(msg)
+
+		if cmd == nil {
+			t.Error("expected tea.Quit command")
+		}
+		model := updatedModel.(*Model)
+		if model.result == nil {
+			t.Fatal("expected result to be set")
+		}
+		if model.result.Action != ActionDoctor {
+			t.Errorf("expected action %v, got %v", ActionDoctor, model.result.Action)
+		}
+	})
+
+	// Actions that run inline when Config is set
+	inlineTests := []struct {
+		name    string
+		keyRune rune
+	}{
+		{"Sync action", 's'},
+		{"Install action", 'i'},
+		{"Update action", 'u'},
+	}
+
+	for _, tt := range inlineTests {
+		t.Run(tt.name+" without Config", func(t *testing.T) {
+			// Without Config, nothing happens (no quit, no inline op)
+			baseState := State{
+				Platform: &platform.Platform{OS: "linux"},
+				Configs: []config.ConfigItem{
+					{Name: "vim"},
+				},
+				HasConfig:    true,
+				DotfilesPath: "/tmp/dotfiles",
+				Config:       nil, // No config, so inline op won't start
+			}
+			m := New(baseState)
+			m.width = 100
+			m.height = 40
+
+			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{tt.keyRune}}
+			updatedModel, _ := m.Update(msg)
+
+			model := updatedModel.(*Model)
+			// Without Config, operationActive should remain false
+			if model.operationActive {
+				t.Error("expected operationActive to be false without Config")
+			}
+		})
+	}
+}
+
+func TestModel_InlineOperation_WithConfig(t *testing.T) {
+	// With Config set, sync should start an inline operation
+	cfg := &config.Config{}
+	s := State{
 		Platform: &platform.Platform{OS: "linux"},
 		Configs: []config.ConfigItem{
 			{Name: "vim"},
 		},
 		HasConfig:    true,
-		DotfilesPath: "/tmp/dotfiles",
+		Config:       cfg,
+		DotfilesPath: "/tmp",
+	}
+	m := New(s)
+	m.width = 100
+	m.height = 40
+
+	// Simulate what Run() does - set the program
+	p := tea.NewProgram(&m, tea.WithAltScreen())
+	m.program = p
+
+	t.Logf("Before 's' - program is nil: %v", m.program == nil)
+	t.Logf("Before 's' - operationActive: %v", m.operationActive)
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+	updatedModel, cmd := m.Update(msg)
+
+	model := updatedModel.(*Model)
+	t.Logf("After 's' - operationActive: %v", model.operationActive)
+	t.Logf("After 's' - cmd is nil: %v", cmd == nil)
+	t.Logf("After 's' - program is nil: %v", model.program == nil)
+
+	// With Config and program set, operationActive should be true
+	if !model.operationActive {
+		t.Error("expected operationActive to be true with Config set")
+	}
+	if cmd == nil {
+		t.Error("expected a command to be returned")
+	}
+}
+
+func TestModel_InlineOperation_MessageHandling(t *testing.T) {
+	// Test that operation messages are handled in dashboard view
+	cfg := &config.Config{}
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		HasConfig:    true,
+		Config:       cfg,
+		DotfilesPath: "/tmp",
+	}
+	m := New(s)
+	m.width = 100
+	m.height = 40
+	m.currentView = viewDashboard // Ensure we're in dashboard view
+
+	// Test OperationProgressMsg
+	progressMsg := OperationProgressMsg{StepIndex: 0, Detail: "test"}
+	updatedModel, _ := m.Update(progressMsg)
+	model := updatedModel.(*Model)
+	if !model.operationActive {
+		t.Error("expected operationActive to be true after OperationProgressMsg")
 	}
 
-	tests := []struct {
-		name           string
-		keyRune        rune
-		expectedAction Action
-	}{
-		{
-			name:           "Sync action",
-			keyRune:        's',
-			expectedAction: ActionSync,
-		},
-		{
-			name:           "Doctor action",
-			keyRune:        'd',
-			expectedAction: ActionDoctor,
-		},
-		{
-			name:           "Install action",
-			keyRune:        'i',
-			expectedAction: ActionInstall,
-		},
-		{
-			name:           "Update action",
-			keyRune:        'u',
-			expectedAction: ActionUpdate,
-		},
+	// Test OperationLogMsg
+	logMsg := OperationLogMsg{Level: "info", Message: "test log"}
+	updatedModel, _ = model.Update(logMsg)
+	model = updatedModel.(*Model)
+	if len(model.output.logs) != 1 {
+		t.Errorf("expected 1 log entry, got %d", len(model.output.logs))
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := New(baseState)
-			// Set dimensions to avoid divide by zero
-			m.width = 100
-			m.height = 40
-
-			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{tt.keyRune}}
-			updatedModel, cmd := m.Update(msg)
-
-			// Verify tea.Quit is returned
-			if cmd == nil {
-				t.Error("expected tea.Quit command")
-			}
-
-			model := updatedModel.(*Model)
-			if model.result == nil {
-				t.Fatal("expected result to be set")
-			}
-			if model.result.Action != tt.expectedAction {
-				t.Errorf("expected action %v, got %v", tt.expectedAction, model.result.Action)
-			}
-		})
+	// Test OperationDoneMsg
+	doneMsg := OperationDoneMsg{Success: true, Summary: "done"}
+	updatedModel, _ = model.Update(doneMsg)
+	model = updatedModel.(*Model)
+	if model.operationActive {
+		t.Error("expected operationActive to be false after OperationDoneMsg")
+	}
+	// Should have 2 logs now (the log + the done summary)
+	if len(model.output.logs) != 2 {
+		t.Errorf("expected 2 log entries, got %d", len(model.output.logs))
 	}
 }
 
@@ -319,6 +410,7 @@ func TestModel_Update_SelectAll(t *testing.T) {
 }
 
 func TestModel_Update_BulkSync(t *testing.T) {
+	// Without Config, bulk sync does nothing (no inline operation possible)
 	s := State{
 		Platform: &platform.Platform{OS: "linux"},
 		Configs: []config.ConfigItem{
@@ -326,6 +418,7 @@ func TestModel_Update_BulkSync(t *testing.T) {
 			{Name: "zsh"},
 		},
 		HasConfig: true,
+		Config:    nil, // No config, so inline op won't start
 	}
 	m := New(s)
 	m.selectedConfigs["vim"] = true
@@ -333,21 +426,12 @@ func TestModel_Update_BulkSync(t *testing.T) {
 
 	// Bulk sync with shift+S
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}}
-	updatedModel, cmd := m.Update(msg)
-
-	if cmd == nil {
-		t.Error("expected tea.Quit command")
-	}
+	updatedModel, _ := m.Update(msg)
 
 	model := updatedModel.(*Model)
-	if model.result == nil {
-		t.Fatal("expected result to be set")
-	}
-	if model.result.Action != ActionBulkSync {
-		t.Errorf("expected ActionBulkSync, got %v", model.result.Action)
-	}
-	if len(model.result.ConfigNames) != 2 {
-		t.Errorf("expected 2 config names, got %d", len(model.result.ConfigNames))
+	// Without Config, nothing happens
+	if model.operationActive {
+		t.Error("expected operationActive to be false without Config")
 	}
 }
 
@@ -377,6 +461,7 @@ func TestModel_Update_BulkSync_NoSelection(t *testing.T) {
 }
 
 func TestModel_Update_SyncConfig(t *testing.T) {
+	// Without Config, sync config does nothing (no inline operation possible)
 	s := State{
 		Platform: &platform.Platform{OS: "linux"},
 		Configs: []config.ConfigItem{
@@ -384,26 +469,18 @@ func TestModel_Update_SyncConfig(t *testing.T) {
 			{Name: "zsh"},
 		},
 		HasConfig: true,
+		Config:    nil, // No config, so inline op won't start
 	}
 	m := New(s)
 
 	// Press enter to sync selected config
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
-	updatedModel, cmd := m.Update(msg)
-
-	if cmd == nil {
-		t.Error("expected tea.Quit command")
-	}
+	updatedModel, _ := m.Update(msg)
 
 	model := updatedModel.(*Model)
-	if model.result == nil {
-		t.Fatal("expected result to be set")
-	}
-	if model.result.Action != ActionSyncConfig {
-		t.Errorf("expected ActionSyncConfig, got %v", model.result.Action)
-	}
-	if model.result.ConfigName != "vim" {
-		t.Errorf("expected ConfigName 'vim', got '%s'", model.result.ConfigName)
+	// Without Config, nothing happens
+	if model.operationActive {
+		t.Error("expected operationActive to be false without Config")
 	}
 }
 

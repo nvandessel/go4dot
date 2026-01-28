@@ -56,3 +56,10 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Menu) View() string {
 	return ui.BoxStyle.Render(m.list.View())
 }
+
+// SetSize sets the menu dimensions
+func (m *Menu) SetSize(width, height int) {
+	m.width = width
+	m.height = height
+	m.list.SetSize(width, height)
+}

@@ -29,6 +29,7 @@ type State struct {
 	LinkStatus     map[string]*stow.ConfigLinkStatus
 	MachineStatus  []MachineStatus
 	Configs        []config.ConfigItem
+	Config         *config.Config // Full config for operations
 	DotfilesPath   string
 	UpdateMsg      string
 	HasBaseline    bool
@@ -55,6 +56,8 @@ type Model struct {
 	selectedConfigs map[string]bool
 	showHelp        bool
 	currentView     view
+	operationActive bool   // true when an operation is running in the output pane
+	program         *tea.Program // reference for inline operations
 
 	// Components
 	header     Header
@@ -66,6 +69,7 @@ type Model struct {
 	menu       *Menu
 	noconfig   NoConfig
 	operations Operations
+	output     OutputPane
 }
 
 // New creates a new dashboard model.
@@ -98,6 +102,7 @@ func New(s State) Model {
 	m.menu = &Menu{}
 	*m.menu = NewMenu()
 	m.noconfig = NewNoConfig()
+	m.output = NewOutputPane()
 	return m
 }
 
@@ -188,26 +193,52 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterMode = true
 			return m, nil
 		case key.Matches(msg, keys.Sync):
-			m.setResult(ActionSync)
-			return m, tea.Quit
+			if m.state.Config != nil && !m.operationActive {
+				opts := SyncOptions{Force: false, Interactive: true}
+				cmd := m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
+					_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+					return err
+				})
+				return m, cmd
+			}
 		case key.Matches(msg, keys.Doctor):
+			// TODO: Implement inline doctor - for now, fall back to CLI
 			m.setResult(ActionDoctor)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Install):
-			m.setResult(ActionInstall)
-			return m, tea.Quit
+			if m.state.Config != nil && !m.operationActive {
+				opts := InstallOptions{}
+				cmd := m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
+					_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+					return err
+				})
+				return m, cmd
+			}
 		case key.Matches(msg, keys.Machine):
+			// TODO: Implement inline machine config - for now, fall back to CLI
 			m.setResult(ActionMachineConfig)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Update):
-			m.setResult(ActionUpdate)
-			return m, tea.Quit
+			if m.state.Config != nil && !m.operationActive {
+				opts := UpdateOptions{UpdateExternal: true}
+				cmd := m.StartInlineOperation(OpUpdate, "", nil, func(runner *OperationRunner) error {
+					_, err := RunUpdateOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+					return err
+				})
+				return m, cmd
+			}
 		case key.Matches(msg, keys.Menu):
+			m.menu.SetSize(m.width, m.height)
 			m.currentView = viewMenu
 		case key.Matches(msg, keys.Enter):
-			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) {
-				m.setResult(ActionSyncConfig, m.state.Configs[m.sidebar.selectedIdx].Name)
-				return m, tea.Quit
+			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) && m.state.Config != nil && !m.operationActive {
+				configName := m.state.Configs[m.sidebar.selectedIdx].Name
+				opts := SyncOptions{Force: false, Interactive: true}
+				cmd := m.StartInlineOperation(OpSyncSingle, configName, nil, func(runner *OperationRunner) error {
+					_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, configName, opts)
+					return err
+				})
+				return m, cmd
 			}
 		case key.Matches(msg, keys.Select):
 			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) {
@@ -236,25 +267,90 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case key.Matches(msg, keys.Bulk):
-			if len(m.selectedConfigs) > 0 {
+			if len(m.selectedConfigs) > 0 && m.state.Config != nil && !m.operationActive {
 				names := make([]string, 0, len(m.selectedConfigs))
 				for name := range m.selectedConfigs {
 					names = append(names, name)
 				}
-				m.setResult(ActionBulkSync, names...)
-				return m, tea.Quit
+				opts := SyncOptions{Force: false, Interactive: true}
+				cmd := m.StartInlineOperation(OpBulkSync, "", names, func(runner *OperationRunner) error {
+					_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, names, opts)
+					return err
+				})
+				return m, cmd
 			}
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// Layout calculation:
+		// Header: ~3 lines, Summary: ~2 lines, Footer: ~2 lines = ~7 fixed
+		// Remaining height split: main content (2/3) and output pane (1/3)
+		fixedHeight := 7
+		availableHeight := msg.Height - fixedHeight
+		if availableHeight < 6 {
+			availableHeight = 6
+		}
+
+		// Output pane gets 1/3 of available height (min 4 lines)
+		outputHeight := availableHeight / 3
+		if outputHeight < 4 {
+			outputHeight = 4
+		}
+
+		// Main content gets the rest
+		mainHeight := availableHeight - outputHeight
+		if mainHeight < 4 {
+			mainHeight = 4
+		}
+
 		m.sidebar.width = msg.Width / 3
-		m.sidebar.height = msg.Height - 10 // placeholder
+		m.sidebar.height = mainHeight
 		m.details.width = msg.Width - m.sidebar.width
-		m.details.height = m.sidebar.height
+		m.details.height = mainHeight
+		m.output.SetSize(msg.Width, outputHeight)
 		m.footer.width = msg.Width
 		m.help.width = msg.Width
 		m.help.height = msg.Height
+
+	// Handle operation messages for inline operations
+	case OperationProgressMsg:
+		m.operationActive = true
+		m.operations, cmd = m.operations.Update(msg)
+		return m, cmd
+
+	case OperationStepCompleteMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		status := "info"
+		switch msg.Status {
+		case StepSuccess:
+			status = "success"
+		case StepWarning:
+			status = "warning"
+		case StepError:
+			status = "error"
+		}
+		if msg.Detail != "" {
+			m.output.AddLog(status, msg.Detail)
+		}
+		return m, cmd
+
+	case OperationLogMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		m.output.AddLog(msg.Level, msg.Message)
+		return m, cmd
+
+	case OperationDoneMsg:
+		m.operationActive = false
+		m.operations, cmd = m.operations.Update(msg)
+		if msg.Error != nil {
+			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
+		} else if msg.Summary != "" {
+			m.output.AddLog("success", msg.Summary)
+		}
+		m.output.SetTitle("Output")
+		return m, cmd
 	}
 
 	cmd = m.sidebar.Update(msg)
@@ -341,9 +437,43 @@ func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.operations.width = msg.Width
 		m.operations.height = msg.Height
 
-	case OperationProgressMsg, OperationStepCompleteMsg, OperationLogMsg, OperationDoneMsg:
-		// Forward operation messages to operations component
+	case OperationProgressMsg:
+		m.operationActive = true
 		m.operations, cmd = m.operations.Update(msg)
+		return m, cmd
+
+	case OperationStepCompleteMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		// Also log step completion to output pane
+		status := "info"
+		switch msg.Status {
+		case StepSuccess:
+			status = "success"
+		case StepWarning:
+			status = "warning"
+		case StepError:
+			status = "error"
+		}
+		if msg.Detail != "" {
+			m.output.AddLog(status, msg.Detail)
+		}
+		return m, cmd
+
+	case OperationLogMsg:
+		// Forward to both operations component and output pane
+		m.operations, cmd = m.operations.Update(msg)
+		m.output.AddLog(msg.Level, msg.Message)
+		return m, cmd
+
+	case OperationDoneMsg:
+		m.operationActive = false
+		m.operations, cmd = m.operations.Update(msg)
+		// Log completion
+		if msg.Error != nil {
+			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
+		} else if msg.Summary != "" {
+			m.output.AddLog("success", msg.Summary)
+		}
 		return m, cmd
 	}
 
@@ -359,6 +489,54 @@ func (m *Model) StartOperation(opType OperationType, configName string, configNa
 	m.operations.height = m.height
 	m.currentView = viewOperation
 	return m.operations.Init()
+}
+
+// StartInlineOperation runs an operation in the background without switching views
+// Output is shown in the output pane at the bottom of the dashboard
+func (m *Model) StartInlineOperation(opType OperationType, configName string, configNames []string, operationFunc func(runner *OperationRunner) error) tea.Cmd {
+	if m.program == nil || m.operationActive {
+		return nil
+	}
+
+	m.operationActive = true
+	m.output.Clear()
+	m.output.SetTitle(getOperationTitle(opType))
+
+	// Run operation in goroutine
+	go func() {
+		runner := NewOperationRunner(m.program)
+		defer func() {
+			if r := recover(); r != nil {
+				runner.Done(false, "", fmt.Errorf("operation panicked: %v", r))
+			}
+		}()
+		err := operationFunc(runner)
+		if err != nil {
+			runner.Done(false, "", err)
+		}
+	}()
+
+	return m.operations.Init()
+}
+
+// getOperationTitle returns a display title for an operation type
+func getOperationTitle(opType OperationType) string {
+	switch opType {
+	case OpInstall:
+		return "Installing"
+	case OpSync:
+		return "Syncing All"
+	case OpSyncSingle:
+		return "Syncing"
+	case OpBulkSync:
+		return "Syncing Selected"
+	case OpUpdate:
+		return "Updating"
+	case OpDoctor:
+		return "Health Check"
+	default:
+		return "Operation"
+	}
 }
 
 func (m *Model) updateFilter() {
@@ -403,20 +581,23 @@ func (m Model) View() string {
 }
 
 func (m Model) viewDashboard() string {
-	sidebarView := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ui.SubtleColor).
-		Width(m.sidebar.width - 2).
-		Height(m.sidebar.height).
-		Render(m.sidebar.View())
+	// Sidebar with inline title
+	sidebarView := renderPaneWithTitle(
+		m.sidebar.View(),
+		"Configs",
+		m.sidebar.width-2,
+		m.sidebar.height,
+		ui.SubtleColor,
+	)
 
-	detailsView := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ui.PrimaryColor).
-		Width(m.details.width-2).
-		Height(m.details.height).
-		Padding(0, 1).
-		Render(m.details.View())
+	// Details pane with inline title
+	detailsView := renderPaneWithTitle(
+		m.details.View(),
+		"Details",
+		m.details.width-2,
+		m.details.height,
+		ui.PrimaryColor,
+	)
 
 	mainContent := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -424,11 +605,25 @@ func (m Model) viewDashboard() string {
 		detailsView,
 	)
 
+	// Output pane with inline title
+	outputTitle := "Output"
+	if m.operationActive {
+		outputTitle = "Output (running...)"
+	}
+	outputView := renderPaneWithTitle(
+		m.output.View(),
+		outputTitle,
+		m.width-2,
+		m.output.height,
+		ui.SubtleColor,
+	)
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.header.View(),
 		m.summary.View(),
 		mainContent,
+		outputView,
 		m.footer.View(),
 	)
 }
@@ -500,6 +695,7 @@ type MachineStatus struct {
 func Run(s State) (*Result, error) {
 	m := New(s)
 	p := tea.NewProgram(&m, tea.WithAltScreen())
+	m.program = p // Store program reference for inline operations
 
 	finalModel, err := p.Run()
 	if err != nil {
