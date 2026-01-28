@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -18,6 +19,7 @@ const (
 	viewDashboard view = iota
 	viewMenu
 	viewNoConfig
+	viewOperation
 )
 
 // State holds all the shared data for the dashboard.
@@ -47,16 +49,20 @@ type Model struct {
 	selectedConfigs map[string]bool
 	showHelp        bool
 	currentView     view
+	operationActive bool
+	program         *tea.Program
 
 	// Components
-	header   Header
-	summary  Summary
-	sidebar  Sidebar
-	details  Details
-	footer   Footer
-	help     Help
-	menu     *Menu
-	noconfig NoConfig
+	header     Header
+	summary    Summary
+	sidebar    Sidebar
+	details    Details
+	footer     Footer
+	help       Help
+	menu       *Menu
+	noconfig   NoConfig
+	operations Operations
+	output     OutputPane
 }
 
 // New creates a new dashboard model.
@@ -84,11 +90,13 @@ func New(s State) Model {
 	m.menu = &Menu{}
 	*m.menu = NewMenu()
 	m.noconfig = NewNoConfig()
+	m.operations = NewOperations()
+	m.output = NewOutputPane("Output")
 	return m
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return m.operations.Init()
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -108,6 +116,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMenu(msg)
 	case viewNoConfig:
 		return m.updateNoConfig(msg)
+	case viewOperation:
+		return m.updateOperation(msg)
 	default:
 		return m.updateDashboard(msg)
 	}
@@ -236,6 +246,32 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.footer.width = msg.Width
 		m.help.width = msg.Width
 		m.help.height = msg.Height
+		// Size the output pane for operation view
+		m.output.SetSize(msg.Width-4, msg.Height-6)
+	case OperationProgressMsg:
+		m.operationActive = true
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+	case OperationStepCompleteMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+		status := stepStatusToString(msg.Status)
+		if msg.Detail != "" {
+			m.output.AddLog(status, msg.Detail)
+		}
+	case OperationLogMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+		m.output.AddLog(msg.Level, msg.Message)
+	case OperationDoneMsg:
+		m.operationActive = false
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+		if msg.Error != nil {
+			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
+		} else if msg.Summary != "" {
+			m.output.AddLog("success", msg.Summary)
+		}
 	}
 
 	cmd = m.sidebar.Update(msg)
@@ -283,6 +319,57 @@ func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, keys.Quit):
+			if !m.operationActive {
+				m.currentView = viewDashboard
+			}
+		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.output.SetSize(msg.Width-4, msg.Height-6)
+	case OperationProgressMsg:
+		m.operationActive = true
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+	case OperationStepCompleteMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+		status := stepStatusToString(msg.Status)
+		if msg.Detail != "" {
+			m.output.AddLog(status, msg.Detail)
+		}
+	case OperationLogMsg:
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+		m.output.AddLog(msg.Level, msg.Message)
+	case OperationDoneMsg:
+		m.operationActive = false
+		m.operations, cmd = m.operations.Update(msg)
+		cmds = append(cmds, cmd)
+		if msg.Error != nil {
+			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
+		} else if msg.Summary != "" {
+			m.output.AddLog("success", msg.Summary)
+		}
+	}
+
+	// Update output pane for scrolling
+	cmd = m.output.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
+}
+
 func (m *Model) updateFilter() {
 	filtered := []int{}
 	if m.filterText == "" {
@@ -317,6 +404,8 @@ func (m Model) View() string {
 		return m.menu.View()
 	case viewNoConfig:
 		return m.noconfig.View()
+	case viewOperation:
+		return m.viewOperation()
 	default:
 		return m.viewDashboard()
 	}
@@ -351,6 +440,36 @@ func (m Model) viewDashboard() string {
 		mainContent,
 		m.footer.View(),
 	)
+}
+
+func (m Model) viewOperation() string {
+	var content strings.Builder
+
+	// Header
+	content.WriteString(m.header.View())
+	content.WriteString("\n")
+
+	// Operation status
+	if m.operationActive {
+		content.WriteString(m.operations.View())
+		content.WriteString("\n")
+	}
+
+	// Output pane
+	borderColor := ui.PrimaryColor
+	if m.operationActive {
+		borderColor = ui.SecondaryColor
+	}
+	content.WriteString(m.output.RenderWithBorder(borderColor))
+
+	// Footer hint
+	if !m.operationActive {
+		hint := ui.SubtleStyle.Render("Press ESC to return to dashboard")
+		content.WriteString("\n")
+		content.WriteString(hint)
+	}
+
+	return content.String()
 }
 
 // Result is returned when the dashboard exits
@@ -392,6 +511,58 @@ type MachineStatus struct {
 func Run(s State) (*Result, error) {
 	m := New(s)
 	p := tea.NewProgram(&m, tea.WithAltScreen())
+
+	finalModel, err := p.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	return finalModel.(*Model).result, nil
+}
+
+// SetProgram sets the tea.Program reference for operation runners.
+func (m *Model) SetProgram(p *tea.Program) {
+	m.program = p
+}
+
+// StartOperation starts an inline operation and switches to operation view.
+// The operationFunc receives an OperationRunner to report progress.
+// IMPORTANT: This ensures runner.Done is called on both success and failure.
+func (m *Model) StartOperation(operationFunc OperationFunc) tea.Cmd {
+	m.currentView = viewOperation
+	m.output.Clear()
+	return StartInlineOperation(m.program, operationFunc)
+}
+
+// RunWithOperation runs the dashboard with an initial operation.
+// This is useful for commands that want to show operation progress in the dashboard.
+func RunWithOperation(s State, operationFunc OperationFunc) (*Result, error) {
+	m := New(s)
+	m.currentView = viewOperation
+	p := tea.NewProgram(&m, tea.WithAltScreen())
+	m.SetProgram(p)
+
+	// Start the operation in a goroutine after the program starts
+	go func() {
+		runner := NewOperationRunner(p)
+
+		// Recover from panics
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("operation panicked: %v", r)
+				runner.Done(false, "", err)
+			}
+		}()
+
+		err := operationFunc(runner)
+		if err != nil {
+			runner.Done(false, "", err)
+		} else {
+			// CRITICAL: Call Done on success to ensure operationActive becomes false.
+			// Without this, the operation would remain marked as active indefinitely.
+			runner.Done(true, "", nil)
+		}
+	}()
 
 	finalModel, err := p.Run()
 	if err != nil {
