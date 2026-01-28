@@ -174,116 +174,62 @@ make sandbox   # Run Docker/Podman container for isolated testing
 
 This repository uses **Beads** for AI-native issue tracking. Issues live in `.beads/` and sync with git.
 
-### Using bv as an AI sidecar
+### Agent Warning: Interactive Commands
 
-bv is a graph-aware triage engine for Beads projects (.beads/beads.jsonl). Instead of parsing JSONL or hallucinating graph traversal, use robot flags for deterministic, dependency-aware outputs with precomputed metrics (PageRank, betweenness, critical path, cycles, HITS, eigenvector, k-core).
+DO NOT use bd edit - it opens an interactive editor ($EDITOR) which AI agents cannot use.
 
-**Scope boundary:** bv handles *what to work on* (triage, priority, planning). For agent-to-agent coordination (messaging, work claiming, file reservations), use [MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail).
+Use bd update with flags instead (see Basic Commands below).
 
-**⚠️ CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches an interactive TUI that blocks your session.**
+### Basic bd Commands
 
-#### The Workflow: Start With Triage
-
-**`bv --robot-triage` is your single entry point.** It returns everything you need in one call:
-- `quick_ref`: at-a-glance counts + top 3 picks
-- `recommendations`: ranked actionable items with scores, reasons, unblock info
-- `quick_wins`: low-effort high-impact items
-- `blockers_to_clear`: items that unblock the most downstream work
-- `project_health`: status/type/priority distributions, graph metrics
-- `commands`: copy-paste shell commands for next steps
-
-bv --robot-triage        # THE MEGA-COMMAND: start here
-bv --robot-next          # Minimal: just the single top pick + claim command
-
-# Token-optimized output (TOON) for lower LLM context usage:
-bv --robot-triage --format toon
-export BV_OUTPUT_FORMAT=toon
-bv --robot-next
-
-#### Other Commands
-
-**Planning:**
-| Command | Returns |
-|---------|---------|
-| `--robot-plan` | Parallel execution tracks with `unblocks` lists |
-| `--robot-priority` | Priority misalignment detection with confidence |
-
-**Graph Analysis:**
-| Command | Returns |
-|---------|---------|
-| `--robot-insights` | Full metrics: PageRank, betweenness, HITS (hubs/authorities), eigenvector, critical path, cycles, k-core, articulation points, slack |
-| `--robot-label-health` | Per-label health: `health_level` (healthy\|warning\|critical), `velocity_score`, `staleness`, `blocked_count` |
-| `--robot-label-flow` | Cross-label dependency: `flow_matrix`, `dependencies`, `bottleneck_labels` |
-| `--robot-label-attention [--attention-limit=N]` | Attention-ranked labels by: (pagerank × staleness × block_impact) / velocity |
-
-**History & Change Tracking:**
-| Command | Returns |
-|---------|---------|
-| `--robot-history` | Bead-to-commit correlations: `stats`, `histories` (per-bead events/commits/milestones), `commit_index` |
-| `--robot-diff --diff-since <ref>` | Changes since ref: new/closed/modified issues, cycles introduced/resolved |
-
-**Other Commands:**
-| Command | Returns |
-|---------|---------|
-| `--robot-burndown <sprint>` | Sprint burndown, scope changes, at-risk items |
-| `--robot-forecast <id\|all>` | ETA predictions with dependency-aware scheduling |
-| `--robot-alerts` | Stale issues, blocking cascades, priority mismatches |
-| `--robot-suggest` | Hygiene: duplicates, missing deps, label suggestions, cycle breaks |
-| `--robot-graph [--graph-format=json\|dot\|mermaid]` | Dependency graph export |
-| `--export-graph <file.html>` | Self-contained interactive HTML visualization |
-
-#### Scoping & Filtering
-
-bv --robot-plan --label backend              # Scope to label's subgraph
-bv --robot-insights --as-of HEAD~30          # Historical point-in-time
-bv --recipe actionable --robot-plan          # Pre-filter: ready to work (no blockers)
-bv --recipe high-impact --robot-triage       # Pre-filter: top PageRank scores
-bv --robot-triage --robot-triage-by-track    # Group by parallel work streams
-bv --robot-triage --robot-triage-by-label    # Group by domain
-
-#### Understanding Robot Output
-
-**All robot JSON includes:**
-- `data_hash` — Fingerprint of source beads.jsonl (verify consistency across calls)
-- `status` — Per-metric state: `computed|approx|timeout|skipped` + elapsed ms
-- `as_of` / `as_of_commit` — Present when using `--as-of`; contains ref and resolved SHA
-
-**Two-phase analysis:**
-- **Phase 1 (instant):** degree, topo sort, density — always available immediately
-- **Phase 2 (async, 500ms timeout):** PageRank, betweenness, HITS, eigenvector, cycles — check `status` flags
-
-**For large graphs (>500 nodes):** Some metrics may be approximated or skipped. Always check `status`.
-
-#### jq Quick Reference
-
-bv --robot-triage | jq '.quick_ref'                        # At-a-glance summary
-bv --robot-triage | jq '.recommendations[0]'               # Top recommendation
-bv --robot-plan | jq '.plan.summary.highest_impact'        # Best unblock target
-bv --robot-insights | jq '.status'                         # Check metric readiness
-bv --robot-insights | jq '.Cycles'                         # Circular deps (must fix!)
-bv --robot-label-health | jq '.results.labels[] | select(.health_level == "critical")'
-
-**Performance:** Phase 1 instant, Phase 2 async (500ms timeout). Prefer `--robot-plan` over `--robot-insights` when speed matters. Results cached by data hash.
-
-Use bv instead of parsing beads.jsonl—it computes PageRank, critical paths, cycles, and parallel tracks deterministically.
-
-### bd Commands (for mutations)
-
+**Listing Issues:**
 ```bash
-bd create "Issue title"                   # Create a new issue
-bd show <id>                              # Show issue details
-bd update <id> --status in_progress       # Update status
-bd close <id>                             # Close an issue
-bd sync                                   # Export changes for git commit
+bd list                     # List all open issues
+bd list --status closed     # List closed issues
+bd list --status all        # List all issues
+bd list --assigned me       # List issues assigned to you
+bd list --tag bug           # Filter by tag
 ```
 
-### Workflow
+**Creating Issues:**
+```bash
+bd create --title "Issue title" --description "Details"
+bd create --title "Bug fix" --description "Fix the thing" --tag bug --tag priority-high
+bd create --title "Feature" --design "Design notes" --acceptance "AC criteria"
+```
 
-1. **Triage first:** `bv --robot-triage` to understand priorities and what to work on
-2. **Claim work:** Use the command from `bv --robot-next` output
-3. **Update status:** `bd update <id> --status in_progress`
-4. **Close when done:** `bd close <id>`
-5. **Sync before commit:** `bd sync`
+**Viewing Issue Details:**
+```bash
+bd show <id>                # Show full issue details
+```
+
+**Updating Issues (Non-Interactive):**
+```bash
+bd update <id> --title "new title"
+bd update <id> --description "new description"
+bd update <id> --design "design notes"
+bd update <id> --notes "additional notes"
+bd update <id> --acceptance "acceptance criteria"
+bd update <id> --status in-progress
+bd update <id> --status closed
+bd update <id> --assigned username
+bd update <id> --tag new-tag
+```
+
+**Closing Issues:**
+```bash
+bd close <id>               # Mark issue as closed
+bd update <id> --status closed  # Alternative syntax
+```
+
+**Deleting Issues:**
+```bash
+bd delete <id>              # Permanently delete an issue
+```
+
+**Status Transitions:**
+- `open` → `in-progress` → `closed`
+- Use `--status` flag with bd update to change status
 
 ### GitHub Integration
 
