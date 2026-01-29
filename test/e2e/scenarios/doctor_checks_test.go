@@ -212,8 +212,15 @@ func TestDoctor_Verbose(t *testing.T) {
 
 	t.Logf("Doctor verbose output:\n%s", output)
 
-	// Verbose output should be more detailed than normal
-	if len(output) < 100 {
-		t.Errorf("Verbose output seems too short: %d bytes", len(output))
+	// Verbose output should contain detailed check progress
+	verboseIndicators := []string{
+		"Checking", // verbose shows check progress
+		"Health Report",
+		"Platform:",
+	}
+	for _, indicator := range verboseIndicators {
+		if !strings.Contains(output, indicator) {
+			t.Errorf("Verbose output missing expected indicator: %s", indicator)
+		}
 	}
 }

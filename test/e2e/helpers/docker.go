@@ -294,7 +294,7 @@ func (c *DockerTestContainer) CopyToContainer(src, dest string) error {
 	cmd := exec.Command(string(c.Runtime), "cp", src, c.ContainerID+":"+dest)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to copy to container: %v\nOutput: %s", err, output)
+		return fmt.Errorf("failed to copy to container: %w\nOutput: %s", err, output)
 	}
 
 	return nil
@@ -307,7 +307,7 @@ func (c *DockerTestContainer) CopyFromContainer(src, dest string) error {
 	cmd := exec.Command(string(c.Runtime), "cp", c.ContainerID+":"+src, dest)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to copy from container: %v\nOutput: %s", err, output)
+		return fmt.Errorf("failed to copy from container: %w\nOutput: %s", err, output)
 	}
 
 	return nil
@@ -339,20 +339,27 @@ func (c *DockerTestContainer) Cleanup() {
 // Helper functions
 
 func copyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("stat source: %w", err)
+	}
+
 	sourceFile, err := os.Open(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("open source: %w", err)
 	}
 	defer sourceFile.Close()
 
-	destFile, err := os.Create(dst)
+	destFile, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
 	if err != nil {
-		return err
+		return fmt.Errorf("create destination: %w", err)
 	}
 	defer destFile.Close()
 
-	_, err = io.Copy(destFile, sourceFile)
-	return err
+	if _, err = io.Copy(destFile, sourceFile); err != nil {
+		return fmt.Errorf("copy content: %w", err)
+	}
+	return nil
 }
 
 func copyDir(src, dst string) error {

@@ -186,7 +186,11 @@ func TestInstall_RestowOperation(t *testing.T) {
 	// Initial install
 	ctx1, cancel1 := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel1()
-	container.ExecContext(ctx1, "bash", "-c", "cd ~/dotfiles && g4d stow add vim --non-interactive")
+	initOutput, err := container.ExecContext(ctx1, "bash", "-c", "cd ~/dotfiles && g4d stow add vim --non-interactive")
+	if err != nil {
+		t.Fatalf("Initial stow failed: %v\nOutput: %s", err, initOutput)
+	}
+	t.Logf("Initial stow output: %s", initOutput)
 
 	// Restow (refresh all configs)
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 60*time.Second)
