@@ -64,8 +64,8 @@ func (tm *TUITestModel) SendKeys(keys ...interface{}) {
 }
 
 // WaitForText waits for specific text to appear in the TUI output
-// Returns an error if the text doesn't appear within the timeout
-func (tm *TUITestModel) WaitForText(text string, timeout ...time.Duration) error {
+// Failures are reported via testing.TB
+func (tm *TUITestModel) WaitForText(text string, timeout ...time.Duration) {
 	tm.t.Helper()
 
 	timeoutDuration := 3 * time.Second
@@ -76,12 +76,11 @@ func (tm *TUITestModel) WaitForText(text string, timeout ...time.Duration) error
 	teatest.WaitFor(tm.t, tm.Output(), func(out []byte) bool {
 		return strings.Contains(string(out), text)
 	}, teatest.WithCheckInterval(100*time.Millisecond), teatest.WithDuration(timeoutDuration))
-
-	return nil
 }
 
 // WaitForNotText waits for specific text to disappear from the TUI output
-func (tm *TUITestModel) WaitForNotText(text string, timeout ...time.Duration) error {
+// Failures are reported via testing.TB
+func (tm *TUITestModel) WaitForNotText(text string, timeout ...time.Duration) {
 	tm.t.Helper()
 
 	timeoutDuration := 3 * time.Second
@@ -92,8 +91,6 @@ func (tm *TUITestModel) WaitForNotText(text string, timeout ...time.Duration) er
 	teatest.WaitFor(tm.t, tm.Output(), func(out []byte) bool {
 		return !strings.Contains(string(out), text)
 	}, teatest.WithCheckInterval(100*time.Millisecond), teatest.WithDuration(timeoutDuration))
-
-	return nil
 }
 
 // ReadOutput reads and collects output from the TUI model

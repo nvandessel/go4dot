@@ -155,9 +155,7 @@ tm := helpers.NewTUITestModel(t, model, teatest.WithInitialTermSize(100, 40))
 
 **WaitForText** - Wait for specific text to appear:
 ```go
-if err := tm.WaitForText("vim", 2*time.Second); err != nil {
-    t.Fatalf("Failed to wait for text: %v", err)
-}
+tm.WaitForText("vim", 2*time.Second)  // Failures reported via testing.TB
 ```
 
 **SendKeys** - Send keyboard input with multiple formats:
@@ -206,9 +204,7 @@ func TestDashboard_Navigation(t *testing.T) {
     tm := helpers.NewTUITestModel(t, &model, teatest.WithInitialTermSize(100, 40))
 
     // Wait for initial render
-    if err := tm.WaitForText("vim", 2*time.Second); err != nil {
-        t.Fatalf("Failed to render: %v", err)
-    }
+    tm.WaitForText("vim", 2*time.Second)
 
     // Navigate and select
     helpers.NewKeySequence().

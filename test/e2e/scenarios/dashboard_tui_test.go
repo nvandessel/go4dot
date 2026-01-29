@@ -40,9 +40,7 @@ func TestDashboard_Navigation(t *testing.T) {
 
 	// Wait for initial render - dashboard should show config list
 	// Just wait for one config to ensure the dashboard has rendered
-	if err := tm.WaitForText("vim", 2*time.Second); err != nil {
-		t.Fatalf("Failed to wait for initial render: %v", err)
-	}
+	tm.WaitForText("vim", 2*time.Second)
 
 	// Small delay for complete render
 	time.Sleep(100 * time.Millisecond)
@@ -65,9 +63,7 @@ func TestDashboard_Navigation(t *testing.T) {
 
 	// Test help toggle
 	tm.SendKeys('?')
-	if err := tm.WaitForText("Keyboard Shortcuts", 1*time.Second); err != nil {
-		t.Logf("Warning: Help text not found: %v", err)
-	}
+	tm.WaitForText("Keyboard Shortcuts", 1*time.Second)
 
 	// Small delay to let help render
 	time.Sleep(100 * time.Millisecond)
@@ -96,9 +92,7 @@ func TestDashboard_Selection(t *testing.T) {
 	tm := helpers.NewTUITestModel(t, &model, teatest.WithInitialTermSize(80, 24))
 
 	// Wait for initial render
-	if err := tm.WaitForText("vim", 2*time.Second); err != nil {
-		t.Fatalf("Failed to wait for initial render: %v", err)
-	}
+	tm.WaitForText("vim", 2*time.Second)
 
 	// Select first item with space
 	helpers.NewKeySequence().
