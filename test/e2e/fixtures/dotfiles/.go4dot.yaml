@@ -1,0 +1,28 @@
+schema_version: "1.0"
+
+metadata:
+  name: test-dotfiles
+  author: E2E Test Suite
+  repository: https://github.com/test/dotfiles
+  description: Minimal test fixtures for E2E testing
+  version: 1.0.0
+
+dependencies:
+  critical:
+    - git
+    - stow
+
+configs:
+  core:
+    - name: vim
+      path: vim
+      description: Vim configuration
+      platforms: [linux, darwin]
+
+    - name: zsh
+      path: zsh
+      description: ZSH shell configuration
+      platforms: [linux, darwin]
+
+post_install: |
+  Test configuration installed successfully!
