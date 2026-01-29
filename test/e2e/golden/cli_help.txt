@@ -1,0 +1,40 @@
+> ./bin/g4d --help
+go4dot is a CLI tool for managing dotfiles across multiple machines.
+
+It provides:
+  - Platform detection (OS, distro, package manager)
+  - Dependency management (check and install required tools)
+  - Interactive setup with beautiful TUI
+  - Machine-specific configuration prompts
+  - Stow-based symlink management
+  - External dependency cloning (themes, plugins, etc.)
+  - Health checking with doctor command
+
+go4dot works with any dotfiles repository that has a .go4dot.yaml config file.
+
+Usage:
+  g4d [flags]
+  g4d [command]
+
+Available Commands:
+  adopt       Adopt existing stow symlinks into go4dot state
+  completion  Generate the autocompletion script for the specified shell
+  config      Manage configuration files
+  deps        Manage dependencies
+  detect      Detect platform information
+  doctor      Check health of dotfiles installation
+  external    Manage external dependencies
+  help        Help about any command
+  init        Initialize a new .go4dot.yaml config
+  install     Install and configure dotfiles
+  list        List installed and available configs
+  machine     Manage machine-specific configuration
+  reconfigure Re-run machine-specific configuration
+  stow        Manage dotfile symlinks
+  sync        Sync symlinks for dotfiles configs
+  uninstall   Remove dotfiles installation
+  update      Update dotfiles from git
+  version     Display version information
+
+Flags:
+────────────────────────────────────────────────────────────────────────────────

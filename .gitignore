@@ -41,3 +41,8 @@ release/
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# E2E test outputs
+test/e2e/outputs/
+test/e2e/screenshots/*.png
+test/e2e/golden/*_diff.txt

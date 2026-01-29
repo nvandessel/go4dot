@@ -112,20 +112,32 @@ release:
 help:
 	@echo "go4dot Makefile targets:"
 	@echo ""
+	@echo "Build & Run:"
 	@echo "  build         - Build the binary for current platform"
-	@echo "  package       - Build and package release artifacts (binaries + checksums)"
-	@echo "  release       - Tag and push a new version (interactive)"
 	@echo "  run           - Build and run the application"
-	@echo "  test          - Run tests with race detection"
-	@echo "  test-coverage - Run tests and generate coverage report"
 	@echo "  install       - Install binary to GOPATH/bin"
 	@echo "  clean         - Remove build artifacts"
+	@echo ""
+	@echo "Testing:"
+	@echo "  test          - Run tests with race detection"
+	@echo "  test-coverage - Run tests and generate coverage report"
+	@echo "  e2e-visual    - Run visual E2E tests with VHS"
+	@echo "  e2e-visual-update - Update golden files for visual tests"
+	@echo "  e2e-clean     - Clean E2E test outputs"
+	@echo "  install-vhs   - Install VHS for visual testing"
+	@echo ""
+	@echo "Code Quality:"
 	@echo "  fmt           - Format code with go fmt"
 	@echo "  lint          - Run golangci-lint"
 	@echo "  vet           - Run go vet"
 	@echo "  tidy          - Tidy go.mod dependencies"
+	@echo ""
+	@echo "Release & Deployment:"
+	@echo "  package       - Build and package release artifacts (binaries + checksums)"
+	@echo "  release       - Tag and push a new version (interactive)"
 	@echo "  sandbox       - Run Docker sandbox (use ARGS=\"--no-examples --url <url>\")"
 	@echo "  sandbox-no-install - Run sandbox without pre-installed g4d"
+	@echo ""
 	@echo "  help          - Show this help message"
 	@echo ""
 	@echo "Variables:"
@@ -144,3 +156,27 @@ sandbox:
 sandbox-no-install:
 	@chmod +x test/run.sh
 	@./test/run.sh --no-install $(ARGS)
+
+# E2E Testing targets
+.PHONY: install-vhs
+install-vhs:
+	@echo "Installing VHS..."
+	@command -v vhs >/dev/null 2>&1 || go install github.com/charmbracelet/vhs@latest
+	@echo "VHS installed successfully"
+
+.PHONY: e2e-visual
+e2e-visual: build
+	@echo "Running visual E2E tests with VHS..."
+	@go test -v ./test/e2e/scenarios/... -tags=e2e
+
+.PHONY: e2e-visual-update
+e2e-visual-update: build
+	@echo "Updating golden files for visual E2E tests..."
+	@UPDATE_GOLDEN=1 go test -v ./test/e2e/scenarios/... -tags=e2e
+
+.PHONY: e2e-clean
+e2e-clean:
+	@echo "Cleaning E2E test outputs..."
+	@rm -f test/e2e/outputs/*.txt
+	@rm -f test/e2e/screenshots/*.png
+	@rm -f test/e2e/golden/*_diff.txt
