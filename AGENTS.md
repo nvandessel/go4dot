@@ -182,14 +182,6 @@ seq.SendTo(tm)                                     // Send with default delay
 seq.SendToWithDelay(tm, 5*time.Millisecond)       // Send with custom delay
 ```
 
-**AssertState** - Validate model state:
-```go
-tm.AssertState(func(m tea.Model) bool {
-    // Check internal state via type assertion
-    return true
-}, "model should be in expected state")
-```
-
 **Complete Example**:
 ```go
 //go:build e2e

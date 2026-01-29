@@ -97,19 +97,6 @@ func (tm *TUITestModel) WaitForNotText(text string, timeout ...time.Duration) {
 	}, teatest.WithCheckInterval(100*time.Millisecond), teatest.WithDuration(timeoutDuration))
 }
 
-// AssertState validates that a model's state matches expected values
-// Uses a predicate function to check the state
-func (tm *TUITestModel) AssertState(predicate func(tea.Model) bool, message string) {
-	tm.t.Helper()
-
-	// Access the underlying model through the program
-	// Note: This is a demonstration method - in practice you'd need access
-	// to the actual model instance to check internal state
-	if !predicate(nil) {
-		tm.t.Errorf("state assertion failed: %s", message)
-	}
-}
-
 // WaitFinished waits for the TUI program to finish with a reasonable timeout
 func (tm *TUITestModel) WaitFinished(timeout ...time.Duration) {
 	tm.t.Helper()
@@ -121,7 +108,6 @@ func (tm *TUITestModel) WaitFinished(timeout ...time.Duration) {
 
 	tm.TestModel.WaitFinished(tm.t, teatest.WithFinalTimeout(timeoutDuration))
 }
-
 
 // KeySequence represents a sequence of keys to send to the TUI
 type KeySequence struct {
