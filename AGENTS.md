@@ -119,12 +119,13 @@ func TestSomething(t *testing.T) {
 
 For TUI components (using Bubble Tea), use the `teatest` framework for headless testing. This ensures that the UI renders correctly and responds to input without needing a physical terminal.
 
-Example pattern:
+#### Basic teatest Pattern
+
 ```go
 func TestDashboard_Interaction(t *testing.T) {
     m := NewModel()
     tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
-    
+
     // Wait for initial render
     teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
         return strings.Contains(string(out), "Expected Content")
@@ -132,16 +133,95 @@ func TestDashboard_Interaction(t *testing.T) {
 
     // Send keystrokes
     tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-    
+
     // Verify changes
     teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
         return strings.Contains(string(out), "New Selection")
     })
-    
+
     tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
     tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 ```
+
+#### Extended teatest Helpers (E2E)
+
+For E2E tests (with `-tags=e2e`), use the extended helpers in `test/e2e/helpers/teatest_extended.go`. These provide a fluent API for testing TUI interactions:
+
+**NewTUITestModel** - Create a test model with helpers:
+```go
+tm := helpers.NewTUITestModel(t, model, teatest.WithInitialTermSize(100, 40))
+```
+
+**WaitForText** - Wait for specific text to appear:
+```go
+if err := tm.WaitForText("vim", 2*time.Second); err != nil {
+    t.Fatalf("Failed to wait for text: %v", err)
+}
+```
+
+**SendKeys** - Send keyboard input with multiple formats:
+```go
+// Individual keys
+tm.SendKeys('?')                    // Single rune
+tm.SendKeys(tea.KeyEsc)             // Special key
+tm.SendKeys("hello")                // String (types each character)
+```
+
+**KeySequence Builder** - Fluent API for complex interactions:
+```go
+seq := helpers.NewKeySequence().
+    Type("vim").                    // Type text
+    Down().                         // Arrow keys
+    Space().                        // Space bar
+    Enter().                        // Enter key
+    Esc()                           // Escape
+
+seq.SendTo(tm)
+```
+
+**AssertState** - Validate model state:
+```go
+helpers.AssertState(t, &model, func(m tea.Model) bool {
+    // Check internal state
+    return true
+}, "model should be in expected state")
+```
+
+**Complete Example**:
+```go
+//go:build e2e
+
+func TestDashboard_Navigation(t *testing.T) {
+    state := dashboard.State{
+        Platform: &platform.Platform{OS: "linux"},
+        Configs: []config.ConfigItem{
+            {Name: "vim"},
+            {Name: "zsh"},
+        },
+        HasConfig: true,
+    }
+
+    model := dashboard.New(state)
+    tm := helpers.NewTUITestModel(t, &model, teatest.WithInitialTermSize(100, 40))
+
+    // Wait for initial render
+    if err := tm.WaitForText("vim", 2*time.Second); err != nil {
+        t.Fatalf("Failed to render: %v", err)
+    }
+
+    // Navigate and select
+    helpers.NewKeySequence().
+        Down().              // Move to zsh
+        Space().             // Select
+        Esc().               // Quit
+        SendTo(tm)
+
+    tm.WaitFinished(2 * time.Second)
+}
+```
+
+See `test/e2e/scenarios/dashboard_tui_test.go` for more examples.
 
 ## Development Notes
 
