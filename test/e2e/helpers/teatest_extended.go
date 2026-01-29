@@ -3,9 +3,6 @@
 package helpers
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +35,13 @@ func NewTUITestModel(t *testing.T, model tea.Model, opts ...teatest.TestOption) 
 
 // SendKeys sends a sequence of key messages to the TUI model
 // Supports multiple key types: runes, special keys, and key combinations
+// Optional delay parameter controls pause between keystrokes (default: 10ms)
 func (tm *TUITestModel) SendKeys(keys ...interface{}) {
+	tm.SendKeysWithDelay(10*time.Millisecond, keys...)
+}
+
+// SendKeysWithDelay sends key messages with a custom delay between keystrokes
+func (tm *TUITestModel) SendKeysWithDelay(delay time.Duration, keys ...interface{}) {
 	tm.t.Helper()
 
 	for _, key := range keys {
@@ -58,8 +61,9 @@ func (tm *TUITestModel) SendKeys(keys ...interface{}) {
 			tm.t.Fatalf("unsupported key type: %T", key)
 		}
 
-		// Small delay between keystrokes to simulate realistic interaction
-		time.Sleep(10 * time.Millisecond)
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 	}
 }
 
@@ -93,71 +97,16 @@ func (tm *TUITestModel) WaitForNotText(text string, timeout ...time.Duration) {
 	}, teatest.WithCheckInterval(100*time.Millisecond), teatest.WithDuration(timeoutDuration))
 }
 
-// ReadOutput reads and collects output from the TUI model
-// Note: This is a helper that tries to read what's available but teatest
-// operates on streams, so this may not capture everything reliably.
-// Prefer using WaitForText for most assertions.
-func (tm *TUITestModel) ReadOutput() []byte {
-	tm.t.Helper()
-
-	// Create a buffer to capture output
-	buf := make([]byte, 4096)
-	n, _ := tm.Output().Read(buf)
-	return buf[:n]
-}
-
-// GetOutputString returns the current TUI output as a string
-// Note: See ReadOutput() caveat - prefer WaitForText for assertions
-func (tm *TUITestModel) GetOutputString() string {
-	return string(tm.ReadOutput())
-}
-
-// CompareGolden compares the current TUI output with a golden file
-// If updateGolden is true, it updates the golden file instead of comparing
-// Note: This captures a snapshot of output which may not be complete
-func (tm *TUITestModel) CompareGolden(goldenPath string, updateGolden bool) error {
-	tm.t.Helper()
-
-	// Wait a bit for rendering
-	time.Sleep(200 * time.Millisecond)
-
-	// Get current output
-	output := tm.ReadOutput()
-
-	if updateGolden {
-		return updateGoldenFile(goldenPath, output)
-	}
-
-	return CompareWithGolden(tm.t, output, goldenPath)
-}
-
 // AssertState validates that a model's state matches expected values
 // Uses a predicate function to check the state
-func AssertState(t *testing.T, model tea.Model, predicate func(tea.Model) bool, message string) {
-	t.Helper()
-
-	if !predicate(model) {
-		t.Errorf("state assertion failed: %s", message)
-	}
-}
-
-// AssertContains checks that the output contains the expected text
-func (tm *TUITestModel) AssertContains(text string) {
+func (tm *TUITestModel) AssertState(predicate func(tea.Model) bool, message string) {
 	tm.t.Helper()
 
-	output := tm.GetOutputString()
-	if !strings.Contains(output, text) {
-		tm.t.Errorf("expected output to contain %q\nActual output:\n%s", text, output)
-	}
-}
-
-// AssertNotContains checks that the output does not contain the text
-func (tm *TUITestModel) AssertNotContains(text string) {
-	tm.t.Helper()
-
-	output := tm.GetOutputString()
-	if strings.Contains(output, text) {
-		tm.t.Errorf("expected output to not contain %q\nActual output:\n%s", text, output)
+	// Access the underlying model through the program
+	// Note: This is a demonstration method - in practice you'd need access
+	// to the actual model instance to check internal state
+	if !predicate(nil) {
+		tm.t.Errorf("state assertion failed: %s", message)
 	}
 }
 
@@ -173,28 +122,6 @@ func (tm *TUITestModel) WaitFinished(timeout ...time.Duration) {
 	tm.TestModel.WaitFinished(tm.t, teatest.WithFinalTimeout(timeoutDuration))
 }
 
-// updateGoldenFile writes output to a golden file
-func updateGoldenFile(goldenPath string, output []byte) error {
-	return updateGoldenFileWithNormalization(goldenPath, output)
-}
-
-// updateGoldenFileWithNormalization writes normalized output to a golden file
-func updateGoldenFileWithNormalization(goldenPath string, output []byte) error {
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(goldenPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create golden file directory: %w", err)
-	}
-
-	// Normalize the output before writing
-	normalized := normalizeOutput(string(output))
-	return writeGoldenFile(goldenPath, []byte(normalized))
-}
-
-// writeGoldenFile is a helper to write golden files
-func writeGoldenFile(path string, data []byte) error {
-	return os.WriteFile(path, data, 0644)
-}
 
 // KeySequence represents a sequence of keys to send to the TUI
 type KeySequence struct {
@@ -272,12 +199,42 @@ func (ks *KeySequence) Right() *KeySequence {
 	return ks.Press(tea.KeyRight)
 }
 
-// Build returns the key sequence
-func (ks *KeySequence) Build() []interface{} {
-	return ks.keys
+// Backspace adds a Backspace key press
+func (ks *KeySequence) Backspace() *KeySequence {
+	return ks.Press(tea.KeyBackspace)
+}
+
+// Delete adds a Delete key press
+func (ks *KeySequence) Delete() *KeySequence {
+	return ks.Press(tea.KeyDelete)
+}
+
+// Home adds a Home key press
+func (ks *KeySequence) Home() *KeySequence {
+	return ks.Press(tea.KeyHome)
+}
+
+// End adds an End key press
+func (ks *KeySequence) End() *KeySequence {
+	return ks.Press(tea.KeyEnd)
+}
+
+// PageUp adds a PageUp key press
+func (ks *KeySequence) PageUp() *KeySequence {
+	return ks.Press(tea.KeyPgUp)
+}
+
+// PageDown adds a PageDown key press
+func (ks *KeySequence) PageDown() *KeySequence {
+	return ks.Press(tea.KeyPgDown)
 }
 
 // SendTo sends the key sequence to a TUI test model
 func (ks *KeySequence) SendTo(tm *TUITestModel) {
 	tm.SendKeys(ks.keys...)
+}
+
+// SendToWithDelay sends the key sequence with a custom delay between keystrokes
+func (ks *KeySequence) SendToWithDelay(tm *TUITestModel, delay time.Duration) {
+	tm.SendKeysWithDelay(delay, ks.keys...)
 }

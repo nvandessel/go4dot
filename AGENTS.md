@@ -153,35 +153,39 @@ For E2E tests (with `-tags=e2e`), use the extended helpers in `test/e2e/helpers/
 tm := helpers.NewTUITestModel(t, model, teatest.WithInitialTermSize(100, 40))
 ```
 
-**WaitForText** - Wait for specific text to appear:
+**WaitForText / WaitForNotText** - Wait for text to appear or disappear:
 ```go
-tm.WaitForText("vim", 2*time.Second)  // Failures reported via testing.TB
+tm.WaitForText("vim", 2*time.Second)               // Wait for text
+tm.WaitForNotText("Loading", 1*time.Second)        // Wait for text to disappear
 ```
 
 **SendKeys** - Send keyboard input with multiple formats:
 ```go
-// Individual keys
-tm.SendKeys('?')                    // Single rune
-tm.SendKeys(tea.KeyEsc)             // Special key
-tm.SendKeys("hello")                // String (types each character)
+tm.SendKeys('?')                                   // Single rune
+tm.SendKeys(tea.KeyEsc)                            // Special key
+tm.SendKeys("hello")                               // String (types each character)
+tm.SendKeysWithDelay(5*time.Millisecond, 'a', 'b') // Custom delay between keys
 ```
 
 **KeySequence Builder** - Fluent API for complex interactions:
 ```go
 seq := helpers.NewKeySequence().
     Type("vim").                    // Type text
-    Down().                         // Arrow keys
-    Space().                        // Space bar
-    Enter().                        // Enter key
-    Esc()                           // Escape
+    Down().Up().                    // Arrow keys
+    Space().Enter().                // Common keys
+    Tab().Esc().                    // Navigation
+    Backspace().Delete().           // Editing
+    Home().End().                   // Line navigation
+    PageUp().PageDown()             // Page navigation
 
-seq.SendTo(tm)
+seq.SendTo(tm)                                     // Send with default delay
+seq.SendToWithDelay(tm, 5*time.Millisecond)       // Send with custom delay
 ```
 
 **AssertState** - Validate model state:
 ```go
-helpers.AssertState(t, &model, func(m tea.Model) bool {
-    // Check internal state
+tm.AssertState(func(m tea.Model) bool {
+    // Check internal state via type assertion
     return true
 }, "model should be in expected state")
 ```

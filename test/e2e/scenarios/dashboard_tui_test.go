@@ -39,11 +39,7 @@ func TestDashboard_Navigation(t *testing.T) {
 	)
 
 	// Wait for initial render - dashboard should show config list
-	// Just wait for one config to ensure the dashboard has rendered
 	tm.WaitForText("vim", 2*time.Second)
-
-	// Small delay for complete render
-	time.Sleep(100 * time.Millisecond)
 
 	// Use key sequence builder to navigate down
 	seq := helpers.NewKeySequence().
@@ -52,6 +48,9 @@ func TestDashboard_Navigation(t *testing.T) {
 		Up()     // Move back to zsh
 
 	seq.SendTo(tm)
+
+	// Verify we can see zsh after navigation
+	tm.WaitForText("zsh", 1*time.Second)
 
 	// Test filter mode with key sequence
 	filterSeq := helpers.NewKeySequence().
@@ -65,11 +64,11 @@ func TestDashboard_Navigation(t *testing.T) {
 	tm.SendKeys('?')
 	tm.WaitForText("Keyboard Shortcuts", 1*time.Second)
 
-	// Small delay to let help render
-	time.Sleep(100 * time.Millisecond)
-
 	// Close help
 	tm.SendKeys('?')
+
+	// Wait for help to close
+	tm.WaitForNotText("Keyboard Shortcuts", 1*time.Second)
 
 	// Quit the dashboard
 	tm.SendKeys(tea.KeyEsc)
@@ -101,13 +100,8 @@ func TestDashboard_Selection(t *testing.T) {
 		Space(). // Select zsh
 		SendTo(tm)
 
-	// Use AssertState to verify internal state (demonstration)
-	// Note: In a real scenario, you'd need to access the model to check selectedConfigs
-	helpers.AssertState(t, &model, func(m tea.Model) bool {
-		// This is a simple check - in practice you'd need type assertion
-		// to access dashboard-specific fields
-		return true
-	}, "model should be in expected state")
+	// Verify we're on zsh after navigation
+	tm.WaitForText("zsh", 1*time.Second)
 
 	// Quit
 	tm.SendKeys(tea.KeyEsc)
@@ -124,15 +118,9 @@ func TestDashboard_NoConfig(t *testing.T) {
 	model := dashboard.New(state)
 	tm := helpers.NewTUITestModel(t, &model)
 
-	// In no-config view, we should see a message about no configuration
-	// (The exact text depends on the dashboard implementation)
-	time.Sleep(100 * time.Millisecond) // Brief pause for render
-
-	// Verify we're in no-config view
-	output := tm.GetOutputString()
-	if output == "" {
-		t.Log("No output captured - this is expected for minimal UI")
-	}
+	// In no-config view, the dashboard should render
+	// Allow some time for initial render
+	time.Sleep(200 * time.Millisecond)
 
 	// Quit
 	tm.SendKeys(tea.KeyEsc)
@@ -144,7 +132,9 @@ func TestKeySequenceBuilder(t *testing.T) {
 	state := dashboard.State{
 		Platform: &platform.Platform{OS: "linux"},
 		Configs: []config.ConfigItem{
-			{Name: "test"},
+			{Name: "vim"},
+			{Name: "zsh"},
+			{Name: "tmux"},
 		},
 		HasConfig: true,
 	}
@@ -152,17 +142,40 @@ func TestKeySequenceBuilder(t *testing.T) {
 	model := dashboard.New(state)
 	tm := helpers.NewTUITestModel(t, &model)
 
-	// Demonstrate various key sequence patterns
+	// Wait for initial render
+	tm.WaitForText("vim", 2*time.Second)
+
+	// Test comprehensive key sequence with navigation and selection
 	helpers.NewKeySequence().
-		Type("hello").     // Type text
-		Rune('!').         // Single character
-		Enter().           // Special key
-		Tab().             // Another special key
-		Up().              // Navigation
-		Down().            // Navigation
-		Space().           // Space
-		Esc().             // Quit
+		Down().            // Move down to zsh
+		Down().            // Move down to tmux
+		Up().              // Move back up to zsh
+		Space().           // Select zsh
 		SendTo(tm)
 
+	// Verify we're on zsh
+	tm.WaitForText("zsh", 1*time.Second)
+
+	// Test filter mode with backspace
+	helpers.NewKeySequence().
+		Type("/").         // Enter filter mode
+		Type("vim").       // Type "vim"
+		Backspace().       // Delete 'm'
+		Backspace().       // Delete 'i'
+		Type("zsh").       // Type "zsh"
+		Esc().             // Exit filter mode
+		SendTo(tm)
+
+	// Test SendToWithDelay with custom timing (no delay)
+	helpers.NewKeySequence().
+		Tab().             // Open menu
+		Esc().             // Close menu
+		SendToWithDelay(tm, 0)  // No delay between keys
+
+	// Verify we can still see configs
+	tm.WaitForText("vim", 1*time.Second)
+
+	// Quit
+	tm.SendKeys(tea.KeyEsc)
 	tm.WaitFinished(1 * time.Second)
 }
