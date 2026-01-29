@@ -73,46 +73,80 @@ Tapes are declarative scripts that control terminal sessions.
 
 # Set up terminal
 Set Shell bash
-Set Width 100
-Set Height 30
+Set Width 1200
+Set Height 800
 
 # Run commands
 Type "./bin/g4d --help"
 Enter
-Sleep 500ms
+Sleep 1s
 
-# Capture output
-Output test/e2e/golden/example.txt
-Screenshot test/e2e/screenshots/example.png
+# Capture output to temporary location (not golden file directly)
+Output test/e2e/outputs/example.txt
 ```
 
 ### 2. Create a Test Scenario
 
+Use table-driven test pattern for consistency with project guidelines:
+
 ```go
+//go:build e2e
+
 // test/e2e/scenarios/example_test.go
 package scenarios
 
 import (
     "os"
+    "path/filepath"
     "testing"
     "github.com/nvandessel/go4dot/test/e2e/helpers"
 )
 
 func TestExample(t *testing.T) {
-    updateGolden := os.Getenv("UPDATE_GOLDEN") == "1"
-
-    cfg := helpers.VHSConfig{
-        TapePath:     "test/e2e/tapes/example.tape",
-        OutputPath:   "test/e2e/golden/example.txt",
-        GoldenPath:   "test/e2e/golden/example.txt",
-        UpdateGolden: updateGolden,
+    tests := []struct {
+        name       string
+        tapePath   string
+        outputPath string
+        goldenPath string
+    }{
+        {
+            name:       "example output",
+            tapePath:   "test/e2e/tapes/example.tape",
+            outputPath: "test/e2e/outputs/example.txt",  // Temporary output
+            goldenPath: "test/e2e/golden/example.txt",   // Expected output
+        },
     }
 
-    if err := helpers.RunVHSTape(t, cfg); err != nil {
-        t.Fatalf("VHS test failed: %v", err)
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            updateGolden := os.Getenv("UPDATE_GOLDEN") == "1"
+            projectRoot := getProjectRoot(t)
+
+            cfg := helpers.VHSConfig{
+                TapePath:     filepath.Join(projectRoot, tt.tapePath),
+                OutputPath:   filepath.Join(projectRoot, tt.outputPath),
+                GoldenPath:   filepath.Join(projectRoot, tt.goldenPath),
+                UpdateGolden: updateGolden,
+            }
+
+            if err := helpers.RunVHSTape(t, cfg); err != nil {
+                t.Fatalf("VHS test failed: %v", err)
+            }
+
+            // Cleanup temporary outputs
+            t.Cleanup(func() {
+                if !updateGolden {
+                    helpers.CleanupVHSOutputs(
+                        filepath.Join(projectRoot, tt.outputPath),
+                    )
+                }
+            })
+        })
     }
 }
 ```
+
+**Note:** For TUI component unit tests (non-E2E), use the `teatest` framework as documented in AGENTS.md.
 
 ### 3. Run and Generate Golden Files
 
@@ -170,6 +204,39 @@ go test ./test/e2e/scenarios/ -run TestExample
 - Store test data in `test/e2e/fixtures/`
 - Include minimal `.go4dot.yaml` files for testing
 - Create isolated environments (temporary HOME dirs)
+
+## Safety Considerations
+
+### Phase 1 (Current) - CLI Help Tests ✅
+- **Safe:** Only tests `--help` output
+- **No system modifications:** Read-only operations
+
+### Phase 2-3 (Planned) - Interactive Tests ⚠️
+When adding tests for operations like `install`, `sync`, or dashboard interactions:
+
+**Safety requirements:**
+- Use temporary HOME directories in VHS tapes (`Set Env HOME /tmp/g4d-e2e-test`)
+- Use test fixtures from `test/e2e/fixtures/` (not real dotfiles)
+- Consider safety gates or skip flags for destructive operations
+- Document any tests that might affect the host system
+
+**Example safe tape setup:**
+```tape
+# Isolate from real system
+Set Env HOME /tmp/g4d-e2e-test
+Set Env XDG_CONFIG_HOME /tmp/g4d-e2e-test/.config
+
+# Use test fixtures
+Type "cd test/e2e/fixtures/minimal"
+Enter
+Type "./bin/g4d install"
+Enter
+```
+
+### Phase 6 (Future) - Full Isolation
+- Docker-based E2E tests provide complete isolation
+- Cannot affect host system
+- Safe for testing destructive operations
 
 ## CI/CD Integration
 
