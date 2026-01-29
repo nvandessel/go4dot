@@ -174,6 +174,16 @@ e2e-visual-update: build
 	@echo "Updating golden files for visual E2E tests..."
 	@UPDATE_GOLDEN=1 go test -v ./test/e2e/scenarios/... -tags=e2e
 
+# Docker-based E2E tests (isolated, parallel execution)
+.PHONY: e2e-docker
+e2e-docker:
+	@echo "Running Docker-based E2E tests (parallel)..."
+	@go test -v -tags=e2e -parallel=4 -timeout=15m -run="^(TestDoctor_|TestInstall_)" ./test/e2e/scenarios
+
+.PHONY: e2e-all
+e2e-all: e2e-docker
+	@echo "All E2E tests completed successfully!"
+
 .PHONY: e2e-clean
 e2e-clean:
 	@echo "Cleaning E2E test outputs..."
