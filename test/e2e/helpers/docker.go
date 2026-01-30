@@ -205,6 +205,7 @@ CMD ["/bin/zsh", "-i"]
 	}
 
 	// Install VHS and dependencies if enabled
+	// Note: Versions are pinned for reproducibility. Checksums could be added for additional security.
 	if cfg.VHSEnabled {
 		vhsInstall := `
 # Install VHS dependencies (as root)
@@ -216,14 +217,14 @@ RUN apt-get update && apt-get install -y \
     fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ttyd for terminal recording
+# Install ttyd v1.7.7 for terminal recording
 RUN curl -sL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /usr/local/bin/ttyd && \
     chmod +x /usr/local/bin/ttyd
 
-# Install VHS using Go
+# Install Go 1.23.5 and VHS v0.8.0 (pinned versions for reproducibility)
 RUN curl -sL https://go.dev/dl/go1.23.5.linux-amd64.tar.gz | tar -C /usr/local -xzf -
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
-RUN /usr/local/go/bin/go install github.com/charmbracelet/vhs@latest && \
+RUN /usr/local/go/bin/go install github.com/charmbracelet/vhs@v0.8.0 && \
     cp /root/go/bin/vhs /usr/local/bin/vhs
 
 # Set Chrome path for VHS
@@ -372,6 +373,14 @@ type VHSTapeConfig struct {
 // RunVHSTape executes a VHS tape inside the container and extracts the output
 func (c *DockerTestContainer) RunVHSTape(cfg VHSTapeConfig) error {
 	c.t.Helper()
+
+	// Validate required fields
+	if cfg.OutputPath == "" {
+		return fmt.Errorf("missing required OutputPath in VHSTapeConfig")
+	}
+	if cfg.TapePath == "" {
+		return fmt.Errorf("missing required TapePath in VHSTapeConfig")
+	}
 
 	if cfg.ContainerWorkDir == "" {
 		cfg.ContainerWorkDir = "/home/testuser"
