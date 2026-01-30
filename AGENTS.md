@@ -227,7 +227,7 @@ See `test/e2e/scenarios/dashboard_tui_test.go` for more examples.
 ## Sandbox Testing
 
 Creates a safe to use sandbox environment for quick testing.
-Launches a Docker or Podman cotainer, so the symlinks can easily and safely be tested and validated.
+Launches a Docker or Podman container, so the symlinks can easily and safely be tested and validated.
 
 ```bash
 make sandbox   # Run Docker/Podman container for isolated testing

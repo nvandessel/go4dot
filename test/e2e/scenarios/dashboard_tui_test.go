@@ -118,9 +118,8 @@ func TestDashboard_NoConfig(t *testing.T) {
 	model := dashboard.New(state)
 	tm := helpers.NewTUITestModel(t, &model)
 
-	// In no-config view, the dashboard should render
-	// Allow some time for initial render
-	time.Sleep(200 * time.Millisecond)
+	// Wait for no-config view to render
+	tm.WaitForText("No configuration found", 1*time.Second)
 
 	// Quit
 	tm.SendKeys(tea.KeyEsc)

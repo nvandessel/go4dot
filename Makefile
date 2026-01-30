@@ -123,6 +123,8 @@ help:
 	@echo "  test-coverage - Run tests and generate coverage report"
 	@echo "  e2e-visual    - Run visual E2E tests with VHS"
 	@echo "  e2e-visual-update - Update golden files for visual tests"
+	@echo "  e2e-docker    - Run Docker-based E2E tests in parallel"
+	@echo "  e2e-all       - Run all E2E tests"
 	@echo "  e2e-clean     - Clean E2E test outputs"
 	@echo "  install-vhs   - Install VHS for visual testing"
 	@echo ""
@@ -173,6 +175,16 @@ e2e-visual: build
 e2e-visual-update: build
 	@echo "Updating golden files for visual E2E tests..."
 	@UPDATE_GOLDEN=1 go test -v ./test/e2e/scenarios/... -tags=e2e
+
+# Docker-based E2E tests (isolated, parallel execution)
+.PHONY: e2e-docker
+e2e-docker:
+	@echo "Running Docker-based E2E tests (parallel)..."
+	@go test -v -tags=e2e -parallel=4 -timeout=15m -run="^(TestDoctor_|TestInstall_)" ./test/e2e/scenarios
+
+.PHONY: e2e-all
+e2e-all: e2e-visual e2e-docker
+	@echo "All E2E tests completed successfully!"
 
 .PHONY: e2e-clean
 e2e-clean:
