@@ -129,7 +129,7 @@ func NewDockerTestContainer(t *testing.T, cfg DockerConfig) *DockerTestContainer
 
 	// Set defaults
 	if cfg.ImageName == "" {
-		cfg.ImageName = "ubuntu:latest"
+		cfg.ImageName = "ubuntu:22.04" // Pinned version for reproducible tests
 	}
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = "/home/testuser"
@@ -201,8 +201,8 @@ CMD ["/bin/zsh", "-i"]
 		}
 	}
 
-	// Build image
-	imageName := fmt.Sprintf("g4d-test-%d", time.Now().Unix())
+	// Build image with unique name for parallel test safety
+	imageName := fmt.Sprintf("g4d-test-%d", time.Now().UnixNano())
 	t.Logf("Building test image: %s", imageName)
 
 	buildCmd := exec.Command(string(runtime), "build", "-t", imageName, tmpDir)
@@ -228,7 +228,12 @@ CMD ["/bin/zsh", "-i"]
 	}
 
 	containerID := strings.TrimSpace(string(runOutput))
-	t.Logf("Started container: %s", containerID[:12])
+	// Safe substring for logging (avoid panic on empty/short output)
+	shortID := containerID
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
+	}
+	t.Logf("Started container: %s", shortID)
 
 	container := &DockerTestContainer{
 		Runtime:     runtime,
@@ -384,3 +389,4 @@ func copyDir(src, dst string) error {
 		return copyFile(path, dstPath)
 	})
 }
+

@@ -123,6 +123,8 @@ help:
 	@echo "  test-coverage - Run tests and generate coverage report"
 	@echo "  e2e-visual    - Run visual E2E tests with VHS"
 	@echo "  e2e-visual-update - Update golden files for visual tests"
+	@echo "  e2e-docker    - Run Docker-based E2E tests in parallel"
+	@echo "  e2e-all       - Run all E2E tests"
 	@echo "  e2e-clean     - Clean E2E test outputs"
 	@echo "  install-vhs   - Install VHS for visual testing"
 	@echo ""
