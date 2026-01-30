@@ -1,3 +1,5 @@
+//go:build e2e
+
 package helpers
 
 import (
@@ -169,4 +171,55 @@ func CleanupVHSOutputs(paths ...string) {
 	for _, path := range paths {
 		_ = os.Remove(path) // Ignore errors during cleanup
 	}
+}
+
+// RunVHSTapeInContainer executes a VHS tape inside a Docker container
+// This provides complete isolation and ensures consistent VHS execution
+func RunVHSTapeInContainer(t *testing.T, container *DockerTestContainer, cfg VHSConfig) error {
+	t.Helper()
+
+	// Ensure tape file exists locally
+	if _, err := os.Stat(cfg.TapePath); os.IsNotExist(err) {
+		return fmt.Errorf("tape file not found: %s", cfg.TapePath)
+	}
+
+	// Run VHS in container
+	vhsCfg := VHSTapeConfig{
+		TapePath:   cfg.TapePath,
+		OutputPath: cfg.OutputPath,
+	}
+
+	if err := container.RunVHSTape(vhsCfg); err != nil {
+		return fmt.Errorf("failed to run VHS tape in container: %w", err)
+	}
+
+	// If no golden file comparison needed, we're done
+	if cfg.GoldenPath == "" {
+		return nil
+	}
+
+	// Read output file
+	if cfg.OutputPath == "" {
+		return fmt.Errorf("output path required for golden file comparison")
+	}
+
+	output, err := os.ReadFile(cfg.OutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to read output file: %w", err)
+	}
+
+	// Update golden file if requested
+	if cfg.UpdateGolden {
+		if err := os.MkdirAll(filepath.Dir(cfg.GoldenPath), 0755); err != nil {
+			return fmt.Errorf("failed to create golden directory: %w", err)
+		}
+		if err := os.WriteFile(cfg.GoldenPath, output, 0644); err != nil {
+			return fmt.Errorf("failed to write golden file: %w", err)
+		}
+		t.Logf("Updated golden file: %s", cfg.GoldenPath)
+		return nil
+	}
+
+	// Compare with golden file
+	return CompareWithGolden(t, output, cfg.GoldenPath)
 }

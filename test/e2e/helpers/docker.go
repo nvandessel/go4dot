@@ -119,6 +119,9 @@ type DockerConfig struct {
 
 	// NoCleanup prevents automatic cleanup (useful for debugging)
 	NoCleanup bool
+
+	// VHSEnabled installs VHS and its dependencies (ttyd, ffmpeg) in the container
+	VHSEnabled bool
 }
 
 // NewDockerTestContainer creates and starts a test container
@@ -198,6 +201,41 @@ CMD ["/bin/zsh", "-i"]
 		dockerfile += "\nCOPY fixtures /home/testuser/fixtures\n"
 		if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
 			t.Fatalf("failed to update Dockerfile: %v", err)
+		}
+	}
+
+	// Install VHS and dependencies if enabled
+	if cfg.VHSEnabled {
+		vhsInstall := `
+# Install VHS dependencies (as root)
+USER root
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    chromium-browser \
+    fonts-noto-color-emoji \
+    fonts-dejavu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ttyd for terminal recording
+RUN curl -sL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /usr/local/bin/ttyd && \
+    chmod +x /usr/local/bin/ttyd
+
+# Install VHS using Go
+RUN curl -sL https://go.dev/dl/go1.23.5.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+RUN /usr/local/go/bin/go install github.com/charmbracelet/vhs@latest && \
+    cp /root/go/bin/vhs /usr/local/bin/vhs
+
+# Set Chrome path for VHS
+ENV VHS_CHROME_PATH=/usr/bin/chromium-browser
+
+# Switch back to testuser
+USER testuser
+ENV PATH="/usr/local/go/bin:${PATH}"
+`
+		dockerfile += vhsInstall
+		if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
+			t.Fatalf("failed to update Dockerfile with VHS: %v", err)
 		}
 	}
 
@@ -316,6 +354,107 @@ func (c *DockerTestContainer) CopyFromContainer(src, dest string) error {
 	}
 
 	return nil
+}
+
+// VHSTapeConfig configures VHS tape execution in a container
+type VHSTapeConfig struct {
+	// TapePath is the local path to the VHS tape file
+	TapePath string
+
+	// OutputPath is the local path where output file will be saved
+	OutputPath string
+
+	// ContainerWorkDir is the working directory in the container for VHS execution
+	// Defaults to /home/testuser
+	ContainerWorkDir string
+}
+
+// RunVHSTape executes a VHS tape inside the container and extracts the output
+func (c *DockerTestContainer) RunVHSTape(cfg VHSTapeConfig) error {
+	c.t.Helper()
+
+	if cfg.ContainerWorkDir == "" {
+		cfg.ContainerWorkDir = "/home/testuser"
+	}
+
+	// Get tape filename
+	tapeFilename := filepath.Base(cfg.TapePath)
+	containerTapePath := filepath.Join(cfg.ContainerWorkDir, tapeFilename)
+
+	// Read and modify tape to use container paths
+	tapeContent, err := os.ReadFile(cfg.TapePath)
+	if err != nil {
+		return fmt.Errorf("failed to read tape file: %w", err)
+	}
+
+	// Extract output filename from tape (look for "Output" directive)
+	outputFilename := extractVHSOutputFilename(string(tapeContent))
+	if outputFilename == "" {
+		return fmt.Errorf("tape does not contain Output directive")
+	}
+
+	// Modify tape to use container output path
+	containerOutputPath := filepath.Join(cfg.ContainerWorkDir, filepath.Base(outputFilename))
+	modifiedTape := modifyVHSTapeOutput(string(tapeContent), containerOutputPath)
+
+	// Modify tape to use g4d from PATH instead of ./bin/g4d
+	modifiedTape = strings.ReplaceAll(modifiedTape, "./bin/g4d", "g4d")
+
+	// Write modified tape to temp file
+	tmpTape := filepath.Join(c.t.TempDir(), tapeFilename)
+	if err := os.WriteFile(tmpTape, []byte(modifiedTape), 0644); err != nil {
+		return fmt.Errorf("failed to write modified tape: %w", err)
+	}
+
+	// Copy tape to container
+	if err := c.CopyToContainer(tmpTape, containerTapePath); err != nil {
+		return fmt.Errorf("failed to copy tape to container: %w", err)
+	}
+
+	// Run VHS inside container
+	c.t.Logf("Running VHS tape: %s", tapeFilename)
+	output, err := c.Exec("vhs", containerTapePath)
+	if err != nil {
+		return fmt.Errorf("VHS execution failed: %w\nOutput: %s", err, output)
+	}
+	c.t.Logf("VHS output: %s", output)
+
+	// Create output directory if needed
+	if err := os.MkdirAll(filepath.Dir(cfg.OutputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Copy output file from container
+	if err := c.CopyFromContainer(containerOutputPath, cfg.OutputPath); err != nil {
+		return fmt.Errorf("failed to copy output from container: %w", err)
+	}
+
+	return nil
+}
+
+// extractVHSOutputFilename extracts the output filename from a VHS tape
+func extractVHSOutputFilename(tape string) string {
+	lines := strings.Split(tape, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Output ") {
+			return strings.TrimPrefix(line, "Output ")
+		}
+	}
+	return ""
+}
+
+// modifyVHSTapeOutput modifies the Output directive in a VHS tape
+func modifyVHSTapeOutput(tape, newOutputPath string) string {
+	lines := strings.Split(tape, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Output ") {
+			lines[i] = "Output " + newOutputPath
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Cleanup stops and removes the container and image

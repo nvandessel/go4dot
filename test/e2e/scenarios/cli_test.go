@@ -13,16 +13,11 @@ import (
 // getProjectRoot returns the absolute path to the project root
 func getProjectRoot(t *testing.T) string {
 	t.Helper()
-	// From test/e2e/scenarios, go up 3 levels to reach project root
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
-	}
-	return filepath.Join(cwd, "..", "..", "..")
+	return helpers.GetProjectRoot(t)
 }
 
 // TestCLIHelp validates that g4d --help output matches expected golden file
-// This is a foundational test to ensure the VHS infrastructure works correctly
+// This test runs VHS inside a Docker container for complete isolation
 func TestCLIHelp(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -42,8 +37,16 @@ func TestCLIHelp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Check if UPDATE_GOLDEN env var is set
 			updateGolden := os.Getenv("UPDATE_GOLDEN") == "1"
-
 			projectRoot := getProjectRoot(t)
+
+			// Build the test binary for Linux
+			binaryPath := helpers.BuildTestBinary(t)
+
+			// Create a VHS-enabled Docker container
+			container := helpers.NewDockerTestContainer(t, helpers.DockerConfig{
+				BinaryPath: binaryPath,
+				VHSEnabled: true,
+			})
 
 			cfg := helpers.VHSConfig{
 				TapePath:     filepath.Join(projectRoot, tt.tapePath),
@@ -52,7 +55,7 @@ func TestCLIHelp(t *testing.T) {
 				UpdateGolden: updateGolden,
 			}
 
-			if err := helpers.RunVHSTape(t, cfg); err != nil {
+			if err := helpers.RunVHSTapeInContainer(t, container, cfg); err != nil {
 				t.Fatalf("VHS test failed: %v", err)
 			}
 
