@@ -57,6 +57,14 @@ func NewRunner(cfg RunnerConfig) *Runner {
 
 // Run executes the configured test suite and returns results.
 func (r *Runner) Run() (*TestResults, error) {
+	// Validate config to avoid zero-length semaphore or immediate timeout
+	if r.config.Parallel <= 0 {
+		r.config.Parallel = 1
+	}
+	if r.config.Timeout <= 0 {
+		r.config.Timeout = 300 // Default 5 minutes
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.config.Timeout)*time.Second)
 	defer cancel()
 
@@ -321,7 +329,7 @@ func (r *Runner) findTestFiles(subdir string, patterns ...string) ([]string, err
 	for _, pattern := range patterns {
 		matches, err := filepath.Glob(filepath.Join(e2eDir, pattern))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("glob %q: %w", pattern, err)
 		}
 		files = append(files, matches...)
 	}
