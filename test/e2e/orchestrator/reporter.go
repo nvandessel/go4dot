@@ -41,7 +41,7 @@ func (r *Reporter) Report(results *TestResults) error {
 func (r *Reporter) reportJSON(results *TestResults) error {
 	encoder := json.NewEncoder(r.output)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(results)
+	return encoder.Encode(results.ToJSON())
 }
 
 // reportText outputs results in human-readable text format.

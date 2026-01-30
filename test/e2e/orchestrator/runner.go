@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -169,9 +168,12 @@ func (r *Runner) runVisualTests(ctx context.Context) ([]TestResult, error) {
 
 // runDockerTests executes Docker/Podman container-based tests.
 func (r *Runner) runDockerTests(ctx context.Context) ([]TestResult, error) {
-	// Check if Docker or Podman is available
-	dockerAvailable := exec.Command("docker", "info").Run() == nil
-	podmanAvailable := exec.Command("podman", "info").Run() == nil
+	// Check if Docker or Podman is available (with timeout to avoid hanging)
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	dockerAvailable := exec.CommandContext(checkCtx, "docker", "info").Run() == nil
+	podmanAvailable := exec.CommandContext(checkCtx, "podman", "info").Run() == nil
 
 	if !dockerAvailable && !podmanAvailable {
 		return []TestResult{{
@@ -328,22 +330,10 @@ func (r *Runner) findTestFiles(subdir string, patterns ...string) ([]string, err
 }
 
 // testFileToPattern converts a test file name to a test pattern.
-// For example: "dashboard_tui_test.go" -> "Test.*" (run all tests in the file)
-// We use a broad pattern since the -run flag combined with the file's package
-// will naturally limit which tests run.
-func testFileToPattern(filename string) string {
-	// Remove _test.go suffix to get base name
-	base := strings.TrimSuffix(filename, "_test.go")
-	parts := strings.Split(base, "_")
-
-	// Capitalize first part for the test pattern prefix
-	// e.g., "dashboard_tui" -> "Dashboard" to match "TestDashboard_*"
-	if len(parts) > 0 && len(parts[0]) > 0 {
-		prefix := strings.ToUpper(parts[0][:1]) + parts[0][1:]
-		return "Test" + prefix
-	}
-
-	// Fallback: run all tests
+// We use a broad "Test" pattern since Go test execution is already scoped
+// to the package directory, and attempting to derive specific prefixes from
+// filenames is fragile (e.g., "cli_test.go" doesn't match "TestCLI*").
+func testFileToPattern(_ string) string {
 	return "Test"
 }
 
