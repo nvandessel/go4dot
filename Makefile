@@ -121,6 +121,9 @@ help:
 	@echo "Testing:"
 	@echo "  test          - Run tests with race detection"
 	@echo "  test-coverage - Run tests and generate coverage report"
+	@echo "  validate      - Run full autonomous validation (build, lint, test, e2e)"
+	@echo "  validate-quick - Run validation without visual tests"
+	@echo "  e2e-test      - Run fast E2E TUI tests (teatest scenarios)"
 	@echo "  e2e-visual    - Run visual E2E tests with VHS"
 	@echo "  e2e-visual-update - Update golden files for visual tests"
 	@echo "  e2e-docker    - Run Docker-based E2E tests in parallel"
@@ -159,12 +162,30 @@ sandbox-no-install:
 	@chmod +x test/run.sh
 	@./test/run.sh --no-install $(ARGS)
 
+# Validation targets
+.PHONY: validate
+validate:
+	@bash test/e2e/validate.sh
+
+.PHONY: validate-quick
+validate-quick:
+	@bash test/e2e/validate.sh --quick
+
+.PHONY: validate-update
+validate-update:
+	@bash test/e2e/validate.sh --update
+
 # E2E Testing targets
 .PHONY: install-vhs
 install-vhs:
 	@echo "Installing VHS..."
 	@command -v vhs >/dev/null 2>&1 || go install github.com/charmbracelet/vhs@latest
 	@echo "VHS installed successfully"
+
+.PHONY: e2e-test
+e2e-test:
+	@echo "Running fast E2E TUI tests (teatest scenarios)..."
+	@go test -v -tags=e2e -run="^TestDashboard" ./test/e2e/scenarios/...
 
 .PHONY: e2e-visual
 e2e-visual: build
