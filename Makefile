@@ -183,7 +183,7 @@ e2e-docker:
 	@go test -v -tags=e2e -parallel=4 -timeout=15m -run="^(TestDoctor_|TestInstall_)" ./test/e2e/scenarios
 
 .PHONY: e2e-all
-e2e-all: e2e-docker
+e2e-all: e2e-visual e2e-docker
 	@echo "All E2E tests completed successfully!"
 
 .PHONY: e2e-clean
