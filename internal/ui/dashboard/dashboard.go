@@ -520,6 +520,35 @@ func getOperationTitle(opType OperationType) string {
 	}
 }
 
+// renderFilterBar renders the filter input bar
+func (m Model) renderFilterBar() string {
+	labelStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
+	inputStyle := lipgloss.NewStyle().Foreground(ui.TextColor)
+	hintStyle := lipgloss.NewStyle().Foreground(ui.SubtleColor)
+
+	label := labelStyle.Render("Filter: ")
+	input := inputStyle.Render(m.filterText)
+
+	// Show cursor when in filter mode
+	cursor := ""
+	if m.filterMode {
+		cursor = lipgloss.NewStyle().
+			Foreground(ui.PrimaryColor).
+			Blink(true).
+			Render("▌")
+	}
+
+	// Show hint
+	hint := ""
+	if m.filterText != "" && !m.filterMode {
+		hint = hintStyle.Render("  (press / to edit)")
+	} else if m.filterMode {
+		hint = hintStyle.Render("  (enter/esc to finish)")
+	}
+
+	return label + input + cursor + hint
+}
+
 func (m *Model) updateFilter() {
 	filtered := []int{}
 	if m.filterText == "" {
@@ -562,10 +591,18 @@ func (m Model) View() string {
 }
 
 func (m Model) viewDashboard() string {
+	// Build sidebar title with filter status
+	sidebarTitle := "Configs"
+	totalConfigs := len(m.state.Configs)
+	filteredConfigs := len(m.sidebar.filteredIdxs)
+	if m.filterText != "" {
+		sidebarTitle = fmt.Sprintf("Configs (%d/%d)", filteredConfigs, totalConfigs)
+	}
+
 	// Sidebar with inline title
 	sidebarView := renderPaneWithTitle(
 		m.sidebar.View(),
-		"Configs",
+		sidebarTitle,
 		m.sidebar.width-2,
 		m.sidebar.height,
 		ui.SubtleColor,
@@ -599,10 +636,17 @@ func (m Model) viewDashboard() string {
 		ui.SubtleColor,
 	)
 
+	// Build filter bar if in filter mode or filter is active
+	filterBar := ""
+	if m.filterMode || m.filterText != "" {
+		filterBar = m.renderFilterBar()
+	}
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.header.View(),
 		m.summary.View(),
+		filterBar,
 		mainContent,
 		outputView,
 		m.footer.View(),
