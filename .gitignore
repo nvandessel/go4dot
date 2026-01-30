@@ -46,6 +46,9 @@ release/
 test/e2e/outputs/
 test/e2e/screenshots/*.png
 test/e2e/golden/*_diff.txt
+test/e2e/reports/*.log
+test/e2e/reports/*.txt
+!test/e2e/reports/.gitkeep
 
 # Git worktrees for parallel development
 .worktrees/
