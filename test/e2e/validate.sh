@@ -43,11 +43,9 @@ for arg in "$@"; do
     case $arg in
         --quick)
             QUICK_MODE=true
-            shift
             ;;
         --update)
             UPDATE_GOLDEN=true
-            shift
             ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
@@ -165,22 +163,19 @@ fi
 if [ "$QUICK_MODE" = false ]; then
     log_step "Running visual tests..."
 
-    VISUAL_ARGS=""
+    # Export UPDATE_GOLDEN if --update flag was passed
     if [ "$UPDATE_GOLDEN" = true ]; then
-        VISUAL_ARGS="UPDATE_GOLDEN=1"
+        export UPDATE_GOLDEN=1
     fi
 
-    if $VISUAL_ARGS go test -v -tags=e2e -run="^TestCLI" ./test/e2e/scenarios/... > "$REPORT_DIR/e2e-visual.log" 2>&1; then
+    if go test -v -tags=e2e -run="^TestCLI" ./test/e2e/scenarios/... > "$REPORT_DIR/e2e-visual.log" 2>&1; then
         log_success "Visual tests passed"
     else
         if grep -q "VHS not installed" "$REPORT_DIR/e2e-visual.log" || grep -q "skipped" "$REPORT_DIR/e2e-visual.log"; then
             log_warning "Visual tests skipped (VHS not available)"
         else
-            log_failure "Visual tests failed (see $REPORT_DIR/e2e-visual.log)"
             cat "$REPORT_DIR/e2e-visual.log"
-            # Visual test failures are warnings, not hard failures
-            FAILED=$((FAILED - 1))
-            WARNINGS=$((WARNINGS + 1))
+            log_warning "Visual tests failed (see $REPORT_DIR/e2e-visual.log)"
         fi
     fi
 else
