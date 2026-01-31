@@ -24,6 +24,8 @@ const (
 	viewConfirm
 	viewConfigList
 	viewExternal
+	viewDoctor
+	viewMachine
 )
 
 // State holds all the shared data for the dashboard.
@@ -80,6 +82,8 @@ type Model struct {
 	confirm      *Confirm
 	configList   *ConfigListView
 	externalView *ExternalView
+	doctorView   *DoctorView
+	machineView  *MachineView
 }
 
 // New creates a new dashboard model.
@@ -150,6 +154,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConfigList(msg)
 	case viewExternal:
 		return m.updateExternal(msg)
+	case viewDoctor:
+		return m.updateDoctor(msg)
+	case viewMachine:
+		return m.updateMachine(msg)
 	default:
 		return m.updateDashboard(msg)
 	}
@@ -222,9 +230,12 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		case key.Matches(msg, keys.Doctor):
-			// TODO: Implement inline doctor - for now, fall back to CLI
-			m.setResult(ActionDoctor)
-			return m, tea.Quit
+			if m.state.Config != nil {
+				m.doctorView = NewDoctorView(m.state.Config, m.state.DotfilesPath)
+				m.doctorView.SetSize(m.width, m.height)
+				m.currentView = viewDoctor
+				return m, m.doctorView.Init()
+			}
 		case key.Matches(msg, keys.Install):
 			if m.state.Config != nil && !m.operationActive {
 				opts := InstallOptions{}
@@ -235,9 +246,12 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		case key.Matches(msg, keys.Machine):
-			// TODO: Implement inline machine config - for now, fall back to CLI
-			m.setResult(ActionMachineConfig)
-			return m, tea.Quit
+			if m.state.Config != nil && len(m.state.Config.MachineConfig) > 0 {
+				m.machineView = NewMachineView(m.state.Config)
+				m.machineView.SetSize(m.width, m.height)
+				m.currentView = viewMachine
+				return m, m.machineView.Init()
+			}
 		case key.Matches(msg, keys.Update):
 			if m.state.Config != nil && !m.operationActive {
 				opts := UpdateOptions{UpdateExternal: true}
@@ -581,6 +595,65 @@ func (m *Model) updateExternal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) updateDoctor(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.doctorView != nil {
+			m.doctorView.SetSize(msg.Width, msg.Height)
+		}
+
+	case DoctorViewCloseMsg:
+		m.currentView = viewDashboard
+		m.doctorView = nil
+		return m, nil
+	}
+
+	if m.doctorView != nil {
+		model, cmd := m.doctorView.Update(msg)
+		if dv, ok := model.(*DoctorView); ok {
+			m.doctorView = dv
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateMachine(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.machineView != nil {
+			m.machineView.SetSize(msg.Width, msg.Height)
+		}
+
+	case MachineViewCloseMsg:
+		m.currentView = viewDashboard
+		m.machineView = nil
+		return m, nil
+
+	case MachineConfigCompleteMsg:
+		// Machine config form completed - could write to file here
+		// For now, just return to dashboard
+		m.currentView = viewDashboard
+		m.machineView = nil
+		return m, nil
+	}
+
+	if m.machineView != nil {
+		model, cmd := m.machineView.Update(msg)
+		if mv, ok := model.(*MachineView); ok {
+			m.machineView = mv
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
 // stepStatusToLogLevel converts a StepStatus to a log level string
 func stepStatusToLogLevel(status StepStatus) string {
 	switch status {
@@ -813,6 +886,16 @@ func (m Model) View() string {
 	case viewExternal:
 		if m.externalView != nil {
 			return m.externalView.View()
+		}
+		return ""
+	case viewDoctor:
+		if m.doctorView != nil {
+			return m.doctorView.View()
+		}
+		return ""
+	case viewMachine:
+		if m.machineView != nil {
+			return m.machineView.View()
 		}
 		return ""
 	default:

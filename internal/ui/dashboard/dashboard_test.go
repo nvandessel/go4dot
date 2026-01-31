@@ -72,13 +72,14 @@ func TestNew_WithSelectedConfig(t *testing.T) {
 }
 
 func TestModel_Update_Actions(t *testing.T) {
-	// Actions that still fall back to CLI (no inline operation)
+	// Doctor action now shows inline view instead of quitting
 	t.Run("Doctor action", func(t *testing.T) {
 		baseState := State{
 			Platform: &platform.Platform{OS: "linux"},
 			Configs: []config.ConfigItem{
 				{Name: "vim"},
 			},
+			Config:       &config.Config{}, // Need config for doctor to work
 			HasConfig:    true,
 			DotfilesPath: "/tmp/dotfiles",
 		}
@@ -89,15 +90,18 @@ func TestModel_Update_Actions(t *testing.T) {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
 		updatedModel, cmd := m.Update(msg)
 
+		// Doctor now runs inline, should get init command
 		if cmd == nil {
-			t.Error("expected tea.Quit command")
+			t.Error("expected init command for doctor view")
 		}
 		model := updatedModel.(*Model)
-		if model.result == nil {
-			t.Fatal("expected result to be set")
+		// Should switch to doctor view
+		if model.currentView != viewDoctor {
+			t.Errorf("expected viewDoctor, got %v", model.currentView)
 		}
-		if model.result.Action != ActionDoctor {
-			t.Errorf("expected action %v, got %v", ActionDoctor, model.result.Action)
+		// Doctor view should be initialized
+		if model.doctorView == nil {
+			t.Error("expected doctorView to be initialized")
 		}
 	})
 
