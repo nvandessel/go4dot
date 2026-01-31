@@ -594,21 +594,27 @@ func TestModel_NoConfig_Init(t *testing.T) {
 		HasConfig: false,
 	}
 	m := New(s)
+	m.width = 80
+	m.height = 24
 
-	// Press enter to init (NoConfig view accepts enter key)
+	// Press enter to init (NoConfig view now transitions to onboarding)
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
 	updatedModel, cmd := m.Update(msg)
 
+	// Should get a command to initialize onboarding
 	if cmd == nil {
-		t.Error("expected tea.Quit command")
+		t.Error("expected command to initialize onboarding")
 	}
 
 	model := updatedModel.(*Model)
-	if model.result == nil {
-		t.Fatal("expected result to be set")
+	// Should now be in onboarding view
+	if model.currentView != viewOnboarding {
+		t.Errorf("expected viewOnboarding, got %v", model.currentView)
 	}
-	if model.result.Action != ActionInit {
-		t.Errorf("expected ActionInit, got %v", model.result.Action)
+
+	// Onboarding should be initialized
+	if model.onboarding == nil {
+		t.Error("expected onboarding to be initialized")
 	}
 }
 

@@ -20,6 +20,7 @@ const (
 	viewMenu
 	viewNoConfig
 	viewOperation
+	viewOnboarding
 )
 
 // State holds all the shared data for the dashboard.
@@ -70,6 +71,7 @@ type Model struct {
 	noconfig   NoConfig
 	operations Operations
 	output     OutputPane
+	onboarding *Onboarding
 }
 
 // New creates a new dashboard model.
@@ -132,6 +134,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateNoConfig(msg)
 	case viewOperation:
 		return m.updateOperation(msg)
+	case viewOnboarding:
+		return m.updateOnboarding(msg)
 	default:
 		return m.updateDashboard(msg)
 	}
@@ -383,10 +387,65 @@ func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setResult(ActionQuit)
 			return m, tea.Quit
 		case key.Matches(msg, key.NewBinding(key.WithKeys("i"), key.WithKeys("enter"))):
-			m.setResult(ActionInit)
-			return m, tea.Quit
+			// Start onboarding inline instead of exiting
+			return m.startOnboarding()
 		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 	}
+	return m, nil
+}
+
+// startOnboarding initializes and switches to the onboarding view
+func (m *Model) startOnboarding() (tea.Model, tea.Cmd) {
+	// Use current directory or dotfiles path
+	path := "."
+	if m.state.DotfilesPath != "" {
+		path = m.state.DotfilesPath
+	}
+
+	onboarding := NewOnboarding(path)
+	onboarding.width = m.width
+	onboarding.height = m.height
+	m.onboarding = &onboarding
+	m.currentView = viewOnboarding
+
+	return m, m.onboarding.Init()
+}
+
+func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.onboarding != nil {
+			m.onboarding.width = msg.Width
+			m.onboarding.height = msg.Height
+		}
+
+	case OnboardingCompleteMsg:
+		if msg.Error != nil {
+			// Onboarding was cancelled or failed, return to no-config view
+			m.currentView = viewNoConfig
+			m.onboarding = nil
+			return m, nil
+		}
+
+		// Onboarding completed successfully - set result to reload with new config
+		m.setResult(ActionInit)
+		m.result.ConfigName = msg.ConfigPath
+		return m, tea.Quit
+	}
+
+	if m.onboarding != nil {
+		model, cmd := m.onboarding.Update(msg)
+		if ob, ok := model.(*Onboarding); ok {
+			m.onboarding = ob
+		}
+		return m, cmd
+	}
+
 	return m, nil
 }
 
@@ -604,6 +663,11 @@ func (m Model) View() string {
 		return m.noconfig.View()
 	case viewOperation:
 		return m.viewOperation()
+	case viewOnboarding:
+		if m.onboarding != nil {
+			return m.onboarding.View()
+		}
+		return ""
 	default:
 		return m.viewDashboard()
 	}
