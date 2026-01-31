@@ -113,14 +113,9 @@ func (d *DoctorView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.result = msg.result
 		}
 		d.updateContent()
-
-	case tea.MouseMsg:
-		var cmd tea.Cmd
-		d.viewport, cmd = d.viewport.Update(msg)
-		cmds = append(cmds, cmd)
 	}
 
-	// Forward to viewport for scrolling
+	// Forward to viewport for scrolling (handles mouse and keyboard events)
 	var cmd tea.Cmd
 	d.viewport, cmd = d.viewport.Update(msg)
 	cmds = append(cmds, cmd)
@@ -273,6 +268,10 @@ func (d *DoctorView) updateContent() {
 				icon = okStyle.Render("✓")
 			case "missing":
 				icon = warnStyle.Render("○")
+			case "error":
+				icon = errStyle.Render("✗")
+			case "skipped":
+				icon = skipStyle.Render("⊘")
 			default:
 				icon = skipStyle.Render("⊘")
 			}

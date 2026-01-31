@@ -442,6 +442,9 @@ func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
 
 	case ActionExternal:
 		// Show external dependencies view inline
+		if m.state.Config == nil {
+			return m, nil
+		}
 		m.externalView = NewExternalView(m.state.Config, m.state.DotfilesPath, m.state.Platform)
 		m.externalView.SetSize(m.width, m.height)
 		m.pushView(viewExternal)
@@ -661,8 +664,8 @@ func (m *Model) updateMachine(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case MachineConfigCompleteMsg:
-		// Machine config form completed - could write to file here
-		// For now, just return to previous view
+		// TODO: Persist machine config values to file
+		// For now, just return to previous view without saving
 		m.popView()
 		m.machineView = nil
 		return m, nil

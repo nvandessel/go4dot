@@ -51,8 +51,17 @@ func (f *FormView) SetSize(width, height int) {
 	f.height = height
 	// huh.Form doesn't have a direct SetSize method, but we can use WithWidth
 	// We need to recreate or configure the form with the proper width
-	f.form = f.form.WithWidth(width - 4) // Account for padding/borders
-	f.form = f.form.WithHeight(height - 4)
+	// Guard against zero/negative dimensions on small terminals
+	innerWidth := width - 4
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	innerHeight := height - 4
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+	f.form = f.form.WithWidth(innerWidth)
+	f.form = f.form.WithHeight(innerHeight)
 }
 
 // Update handles messages for the FormView
@@ -159,6 +168,10 @@ func (o *FormViewOverlay) SetSize(width, height int) {
 	if formWidth > width-10 {
 		formWidth = width - 10
 	}
+	// Guard against zero/negative dimensions on small terminals
+	if formWidth < 1 {
+		formWidth = 1
+	}
 
 	formHeight := height * 70 / 100
 	if formHeight < 15 {
@@ -166,6 +179,10 @@ func (o *FormViewOverlay) SetSize(width, height int) {
 	}
 	if formHeight > height-6 {
 		formHeight = height - 6
+	}
+	// Guard against zero/negative dimensions on small terminals
+	if formHeight < 1 {
+		formHeight = 1
 	}
 
 	o.formView.SetSize(formWidth, formHeight)

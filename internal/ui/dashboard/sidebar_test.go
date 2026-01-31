@@ -19,62 +19,74 @@ func TestSidebar_Update_Navigation(t *testing.T) {
 	initialSelected := make(map[string]bool)
 
 	tests := []struct {
-		name                string
-		initialSidebar      Sidebar
-		msg                 tea.Msg
-		expectedSelectedIdx int
+		name     string
+		input    struct {
+			initialIdx int
+			key        rune
+		}
+		expected struct {
+			selectedIdx int
+		}
 	}{
 		{
-			name:                "Move Down",
-			initialSidebar:      NewSidebar(initialState, initialSelected),
-			msg:                 tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, // Assuming 'j' is Down
-			expectedSelectedIdx: 1,
+			name: "move down from start",
+			input: struct {
+				initialIdx int
+				key        rune
+			}{
+				initialIdx: 0,
+				key:        'j',
+			},
+			expected: struct {
+				selectedIdx int
+			}{
+				selectedIdx: 1,
+			},
 		},
 		{
-			name: "Move Up",
-			initialSidebar: func() Sidebar {
-				s := NewSidebar(initialState, initialSelected)
-				s.selectedIdx = 1
-				return s
-			}(),
-			msg:                 tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, // Assuming 'k' is Up
-			expectedSelectedIdx: 0,
+			name: "move up from middle",
+			input: struct {
+				initialIdx int
+				key        rune
+			}{
+				initialIdx: 1,
+				key:        'k',
+			},
+			expected: struct {
+				selectedIdx int
+			}{
+				selectedIdx: 0,
+			},
 		},
 		{
-			name:                "Move Down to End",
-			initialSidebar:      NewSidebar(initialState, initialSelected),
-			msg:                 tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}},
-			expectedSelectedIdx: 1, // First move
+			name: "stay at top when pressing up",
+			input: struct {
+				initialIdx int
+				key        rune
+			}{
+				initialIdx: 0,
+				key:        'k',
+			},
+			expected: struct {
+				selectedIdx int
+			}{
+				selectedIdx: 0,
+			},
 		},
 		{
-			name: "Move Up to Top",
-			initialSidebar: func() Sidebar {
-				s := NewSidebar(initialState, initialSelected)
-				s.selectedIdx = 1
-				return s
-			}(),
-			msg:                 tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}},
-			expectedSelectedIdx: 0, // First move
-		},
-		{
-			name: "Stay at Top",
-			initialSidebar: func() Sidebar {
-				s := NewSidebar(initialState, initialSelected)
-				s.selectedIdx = 0
-				return s
-			}(),
-			msg:                 tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}},
-			expectedSelectedIdx: 0,
-		},
-		{
-			name: "Stay at Bottom",
-			initialSidebar: func() Sidebar {
-				s := NewSidebar(initialState, initialSelected)
-				s.selectedIdx = 2
-				return s
-			}(),
-			msg:                 tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}},
-			expectedSelectedIdx: 2,
+			name: "stay at bottom when pressing down",
+			input: struct {
+				initialIdx int
+				key        rune
+			}{
+				initialIdx: 2,
+				key:        'j',
+			},
+			expected: struct {
+				selectedIdx int
+			}{
+				selectedIdx: 2,
+			},
 		},
 	}
 
@@ -90,10 +102,13 @@ func TestSidebar_Update_Navigation(t *testing.T) {
 				keys.Down.SetKeys(originalDown...)
 			}()
 
-			s := tt.initialSidebar
-			s.Update(tt.msg)
-			if s.selectedIdx != tt.expectedSelectedIdx {
-				t.Errorf("expected selected index to be %d, but got %d", tt.expectedSelectedIdx, s.selectedIdx)
+			s := NewSidebar(initialState, initialSelected)
+			s.selectedIdx = tt.input.initialIdx
+			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{tt.input.key}}
+			s.Update(msg)
+
+			if s.selectedIdx != tt.expected.selectedIdx {
+				t.Errorf("expected selected index to be %d, but got %d", tt.expected.selectedIdx, s.selectedIdx)
 			}
 		})
 	}
@@ -101,65 +116,109 @@ func TestSidebar_Update_Navigation(t *testing.T) {
 
 func TestSidebar_MouseScrolling(t *testing.T) {
 	initialState := State{
-		Configs: make([]config.ConfigItem, 20), // 20 items
+		Configs: make([]config.ConfigItem, 20),
 	}
 	for i := 0; i < 20; i++ {
 		initialState.Configs[i] = config.ConfigItem{Name: strconv.Itoa(i)}
 	}
 
 	tests := []struct {
-		name               string
-		height             int
-		initialListOffset  int
-		mouseButton        tea.MouseButton
-		expectedListOffset int
+		name     string
+		input    struct {
+			height      int
+			listOffset  int
+			mouseButton tea.MouseButton
+		}
+		expected struct {
+			listOffset int
+		}
 	}{
 		{
-			name:               "Wheel up from offset 5",
-			height:             10,
-			initialListOffset:  5,
-			mouseButton:        tea.MouseButtonWheelUp,
-			expectedListOffset: 4,
+			name: "wheel up from offset 5",
+			input: struct {
+				height      int
+				listOffset  int
+				mouseButton tea.MouseButton
+			}{
+				height:      10,
+				listOffset:  5,
+				mouseButton: tea.MouseButtonWheelUp,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 4,
+			},
 		},
 		{
-			name:               "Wheel up at top stays at 0",
-			height:             10,
-			initialListOffset:  0,
-			mouseButton:        tea.MouseButtonWheelUp,
-			expectedListOffset: 0,
+			name: "wheel up at top stays at 0",
+			input: struct {
+				height      int
+				listOffset  int
+				mouseButton tea.MouseButton
+			}{
+				height:      10,
+				listOffset:  0,
+				mouseButton: tea.MouseButtonWheelUp,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 0,
+			},
 		},
 		{
-			name:               "Wheel down from offset 0",
-			height:             10,
-			initialListOffset:  0,
-			mouseButton:        tea.MouseButtonWheelDown,
-			expectedListOffset: 1,
+			name: "wheel down from offset 0",
+			input: struct {
+				height      int
+				listOffset  int
+				mouseButton tea.MouseButton
+			}{
+				height:      10,
+				listOffset:  0,
+				mouseButton: tea.MouseButtonWheelDown,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 1,
+			},
 		},
 		{
-			name:               "Wheel down at max stays at max",
-			height:             10,
-			initialListOffset:  10, // max offset for 20 items with height 10
-			mouseButton:        tea.MouseButtonWheelDown,
-			expectedListOffset: 10,
+			name: "wheel down at max stays at max",
+			input: struct {
+				height      int
+				listOffset  int
+				mouseButton tea.MouseButton
+			}{
+				height:      10,
+				listOffset:  10,
+				mouseButton: tea.MouseButtonWheelDown,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 10,
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := NewSidebar(initialState, make(map[string]bool))
-			s.height = tt.height
-			s.listOffset = tt.initialListOffset
+			s.height = tt.input.height
+			s.listOffset = tt.input.listOffset
 
 			msg := tea.MouseMsg{
-				Button: tt.mouseButton,
+				Button: tt.input.mouseButton,
 				Action: tea.MouseActionPress,
 				X:      10,
 				Y:      5,
 			}
 			s.Update(msg)
 
-			if s.listOffset != tt.expectedListOffset {
-				t.Errorf("expected list offset to be %d, but got %d", tt.expectedListOffset, s.listOffset)
+			if s.listOffset != tt.expected.listOffset {
+				t.Errorf("expected list offset to be %d, but got %d", tt.expected.listOffset, s.listOffset)
 			}
 		})
 	}
@@ -167,65 +226,120 @@ func TestSidebar_MouseScrolling(t *testing.T) {
 
 func TestSidebar_ensureVisible(t *testing.T) {
 	initialState := State{
-		Configs: make([]config.ConfigItem, 20), // 20 items
+		Configs: make([]config.ConfigItem, 20),
 	}
 	for i := 0; i < 20; i++ {
 		initialState.Configs[i] = config.ConfigItem{Name: strconv.Itoa(i)}
 	}
 
 	tests := []struct {
-		name               string
-		height             int
-		selectedIdx        int
-		initialListOffset  int
-		expectedListOffset int
+		name     string
+		input    struct {
+			height      int
+			selectedIdx int
+			listOffset  int
+		}
+		expected struct {
+			listOffset int
+		}
 	}{
 		{
-			name:               "Selection within view, no scroll",
-			height:             10,
-			selectedIdx:        5,
-			initialListOffset:  0,
-			expectedListOffset: 0,
+			name: "selection within view, no scroll",
+			input: struct {
+				height      int
+				selectedIdx int
+				listOffset  int
+			}{
+				height:      10,
+				selectedIdx: 5,
+				listOffset:  0,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 0,
+			},
 		},
 		{
-			name:               "Scroll down when selection goes below view",
-			height:             10,
-			selectedIdx:        10,
-			initialListOffset:  0,
-			expectedListOffset: 1, // 10 - 10 + 1
+			name: "scroll down when selection goes below view",
+			input: struct {
+				height      int
+				selectedIdx int
+				listOffset  int
+			}{
+				height:      10,
+				selectedIdx: 10,
+				listOffset:  0,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 1,
+			},
 		},
 		{
-			name:               "Scroll up when selection goes above view",
-			height:             10,
-			selectedIdx:        4,
-			initialListOffset:  5,
-			expectedListOffset: 4,
+			name: "scroll up when selection goes above view",
+			input: struct {
+				height      int
+				selectedIdx int
+				listOffset  int
+			}{
+				height:      10,
+				selectedIdx: 4,
+				listOffset:  5,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 4,
+			},
 		},
 		{
-			name:               "Jump to bottom",
-			height:             10,
-			selectedIdx:        19,
-			initialListOffset:  0,
-			expectedListOffset: 10, // 19 - 10 + 1
+			name: "jump to bottom",
+			input: struct {
+				height      int
+				selectedIdx int
+				listOffset  int
+			}{
+				height:      10,
+				selectedIdx: 19,
+				listOffset:  0,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 10,
+			},
 		},
 		{
-			name:               "Jump to top",
-			height:             10,
-			selectedIdx:        0,
-			initialListOffset:  10,
-			expectedListOffset: 0,
+			name: "jump to top",
+			input: struct {
+				height      int
+				selectedIdx int
+				listOffset  int
+			}{
+				height:      10,
+				selectedIdx: 0,
+				listOffset:  10,
+			},
+			expected: struct {
+				listOffset int
+			}{
+				listOffset: 0,
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := NewSidebar(initialState, make(map[string]bool))
-			s.height = tt.height
-			s.selectedIdx = tt.selectedIdx
-			s.listOffset = tt.initialListOffset
+			s.height = tt.input.height
+			s.selectedIdx = tt.input.selectedIdx
+			s.listOffset = tt.input.listOffset
 			s.ensureVisible()
-			if s.listOffset != tt.expectedListOffset {
-				t.Errorf("expected list offset to be %d, but got %d", tt.expectedListOffset, s.listOffset)
+
+			if s.listOffset != tt.expected.listOffset {
+				t.Errorf("expected list offset to be %d, but got %d", tt.expected.listOffset, s.listOffset)
 			}
 		})
 	}

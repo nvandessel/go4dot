@@ -30,14 +30,15 @@ type ExternalView struct {
 	dotfilesPath string
 	platform     *platform.Platform
 
-	status   []deps.ExternalStatus
-	viewport viewport.Model
-	spinner  spinner.Model
-	width    int
-	height   int
-	ready    bool
-	loading  bool
-	selected int
+	status    []deps.ExternalStatus
+	lastError error // Track loading errors
+	viewport  viewport.Model
+	spinner   spinner.Model
+	width     int
+	height    int
+	ready     bool
+	loading   bool
+	selected  int
 }
 
 // NewExternalView creates a new external dependencies view
@@ -119,9 +120,10 @@ func (e *ExternalView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case externalStatusLoadedMsg:
 		e.loading = false
 		if msg.err != nil {
-			// Handle error
+			e.lastError = msg.err
 			e.status = nil
 		} else {
+			e.lastError = nil
 			e.status = msg.status
 		}
 		e.updateContent()
@@ -188,6 +190,10 @@ func (e *ExternalView) View() string {
 }
 
 func (e *ExternalView) updateContent() {
+	if e.lastError != nil {
+		e.viewport.SetContent(fmt.Sprintf("Error loading status: %v", e.lastError))
+		return
+	}
 	if len(e.status) == 0 {
 		e.viewport.SetContent("No external dependencies configured.")
 		return

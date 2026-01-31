@@ -25,8 +25,11 @@ const (
 	stepMetadata
 	stepConfigs
 	stepExternal
+	stepExternalDetails
 	stepDependencies
+	stepDependenciesDetails
 	stepMachine
+	stepMachineDetails
 	stepConfirm
 	stepWriting
 	stepComplete
@@ -77,6 +80,9 @@ type Onboarding struct {
 	addMoreExternal bool
 	addMoreDeps     bool
 	addMoreMachine  bool
+
+	// Confirm step choice
+	confirmWrite bool
 
 	// Error tracking
 	lastError error
@@ -214,6 +220,7 @@ func (o *Onboarding) handleFormComplete() (tea.Model, tea.Cmd) {
 	case stepExternal:
 		if o.addMoreExternal {
 			// User wants to add an external dep
+			o.step = stepExternalDetails
 			o.form = o.createExternalDetailsForm()
 			return o, o.form.Init()
 		}
@@ -222,9 +229,22 @@ func (o *Onboarding) handleFormComplete() (tea.Model, tea.Cmd) {
 		o.form = o.createDepsPromptForm()
 		return o, o.form.Init()
 
+	case stepExternalDetails:
+		// Persist the current external dep
+		if o.currentExternal.URL != "" {
+			o.externalDeps = append(o.externalDeps, o.currentExternal)
+		}
+		o.currentExternal = config.ExternalDep{} // Reset
+		o.addMoreExternal = false
+		// Return to external prompt to ask about more
+		o.step = stepExternal
+		o.form = o.createExternalPromptForm()
+		return o, o.form.Init()
+
 	case stepDependencies:
 		if o.addMoreDeps {
 			// User wants to add a system dep
+			o.step = stepDependenciesDetails
 			o.form = o.createDepsDetailsForm()
 			return o, o.form.Init()
 		}
@@ -233,9 +253,22 @@ func (o *Onboarding) handleFormComplete() (tea.Model, tea.Cmd) {
 		o.form = o.createMachinePromptForm()
 		return o, o.form.Init()
 
+	case stepDependenciesDetails:
+		// Persist the current system dep
+		if o.currentDep.Name != "" {
+			o.systemDeps = append(o.systemDeps, o.currentDep)
+		}
+		o.currentDep = config.DependencyItem{} // Reset
+		o.addMoreDeps = false
+		// Return to deps prompt to ask about more
+		o.step = stepDependencies
+		o.form = o.createDepsPromptForm()
+		return o, o.form.Init()
+
 	case stepMachine:
 		if o.addMoreMachine {
 			// User wants to add machine config
+			o.step = stepMachineDetails
 			o.form = o.createMachineDetailsForm()
 			return o, o.form.Init()
 		}
@@ -244,7 +277,22 @@ func (o *Onboarding) handleFormComplete() (tea.Model, tea.Cmd) {
 		o.form = o.createConfirmForm()
 		return o, o.form.Init()
 
+	case stepMachineDetails:
+		// Machine details are handled differently (preset-based)
+		// For now, just reset and return to prompt
+		o.addMoreMachine = false
+		o.step = stepMachine
+		o.form = o.createMachinePromptForm()
+		return o, o.form.Init()
+
 	case stepConfirm:
+		if !o.confirmWrite {
+			// User cancelled
+			o.quitting = true
+			return o, func() tea.Msg {
+				return OnboardingCompleteMsg{Error: fmt.Errorf("cancelled")}
+			}
+		}
 		// Write config
 		o.step = stepWriting
 		return o, o.writeConfig
@@ -326,6 +374,15 @@ func (o Onboarding) View() string {
 			o.form.View(),
 		)
 
+	case stepExternalDetails:
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			titleStyle.Render("🔗 Add External Dependency"),
+			subtitleStyle.Render("Enter git repository details"),
+			"",
+			o.form.View(),
+		)
+
 	case stepDependencies:
 		title := "⚙️ System Dependencies"
 		if len(o.systemDeps) > 0 {
@@ -339,6 +396,15 @@ func (o Onboarding) View() string {
 			o.form.View(),
 		)
 
+	case stepDependenciesDetails:
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			titleStyle.Render("⚙️ Add System Dependency"),
+			subtitleStyle.Render("Enter package details"),
+			"",
+			o.form.View(),
+		)
+
 	case stepMachine:
 		title := "🖥️ Machine Configuration"
 		if len(o.machineConfigs) > 0 {
@@ -348,6 +414,15 @@ func (o Onboarding) View() string {
 			lipgloss.Left,
 			titleStyle.Render(title),
 			subtitleStyle.Render("Machine-specific settings (git signing, etc.)"),
+			"",
+			o.form.View(),
+		)
+
+	case stepMachineDetails:
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			titleStyle.Render("🖥️ Configure Machine Setting"),
+			subtitleStyle.Render("Enter configuration details"),
 			"",
 			o.form.View(),
 		)
@@ -542,7 +617,7 @@ func (o *Onboarding) createMachineDetailsForm() *huh.Form {
 }
 
 func (o *Onboarding) createConfirmForm() *huh.Form {
-	var confirm bool
+	o.confirmWrite = false // Reset before displaying form
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
@@ -550,7 +625,7 @@ func (o *Onboarding) createConfirmForm() *huh.Form {
 				Description("This will write .go4dot.yaml to your dotfiles directory").
 				Affirmative("Yes, create").
 				Negative("Cancel").
-				Value(&confirm),
+				Value(&o.confirmWrite),
 		),
 	).WithWidth(60).WithShowHelp(false)
 }

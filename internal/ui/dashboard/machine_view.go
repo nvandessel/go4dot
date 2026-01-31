@@ -38,6 +38,9 @@ type MachineView struct {
 	currentForm   *huh.Form
 	currentConfig *config.MachinePrompt
 	formValues    map[string]string
+	// Persistent storage for form field values (pointers must outlive form)
+	formStringPtrs map[string]*string
+	formBoolPtrs   map[string]*bool
 }
 
 // NewMachineView creates a new machine configuration view
@@ -133,6 +136,18 @@ func (m *MachineView) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Check for completion
 	if m.currentForm.State == huh.StateCompleted {
+		// Collect values from persistent pointers
+		for id, ptr := range m.formStringPtrs {
+			m.formValues[id] = *ptr
+		}
+		for id, ptr := range m.formBoolPtrs {
+			if *ptr {
+				m.formValues[id] = "true"
+			} else {
+				m.formValues[id] = "false"
+			}
+		}
+
 		// Extract values and send completion message
 		configID := m.currentConfig.ID
 		m.currentForm = nil
@@ -168,24 +183,23 @@ func (m *MachineView) startConfigForm() (tea.Model, tea.Cmd) {
 	mc := &m.cfg.MachineConfig[m.selectedIdx]
 	m.currentConfig = mc
 	m.formValues = make(map[string]string)
+	m.formStringPtrs = make(map[string]*string)
+	m.formBoolPtrs = make(map[string]*bool)
 
 	// Build form fields from machine config prompts
 	var fields []huh.Field
 	for _, prompt := range mc.Prompts {
-		val := prompt.Default
-		m.formValues[prompt.ID] = val
-
 		switch prompt.Type {
 		case "confirm":
-			var boolVal bool
-			if val == "true" || val == "yes" {
-				boolVal = true
-			}
+			boolVal := prompt.Default == "true" || prompt.Default == "yes"
+			m.formBoolPtrs[prompt.ID] = &boolVal
 			fields = append(fields, huh.NewConfirm().
 				Title(prompt.Prompt).
-				Value(&boolVal))
+				Value(m.formBoolPtrs[prompt.ID]))
 		case "select":
 			if len(prompt.Options) > 0 {
+				val := prompt.Default
+				m.formStringPtrs[prompt.ID] = &val
 				var options []huh.Option[string]
 				for _, opt := range prompt.Options {
 					options = append(options, huh.NewOption(opt, opt))
@@ -193,17 +207,20 @@ func (m *MachineView) startConfigForm() (tea.Model, tea.Cmd) {
 				fields = append(fields, huh.NewSelect[string]().
 					Title(prompt.Prompt).
 					Options(options...).
-					Value(&val))
+					Value(m.formStringPtrs[prompt.ID]))
 			} else {
+				val := prompt.Default
+				m.formStringPtrs[prompt.ID] = &val
 				fields = append(fields, huh.NewInput().
 					Title(prompt.Prompt).
-					Value(&val))
+					Value(m.formStringPtrs[prompt.ID]))
 			}
 		default: // text
-			valPtr := &val
+			val := prompt.Default
+			m.formStringPtrs[prompt.ID] = &val
 			f := huh.NewInput().
 				Title(prompt.Prompt).
-				Value(valPtr)
+				Value(m.formStringPtrs[prompt.ID])
 			if prompt.Required {
 				f.Validate(func(s string) error {
 					if s == "" {

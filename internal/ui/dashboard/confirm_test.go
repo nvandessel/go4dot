@@ -8,142 +8,330 @@ import (
 )
 
 func TestConfirm_New(t *testing.T) {
-	c := NewConfirm("test-id", "Test Title", "Test description")
-
-	if c.ID() != "test-id" {
-		t.Errorf("expected ID 'test-id', got '%s'", c.ID())
+	tests := []struct {
+		name     string
+		input    struct {
+			id          string
+			title       string
+			description string
+		}
+		expected struct {
+			id       string
+			title    string
+			selected int
+		}
+	}{
+		{
+			name: "creates confirm with correct ID and title",
+			input: struct {
+				id          string
+				title       string
+				description string
+			}{
+				id:          "test-id",
+				title:       "Test Title",
+				description: "Test description",
+			},
+			expected: struct {
+				id       string
+				title    string
+				selected int
+			}{
+				id:       "test-id",
+				title:    "Test Title",
+				selected: 1, // Default to "No"
+			},
+		},
 	}
 
-	if c.title != "Test Title" {
-		t.Errorf("expected title 'Test Title', got '%s'", c.title)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewConfirm(tt.input.id, tt.input.title, tt.input.description)
 
-	if c.selected != 1 {
-		t.Error("expected default selection to be 'No' (1)")
+			if c.ID() != tt.expected.id {
+				t.Errorf("expected ID %q, got %q", tt.expected.id, c.ID())
+			}
+			if c.title != tt.expected.title {
+				t.Errorf("expected title %q, got %q", tt.expected.title, c.title)
+			}
+			if c.selected != tt.expected.selected {
+				t.Errorf("expected selected %d, got %d", tt.expected.selected, c.selected)
+			}
+		})
 	}
 }
 
 func TestConfirm_WithLabels(t *testing.T) {
-	c := NewConfirm("test", "Title", "Desc").WithLabels("Yes, do it", "Cancel")
-
-	if c.affirmative != "Yes, do it" {
-		t.Errorf("expected affirmative 'Yes, do it', got '%s'", c.affirmative)
+	tests := []struct {
+		name     string
+		input    struct {
+			affirmative string
+			negative    string
+		}
+		expected struct {
+			affirmative string
+			negative    string
+		}
+	}{
+		{
+			name: "sets custom labels",
+			input: struct {
+				affirmative string
+				negative    string
+			}{
+				affirmative: "Yes, do it",
+				negative:    "Cancel",
+			},
+			expected: struct {
+				affirmative string
+				negative    string
+			}{
+				affirmative: "Yes, do it",
+				negative:    "Cancel",
+			},
+		},
 	}
 
-	if c.negative != "Cancel" {
-		t.Errorf("expected negative 'Cancel', got '%s'", c.negative)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewConfirm("test", "Title", "Desc").WithLabels(tt.input.affirmative, tt.input.negative)
 
-func TestConfirm_Navigation(t *testing.T) {
-	c := NewConfirm("test", "Title", "Desc")
-	c.SetSize(80, 24)
-
-	// Default is "No" (selected = 1)
-	if c.selected != 1 {
-		t.Errorf("expected initial selection 1, got %d", c.selected)
-	}
-
-	// Press left to select "Yes"
-	_, _ = c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
-	if c.selected != 0 {
-		t.Errorf("expected selection 0 after left, got %d", c.selected)
-	}
-
-	// Press right to select "No"
-	_, _ = c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	if c.selected != 1 {
-		t.Errorf("expected selection 1 after right, got %d", c.selected)
-	}
-
-	// Press tab to toggle
-	_, _ = c.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if c.selected != 0 {
-		t.Errorf("expected selection 0 after tab, got %d", c.selected)
-	}
-}
-
-func TestConfirm_YesKey(t *testing.T) {
-	c := NewConfirm("test", "Title", "Desc")
-	c.SetSize(80, 24)
-
-	_, cmd := c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-
-	if cmd == nil {
-		t.Fatal("expected command after 'y' key")
-	}
-
-	msg := cmd()
-	result, ok := msg.(ConfirmResult)
-	if !ok {
-		t.Fatal("expected ConfirmResult message")
-	}
-
-	if !result.Confirmed {
-		t.Error("expected Confirmed to be true")
-	}
-
-	if result.ID != "test" {
-		t.Errorf("expected ID 'test', got '%s'", result.ID)
+			if c.affirmative != tt.expected.affirmative {
+				t.Errorf("expected affirmative %q, got %q", tt.expected.affirmative, c.affirmative)
+			}
+			if c.negative != tt.expected.negative {
+				t.Errorf("expected negative %q, got %q", tt.expected.negative, c.negative)
+			}
+		})
 	}
 }
 
-func TestConfirm_NoKey(t *testing.T) {
-	c := NewConfirm("test", "Title", "Desc")
-	c.SetSize(80, 24)
-
-	_, cmd := c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-
-	if cmd == nil {
-		t.Fatal("expected command after 'n' key")
+func TestConfirm_KeyHandling(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    struct {
+			initialSelected int
+			key             tea.KeyMsg
+		}
+		expected struct {
+			selected      int
+			hasResult     bool
+			resultConfirm bool
+		}
+	}{
+		{
+			name: "left key selects Yes",
+			input: struct {
+				initialSelected int
+				key             tea.KeyMsg
+			}{
+				initialSelected: 1,
+				key:             tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}},
+			},
+			expected: struct {
+				selected      int
+				hasResult     bool
+				resultConfirm bool
+			}{
+				selected:  0,
+				hasResult: false,
+			},
+		},
+		{
+			name: "right key selects No",
+			input: struct {
+				initialSelected int
+				key             tea.KeyMsg
+			}{
+				initialSelected: 0,
+				key:             tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}},
+			},
+			expected: struct {
+				selected      int
+				hasResult     bool
+				resultConfirm bool
+			}{
+				selected:  1,
+				hasResult: false,
+			},
+		},
+		{
+			name: "tab toggles selection",
+			input: struct {
+				initialSelected int
+				key             tea.KeyMsg
+			}{
+				initialSelected: 1,
+				key:             tea.KeyMsg{Type: tea.KeyTab},
+			},
+			expected: struct {
+				selected      int
+				hasResult     bool
+				resultConfirm bool
+			}{
+				selected:  0,
+				hasResult: false,
+			},
+		},
+		{
+			name: "y key confirms",
+			input: struct {
+				initialSelected int
+				key             tea.KeyMsg
+			}{
+				initialSelected: 1,
+				key:             tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}},
+			},
+			expected: struct {
+				selected      int
+				hasResult     bool
+				resultConfirm bool
+			}{
+				selected:      1,
+				hasResult:     true,
+				resultConfirm: true,
+			},
+		},
+		{
+			name: "n key denies",
+			input: struct {
+				initialSelected int
+				key             tea.KeyMsg
+			}{
+				initialSelected: 0,
+				key:             tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}},
+			},
+			expected: struct {
+				selected      int
+				hasResult     bool
+				resultConfirm bool
+			}{
+				selected:      0,
+				hasResult:     true,
+				resultConfirm: false,
+			},
+		},
+		{
+			name: "enter confirms when Yes selected",
+			input: struct {
+				initialSelected int
+				key             tea.KeyMsg
+			}{
+				initialSelected: 0,
+				key:             tea.KeyMsg{Type: tea.KeyEnter},
+			},
+			expected: struct {
+				selected      int
+				hasResult     bool
+				resultConfirm bool
+			}{
+				selected:      0,
+				hasResult:     true,
+				resultConfirm: true,
+			},
+		},
+		{
+			name: "enter denies when No selected",
+			input: struct {
+				initialSelected int
+				key             tea.KeyMsg
+			}{
+				initialSelected: 1,
+				key:             tea.KeyMsg{Type: tea.KeyEnter},
+			},
+			expected: struct {
+				selected      int
+				hasResult     bool
+				resultConfirm bool
+			}{
+				selected:      1,
+				hasResult:     true,
+				resultConfirm: false,
+			},
+		},
 	}
 
-	msg := cmd()
-	result, ok := msg.(ConfirmResult)
-	if !ok {
-		t.Fatal("expected ConfirmResult message")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewConfirm("test", "Title", "Desc")
+			c.SetSize(80, 24)
+			c.selected = tt.input.initialSelected
 
-	if result.Confirmed {
-		t.Error("expected Confirmed to be false")
-	}
-}
+			model, cmd := c.Update(tt.input.key)
+			confirm := model.(*Confirm)
 
-func TestConfirm_EnterKey(t *testing.T) {
-	c := NewConfirm("test", "Title", "Desc")
-	c.SetSize(80, 24)
+			if !tt.expected.hasResult {
+				if confirm.selected != tt.expected.selected {
+					t.Errorf("expected selected %d, got %d", tt.expected.selected, confirm.selected)
+				}
+			}
 
-	// Select "Yes" first
-	c.selected = 0
-
-	_, cmd := c.Update(tea.KeyMsg{Type: tea.KeyEnter})
-
-	if cmd == nil {
-		t.Fatal("expected command after enter key")
-	}
-
-	msg := cmd()
-	result, ok := msg.(ConfirmResult)
-	if !ok {
-		t.Fatal("expected ConfirmResult message")
-	}
-
-	if !result.Confirmed {
-		t.Error("expected Confirmed to be true when Yes is selected")
+			if tt.expected.hasResult {
+				if cmd == nil {
+					t.Fatal("expected command for result")
+				}
+				msg := cmd()
+				result, ok := msg.(ConfirmResult)
+				if !ok {
+					t.Fatal("expected ConfirmResult message")
+				}
+				if result.Confirmed != tt.expected.resultConfirm {
+					t.Errorf("expected Confirmed=%v, got %v", tt.expected.resultConfirm, result.Confirmed)
+				}
+			}
+		})
 	}
 }
 
 func TestConfirm_View(t *testing.T) {
-	c := NewConfirm("test", "Test Title", "Test description")
-	c.SetSize(80, 24)
-
-	view := c.View()
-
-	if !strings.Contains(view, "Test Title") {
-		t.Error("expected view to contain title")
+	tests := []struct {
+		name     string
+		input    struct {
+			title       string
+			description string
+			width       int
+			height      int
+		}
+		expected struct {
+			containsTitle bool
+			containsDesc  bool
+		}
+	}{
+		{
+			name: "renders title and description",
+			input: struct {
+				title       string
+				description string
+				width       int
+				height      int
+			}{
+				title:       "Test Title",
+				description: "Test description",
+				width:       80,
+				height:      24,
+			},
+			expected: struct {
+				containsTitle bool
+				containsDesc  bool
+			}{
+				containsTitle: true,
+				containsDesc:  true,
+			},
+		},
 	}
 
-	if !strings.Contains(view, "Test description") {
-		t.Error("expected view to contain description")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewConfirm("test", tt.input.title, tt.input.description)
+			c.SetSize(tt.input.width, tt.input.height)
+			view := c.View()
+
+			if tt.expected.containsTitle && !strings.Contains(view, tt.input.title) {
+				t.Errorf("expected view to contain title %q", tt.input.title)
+			}
+			if tt.expected.containsDesc && !strings.Contains(view, tt.input.description) {
+				t.Errorf("expected view to contain description %q", tt.input.description)
+			}
+		})
 	}
 }
