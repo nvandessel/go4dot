@@ -650,3 +650,102 @@ func TestKeys_Bindings(t *testing.T) {
 		})
 	}
 }
+
+func TestModel_SyncOperations_StartInlineOperation(t *testing.T) {
+	// Verify sync operations start inline operations when Config is set.
+	// Previously, sync operations used Interactive: true which would try to
+	// run huh forms inside Bubble Tea, causing UI corruption.
+	cfg := &config.Config{}
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+			{Name: "zsh"},
+		},
+		HasConfig:    true,
+		Config:       cfg,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	testCases := []struct {
+		name  string
+		key   tea.KeyMsg
+		setup func(*Model)
+	}{
+		{
+			name:  "Sync all starts operation",
+			key:   tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}},
+			setup: func(m *Model) {},
+		},
+		{
+			name:  "Sync single starts operation",
+			key:   tea.KeyMsg{Type: tea.KeyEnter},
+			setup: func(m *Model) {},
+		},
+		{
+			name: "Bulk sync starts operation",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}},
+			setup: func(m *Model) {
+				m.selectedConfigs["vim"] = true
+				m.selectedConfigs["zsh"] = true
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(s)
+			m.width = 100
+			m.height = 40
+			p := tea.NewProgram(&m, tea.WithAltScreen())
+			m.program = p
+
+			tc.setup(&m)
+
+			updatedModel, cmd := m.Update(tc.key)
+			model := updatedModel.(*Model)
+
+			if !model.operationActive {
+				t.Error("expected operationActive to be true")
+			}
+			if cmd == nil {
+				t.Error("expected a command to be returned")
+			}
+		})
+	}
+}
+
+func TestModel_ViewDashboard_ComponentWidths(t *testing.T) {
+	// Verify component widths are set correctly after WindowSizeMsg.
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := New(s)
+	sizeMsg := tea.WindowSizeMsg{Width: 120, Height: 40}
+	updatedModel, _ := m.Update(sizeMsg)
+	model := updatedModel.(*Model)
+
+	// Sidebar gets 1/3 of width
+	expectedSidebarWidth := 120 / 3
+	if model.sidebar.width != expectedSidebarWidth {
+		t.Errorf("expected sidebar width %d, got %d", expectedSidebarWidth, model.sidebar.width)
+	}
+
+	// Details gets remaining 2/3
+	expectedDetailsWidth := 120 - expectedSidebarWidth
+	if model.details.width != expectedDetailsWidth {
+		t.Errorf("expected details width %d, got %d", expectedDetailsWidth, model.details.width)
+	}
+
+	// View should render without panic
+	view := model.viewDashboard()
+	if view == "" {
+		t.Error("expected non-empty dashboard view")
+	}
+}
