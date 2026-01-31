@@ -21,6 +21,9 @@ const (
 	viewNoConfig
 	viewOperation
 	viewOnboarding
+	viewConfirm
+	viewConfigList
+	viewExternal
 )
 
 // State holds all the shared data for the dashboard.
@@ -72,6 +75,11 @@ type Model struct {
 	operations Operations
 	output     OutputPane
 	onboarding *Onboarding
+
+	// Modal views
+	confirm      *Confirm
+	configList   *ConfigListView
+	externalView *ExternalView
 }
 
 // New creates a new dashboard model.
@@ -136,6 +144,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateOperation(msg)
 	case viewOnboarding:
 		return m.updateOnboarding(msg)
+	case viewConfirm:
+		return m.updateConfirm(msg)
+	case viewConfigList:
+		return m.updateConfigList(msg)
+	case viewExternal:
+		return m.updateExternal(msg)
 	default:
 		return m.updateDashboard(msg)
 	}
@@ -366,8 +380,7 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			item, ok := m.menu.list.SelectedItem().(menuItem)
 			if ok {
-				m.setResult(item.action)
-				return m, tea.Quit
+				return m.handleMenuAction(item.action)
 			}
 		}
 	}
@@ -376,6 +389,41 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newMenu, cmd := m.menu.Update(msg)
 	m.menu = newMenu.(*Menu)
 	return m, cmd
+}
+
+// handleMenuAction processes a menu selection inline when possible
+func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
+	switch action {
+	case ActionList:
+		// Show config list view inline
+		m.configList = NewConfigListView(m.state.Configs)
+		m.configList.SetSize(m.width, m.height)
+		m.currentView = viewConfigList
+		return m, nil
+
+	case ActionExternal:
+		// Show external dependencies view inline
+		m.externalView = NewExternalView(m.state.Config, m.state.DotfilesPath, m.state.Platform)
+		m.externalView.SetSize(m.width, m.height)
+		m.currentView = viewExternal
+		return m, m.externalView.Init()
+
+	case ActionUninstall:
+		// Show confirmation dialog
+		m.confirm = NewConfirm(
+			"uninstall",
+			"Uninstall go4dot?",
+			"This will remove all symlinks and state. This action cannot be undone.",
+		).WithLabels("Yes, uninstall", "Cancel")
+		m.confirm.SetSize(m.width, m.height)
+		m.currentView = viewConfirm
+		return m, nil
+
+	default:
+		// Fall back to exiting for actions not yet handled inline
+		m.setResult(action)
+		return m, tea.Quit
+	}
 }
 
 func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -442,6 +490,90 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd := m.onboarding.Update(msg)
 		if ob, ok := model.(*Onboarding); ok {
 			m.onboarding = ob
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.confirm != nil {
+			m.confirm.SetSize(msg.Width, msg.Height)
+		}
+
+	case ConfirmResult:
+		if msg.ID == "uninstall" && msg.Confirmed {
+			// User confirmed uninstall - return to main loop to execute
+			m.setResult(ActionUninstall)
+			return m, tea.Quit
+		}
+		// Cancel or other - return to dashboard
+		m.currentView = viewDashboard
+		m.confirm = nil
+		return m, nil
+	}
+
+	if m.confirm != nil {
+		model, cmd := m.confirm.Update(msg)
+		if c, ok := model.(*Confirm); ok {
+			m.confirm = c
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateConfigList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.configList != nil {
+			m.configList.SetSize(msg.Width, msg.Height)
+		}
+
+	case ConfigListViewCloseMsg:
+		m.currentView = viewDashboard
+		m.configList = nil
+		return m, nil
+	}
+
+	if m.configList != nil {
+		model, cmd := m.configList.Update(msg)
+		if cl, ok := model.(*ConfigListView); ok {
+			m.configList = cl
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateExternal(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.externalView != nil {
+			m.externalView.SetSize(msg.Width, msg.Height)
+		}
+
+	case ExternalViewCloseMsg:
+		m.currentView = viewDashboard
+		m.externalView = nil
+		return m, nil
+	}
+
+	if m.externalView != nil {
+		model, cmd := m.externalView.Update(msg)
+		if ev, ok := model.(*ExternalView); ok {
+			m.externalView = ev
 		}
 		return m, cmd
 	}
@@ -666,6 +798,21 @@ func (m Model) View() string {
 	case viewOnboarding:
 		if m.onboarding != nil {
 			return m.onboarding.View()
+		}
+		return ""
+	case viewConfirm:
+		if m.confirm != nil {
+			return m.confirm.View()
+		}
+		return ""
+	case viewConfigList:
+		if m.configList != nil {
+			return m.configList.View()
+		}
+		return ""
+	case viewExternal:
+		if m.externalView != nil {
+			return m.externalView.View()
 		}
 		return ""
 	default:
