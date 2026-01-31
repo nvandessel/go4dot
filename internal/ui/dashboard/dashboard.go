@@ -380,10 +380,18 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Sidebar is on the left (x < sidebar.width)
 		// Details is on the right (x >= sidebar.width)
 		if msg.X < m.sidebar.width {
-			m.sidebar.Update(msg)
+			cmd = m.sidebar.Update(msg)
+			cmds = append(cmds, cmd)
+			// Update details if selection changed
+			if m.details.selectedIdx != m.sidebar.selectedIdx {
+				m.details.selectedIdx = m.sidebar.selectedIdx
+				m.details.updateContent()
+			}
+			return m, tea.Batch(cmds...)
 		} else {
 			cmd = m.details.Update(msg)
 			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
 		}
 
 	// Handle operation messages for inline operations

@@ -28,13 +28,14 @@ type DoctorView struct {
 	cfg          *config.Config
 	dotfilesPath string
 
-	result   *doctor.CheckResult
-	viewport viewport.Model
-	spinner  spinner.Model
-	width    int
-	height   int
-	ready    bool
-	loading  bool
+	result    *doctor.CheckResult
+	lastError error
+	viewport  viewport.Model
+	spinner   spinner.Model
+	width     int
+	height    int
+	ready     bool
+	loading   bool
 }
 
 // NewDoctorView creates a new doctor view
@@ -108,8 +109,10 @@ func (d *DoctorView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doctorResultMsg:
 		d.loading = false
 		if msg.err != nil {
+			d.lastError = msg.err
 			d.result = nil
 		} else {
+			d.lastError = nil
 			d.result = msg.result
 		}
 		d.updateContent()
@@ -180,6 +183,9 @@ func (d *DoctorView) View() string {
 }
 
 func (d *DoctorView) renderSummary() string {
+	if d.lastError != nil {
+		return ui.ErrorStyle.Render(fmt.Sprintf("Failed to run health checks: %v", d.lastError))
+	}
 	if d.result == nil {
 		return ui.ErrorStyle.Render("Failed to run health checks")
 	}

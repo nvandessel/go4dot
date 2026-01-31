@@ -81,6 +81,9 @@ type Onboarding struct {
 	addMoreDeps     bool
 	addMoreMachine  bool
 
+	// Machine config preset selection
+	machinePreset string
+
 	// Confirm step choice
 	confirmWrite bool
 
@@ -602,7 +605,7 @@ func (o *Onboarding) createMachinePromptForm() *huh.Form {
 }
 
 func (o *Onboarding) createMachineDetailsForm() *huh.Form {
-	var choice string
+	o.machinePreset = "" // Reset before displaying form
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -611,7 +614,7 @@ func (o *Onboarding) createMachineDetailsForm() *huh.Form {
 					huh.NewOption("Git Signing (Name, Email, GPG Key)", "git-signing"),
 					huh.NewOption("Custom", "custom"),
 				).
-				Value(&choice),
+				Value(&o.machinePreset),
 		),
 	).WithWidth(60).WithShowHelp(false)
 }
