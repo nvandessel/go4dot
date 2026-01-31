@@ -759,3 +759,199 @@ func TestModel_ViewDashboard_ComponentWidths(t *testing.T) {
 		t.Error("expected non-empty dashboard view")
 	}
 }
+
+func TestNavigationStack_PushPop(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		Config:       &config.Config{},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := New(s)
+	m.width = 100
+	m.height = 40
+
+	// Initial state - no view stack
+	if len(m.viewStack) != 0 {
+		t.Errorf("expected empty view stack, got %d", len(m.viewStack))
+	}
+	if m.currentView != viewDashboard {
+		t.Errorf("expected viewDashboard, got %v", m.currentView)
+	}
+
+	// Push doctor view
+	m.pushView(viewDoctor)
+	if len(m.viewStack) != 1 {
+		t.Errorf("expected view stack of 1, got %d", len(m.viewStack))
+	}
+	if m.viewStack[0] != viewDashboard {
+		t.Errorf("expected viewDashboard in stack, got %v", m.viewStack[0])
+	}
+	if m.currentView != viewDoctor {
+		t.Errorf("expected currentView to be viewDoctor, got %v", m.currentView)
+	}
+
+	// Push another view
+	m.pushView(viewMachine)
+	if len(m.viewStack) != 2 {
+		t.Errorf("expected view stack of 2, got %d", len(m.viewStack))
+	}
+	if m.currentView != viewMachine {
+		t.Errorf("expected currentView to be viewMachine, got %v", m.currentView)
+	}
+
+	// Pop back to doctor
+	popped := m.popView()
+	if !popped {
+		t.Error("expected popView to return true")
+	}
+	if m.currentView != viewDoctor {
+		t.Errorf("expected currentView to be viewDoctor, got %v", m.currentView)
+	}
+	if len(m.viewStack) != 1 {
+		t.Errorf("expected view stack of 1, got %d", len(m.viewStack))
+	}
+
+	// Pop back to dashboard
+	popped = m.popView()
+	if !popped {
+		t.Error("expected popView to return true")
+	}
+	if m.currentView != viewDashboard {
+		t.Errorf("expected currentView to be viewDashboard, got %v", m.currentView)
+	}
+	if len(m.viewStack) != 0 {
+		t.Errorf("expected empty view stack, got %d", len(m.viewStack))
+	}
+
+	// Pop on empty stack returns false
+	popped = m.popView()
+	if popped {
+		t.Error("expected popView to return false on empty stack")
+	}
+}
+
+func TestNavigationStack_ClearStack(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		HasConfig: true,
+	}
+
+	m := New(s)
+
+	// Push multiple views
+	m.pushView(viewMenu)
+	m.pushView(viewConfigList)
+	m.pushView(viewExternal)
+
+	if len(m.viewStack) != 3 {
+		t.Errorf("expected view stack of 3, got %d", len(m.viewStack))
+	}
+
+	// Clear the stack
+	m.clearViewStack()
+	if len(m.viewStack) != 0 {
+		t.Errorf("expected empty view stack after clear, got %d", len(m.viewStack))
+	}
+}
+
+func TestNavigationStack_DoctorViewEscapeReturns(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		Config:       &config.Config{},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+
+	m := New(s)
+	m.width = 100
+	m.height = 40
+
+	// Open doctor view with 'd' key
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+	updatedModel, _ := m.Update(msg)
+	model := updatedModel.(*Model)
+
+	if model.currentView != viewDoctor {
+		t.Errorf("expected viewDoctor, got %v", model.currentView)
+	}
+	if len(model.viewStack) != 1 {
+		t.Errorf("expected view stack of 1, got %d", len(model.viewStack))
+	}
+
+	// Press ESC to close (sends DoctorViewCloseMsg)
+	closeMsg := DoctorViewCloseMsg{}
+	updatedModel, _ = model.Update(closeMsg)
+	model = updatedModel.(*Model)
+
+	// Should return to dashboard via popView
+	if model.currentView != viewDashboard {
+		t.Errorf("expected viewDashboard after close, got %v", model.currentView)
+	}
+	if len(model.viewStack) != 0 {
+		t.Errorf("expected empty view stack after close, got %d", len(model.viewStack))
+	}
+}
+
+func TestNavigationStack_MenuToConfigListAndBack(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+			{Name: "zsh"},
+		},
+		Config:    &config.Config{},
+		HasConfig: true,
+	}
+
+	m := New(s)
+	m.width = 100
+	m.height = 40
+
+	// Open menu with tab key
+	msg := tea.KeyMsg{Type: tea.KeyTab}
+	updatedModel, _ := m.Update(msg)
+	model := updatedModel.(*Model)
+
+	if model.currentView != viewMenu {
+		t.Errorf("expected viewMenu, got %v", model.currentView)
+	}
+	if len(model.viewStack) != 1 {
+		t.Errorf("expected view stack of 1, got %d", len(model.viewStack))
+	}
+
+	// Simulate selecting "List Configs" action
+	updatedModel, _ = model.handleMenuAction(ActionList)
+	model = updatedModel.(*Model)
+
+	if model.currentView != viewConfigList {
+		t.Errorf("expected viewConfigList, got %v", model.currentView)
+	}
+	// Stack should now have dashboard and menu
+	if len(model.viewStack) != 2 {
+		t.Errorf("expected view stack of 2, got %d", len(model.viewStack))
+	}
+
+	// Close config list view
+	closeMsg := ConfigListViewCloseMsg{}
+	updatedModel, _ = model.Update(closeMsg)
+	model = updatedModel.(*Model)
+
+	// Should return to menu (the view we came from)
+	if model.currentView != viewMenu {
+		t.Errorf("expected viewMenu after close, got %v", model.currentView)
+	}
+	if len(model.viewStack) != 1 {
+		t.Errorf("expected view stack of 1, got %d", len(model.viewStack))
+	}
+}

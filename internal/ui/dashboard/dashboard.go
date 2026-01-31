@@ -62,6 +62,7 @@ type Model struct {
 	selectedConfigs map[string]bool
 	showHelp        bool
 	currentView     view
+	viewStack       []view // Stack for navigation history
 	operationActive bool   // true when an operation is running in the output pane
 	program         *tea.Program // reference for inline operations
 
@@ -125,6 +126,30 @@ func (m Model) Init() tea.Cmd {
 		return m.operations.Init()
 	}
 	return nil
+}
+
+// pushView pushes the current view onto the stack and switches to a new view
+func (m *Model) pushView(newView view) {
+	m.viewStack = append(m.viewStack, m.currentView)
+	m.currentView = newView
+}
+
+// popView returns to the previous view from the stack
+// Returns true if there was a view to pop, false if stack was empty
+func (m *Model) popView() bool {
+	if len(m.viewStack) == 0 {
+		return false
+	}
+	// Pop the last view from the stack
+	lastIdx := len(m.viewStack) - 1
+	m.currentView = m.viewStack[lastIdx]
+	m.viewStack = m.viewStack[:lastIdx]
+	return true
+}
+
+// clearViewStack clears the navigation stack
+func (m *Model) clearViewStack() {
+	m.viewStack = nil
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -233,7 +258,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state.Config != nil {
 				m.doctorView = NewDoctorView(m.state.Config, m.state.DotfilesPath)
 				m.doctorView.SetSize(m.width, m.height)
-				m.currentView = viewDoctor
+				m.pushView(viewDoctor)
 				return m, m.doctorView.Init()
 			}
 		case key.Matches(msg, keys.Install):
@@ -249,7 +274,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state.Config != nil && len(m.state.Config.MachineConfig) > 0 {
 				m.machineView = NewMachineView(m.state.Config)
 				m.machineView.SetSize(m.width, m.height)
-				m.currentView = viewMachine
+				m.pushView(viewMachine)
 				return m, m.machineView.Init()
 			}
 		case key.Matches(msg, keys.Update):
@@ -263,7 +288,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, keys.Menu):
 			m.menu.SetSize(m.width, m.height)
-			m.currentView = viewMenu
+			m.pushView(viewMenu)
 		case key.Matches(msg, keys.Enter):
 			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) && m.state.Config != nil && !m.operationActive {
 				configName := m.state.Configs[m.sidebar.selectedIdx].Name
@@ -390,7 +415,7 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Quit):
-			m.currentView = viewDashboard
+			m.popView()
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			item, ok := m.menu.list.SelectedItem().(menuItem)
 			if ok {
@@ -412,14 +437,14 @@ func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
 		// Show config list view inline
 		m.configList = NewConfigListView(m.state.Configs)
 		m.configList.SetSize(m.width, m.height)
-		m.currentView = viewConfigList
+		m.pushView(viewConfigList)
 		return m, nil
 
 	case ActionExternal:
 		// Show external dependencies view inline
 		m.externalView = NewExternalView(m.state.Config, m.state.DotfilesPath, m.state.Platform)
 		m.externalView.SetSize(m.width, m.height)
-		m.currentView = viewExternal
+		m.pushView(viewExternal)
 		return m, m.externalView.Init()
 
 	case ActionUninstall:
@@ -430,7 +455,7 @@ func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
 			"This will remove all symlinks and state. This action cannot be undone.",
 		).WithLabels("Yes, uninstall", "Cancel")
 		m.confirm.SetSize(m.width, m.height)
-		m.currentView = viewConfirm
+		m.pushView(viewConfirm)
 		return m, nil
 
 	default:
@@ -471,7 +496,7 @@ func (m *Model) startOnboarding() (tea.Model, tea.Cmd) {
 	onboarding.width = m.width
 	onboarding.height = m.height
 	m.onboarding = &onboarding
-	m.currentView = viewOnboarding
+	m.pushView(viewOnboarding)
 
 	return m, m.onboarding.Init()
 }
@@ -488,8 +513,8 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case OnboardingCompleteMsg:
 		if msg.Error != nil {
-			// Onboarding was cancelled or failed, return to no-config view
-			m.currentView = viewNoConfig
+			// Onboarding was cancelled or failed, return to previous view
+			m.popView()
 			m.onboarding = nil
 			return m, nil
 		}
@@ -526,8 +551,8 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setResult(ActionUninstall)
 			return m, tea.Quit
 		}
-		// Cancel or other - return to dashboard
-		m.currentView = viewDashboard
+		// Cancel or other - return to previous view
+		m.popView()
 		m.confirm = nil
 		return m, nil
 	}
@@ -553,7 +578,7 @@ func (m *Model) updateConfigList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case ConfigListViewCloseMsg:
-		m.currentView = viewDashboard
+		m.popView()
 		m.configList = nil
 		return m, nil
 	}
@@ -579,7 +604,7 @@ func (m *Model) updateExternal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case ExternalViewCloseMsg:
-		m.currentView = viewDashboard
+		m.popView()
 		m.externalView = nil
 		return m, nil
 	}
@@ -605,7 +630,7 @@ func (m *Model) updateDoctor(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case DoctorViewCloseMsg:
-		m.currentView = viewDashboard
+		m.popView()
 		m.doctorView = nil
 		return m, nil
 	}
@@ -631,14 +656,14 @@ func (m *Model) updateMachine(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case MachineViewCloseMsg:
-		m.currentView = viewDashboard
+		m.popView()
 		m.machineView = nil
 		return m, nil
 
 	case MachineConfigCompleteMsg:
 		// Machine config form completed - could write to file here
-		// For now, just return to dashboard
-		m.currentView = viewDashboard
+		// For now, just return to previous view
+		m.popView()
 		m.machineView = nil
 		return m, nil
 	}
