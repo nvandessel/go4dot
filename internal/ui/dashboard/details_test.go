@@ -17,6 +17,8 @@ func TestDetails_View(t *testing.T) {
 		},
 	}
 	d := NewDetails(state)
+	// Must call SetSize to initialize the viewport before View returns content
+	d.SetSize(80, 24)
 	view := d.View()
 	if !strings.Contains(view, "TEST-CONFIG") {
 		t.Errorf("expected view to contain 'TEST-CONFIG'")

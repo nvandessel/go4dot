@@ -64,6 +64,32 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 				s.ensureVisible()
 			}
 		}
+	case tea.MouseMsg:
+		// Handle mouse wheel scrolling
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if s.listOffset > 0 {
+				s.listOffset--
+			}
+		case tea.MouseButtonWheelDown:
+			maxOffset := len(s.filteredIdxs) - s.height
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			if s.listOffset < maxOffset {
+				s.listOffset++
+			}
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionRelease {
+				// Calculate which item was clicked based on mouse Y position
+				// The sidebar starts after the header/summary, adjust based on layout
+				clickedLine := msg.Y - 2 // Adjust for borders/title
+				clickedIdx := s.listOffset + clickedLine
+				if clickedIdx >= 0 && clickedIdx < len(s.filteredIdxs) {
+					s.selectedIdx = s.filteredIdxs[clickedIdx]
+				}
+			}
+		}
 	}
 	return nil
 }

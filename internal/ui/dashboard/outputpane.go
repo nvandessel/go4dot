@@ -107,9 +107,17 @@ func (o *OutputPane) formatLog(log LogEntry) string {
 	return style.Render(fmt.Sprintf("%s %s", icon, log.Message))
 }
 
-// Update handles viewport scrolling
+// Update handles viewport scrolling including mouse events
 func (o *OutputPane) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		// Forward mouse events to viewport for scrolling
+		o.viewport, cmd = o.viewport.Update(msg)
+		return cmd
+	}
+
 	o.viewport, cmd = o.viewport.Update(msg)
 	return cmd
 }

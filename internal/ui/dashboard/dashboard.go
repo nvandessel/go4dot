@@ -179,6 +179,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.updateFilter()
 			m.details.selectedIdx = m.sidebar.selectedIdx // Ensure details are updated
+			m.details.updateContent()
 			return m, nil
 		}
 
@@ -310,12 +311,23 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.sidebar.width = msg.Width / 3
 		m.sidebar.height = mainHeight
-		m.details.width = msg.Width - m.sidebar.width
-		m.details.height = mainHeight
+		detailsWidth := msg.Width - m.sidebar.width
+		m.details.SetSize(detailsWidth, mainHeight)
 		m.output.SetSize(msg.Width, outputHeight)
 		m.footer.width = msg.Width
 		m.help.width = msg.Width
 		m.help.height = msg.Height
+
+	case tea.MouseMsg:
+		// Forward mouse events to components based on position
+		// Sidebar is on the left (x < sidebar.width)
+		// Details is on the right (x >= sidebar.width)
+		if msg.X < m.sidebar.width {
+			m.sidebar.Update(msg)
+		} else {
+			cmd = m.details.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 
 	// Handle operation messages for inline operations
 	case OperationProgressMsg, OperationStepCompleteMsg, OperationLogMsg, OperationDoneMsg:
@@ -332,7 +344,11 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd = m.sidebar.Update(msg)
 	cmds = append(cmds, cmd)
 
-	m.details.selectedIdx = m.sidebar.selectedIdx
+	// Update details if selection changed
+	if m.details.selectedIdx != m.sidebar.selectedIdx {
+		m.details.selectedIdx = m.sidebar.selectedIdx
+		m.details.updateContent()
+	}
 
 	return m, tea.Batch(cmds...)
 }
@@ -722,7 +738,7 @@ type MachineStatus struct {
 // Run starts the dashboard and returns the selected action
 func Run(s State) (*Result, error) {
 	m := New(s)
-	p := tea.NewProgram(&m, tea.WithAltScreen())
+	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	m.program = p // Store program reference for inline operations
 
 	finalModel, err := p.Run()
@@ -743,7 +759,7 @@ func RunWithOperation(s State, opType OperationType, configName string, configNa
 	s.OperationArgs = configNames
 
 	m := New(s)
-	p := tea.NewProgram(&m, tea.WithAltScreen())
+	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Start the operation in a goroutine with panic recovery
 	go func() {

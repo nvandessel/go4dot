@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/nvandessel/go4dot/internal/stow"
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
@@ -17,23 +18,81 @@ type Details struct {
 	width       int
 	height      int
 	selectedIdx int // This will be passed from the sidebar
+	viewport    viewport.Model
+	ready       bool
 }
 
 // NewDetails creates a new details component.
 func NewDetails(s State) Details {
+	vp := viewport.New(0, 0)
+	vp.Style = lipgloss.NewStyle()
 	return Details{
 		state:       s,
 		selectedIdx: 0,
+		viewport:    vp,
 	}
+}
+
+// SetSize updates the details pane dimensions
+func (d *Details) SetSize(width, height int) {
+	d.width = width
+	d.height = height
+	// Account for border (2) and padding
+	contentWidth := width - 4
+	contentHeight := height - 2
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	d.viewport.Width = contentWidth
+	d.viewport.Height = contentHeight
+	d.ready = true
+	d.updateContent()
+}
+
+// Update handles messages for the details component
+func (d *Details) Update(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		// Forward mouse events to viewport for scrolling
+		d.viewport, cmd = d.viewport.Update(msg)
+		return cmd
+	}
+
+	d.viewport, cmd = d.viewport.Update(msg)
+	return cmd
+}
+
+// updateContent rebuilds the viewport content
+func (d *Details) updateContent() {
+	content := d.renderContent()
+	d.viewport.SetContent(content)
 }
 
 // View renders the details.
 func (d Details) View() string {
+	if !d.ready {
+		return ""
+	}
+	return d.viewport.View()
+}
+
+// renderContent generates the content string for the details pane
+func (d Details) renderContent() string {
 	if len(d.state.Configs) == 0 {
 		return lipgloss.Place(d.width-2, d.height, lipgloss.Center, lipgloss.Center,
 			ui.SubtleStyle.Render("No configuration selected"),
 		)
 	}
+
+	if d.selectedIdx >= len(d.state.Configs) {
+		return ""
+	}
+
 	cfg := d.state.Configs[d.selectedIdx]
 	linkStatus := d.state.LinkStatus[cfg.Name]
 
@@ -50,23 +109,7 @@ func (d Details) View() string {
 		Background(ui.PrimaryColor).
 		Padding(0, 1)
 
-	// TODO: This is duplicated from sidebar.go, should be refactored
-	driftMap := make(map[string]*stow.DriftResult)
-	if d.state.DriftSummary != nil {
-		for i := range d.state.DriftSummary.Results {
-			r := &d.state.DriftSummary.Results[i]
-			driftMap[r.ConfigName] = r
-		}
-	}
-	// statusInfo := d.getConfigStatusInfo(cfg, linkStatus, driftMap[cfg.Name])
-
 	title := titleStyle.Render(strings.ToUpper(cfg.Name))
-	// statusBadge := lipgloss.NewStyle().
-	// 	Foreground(ui.TextColor).
-	// 	Background(ui.SubtleColor).
-	// 	Padding(0, 1).
-	// 	MarginLeft(1).
-	// 	Render(statusInfo.statusText)
 
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, title))
 	lines = append(lines, "")
@@ -139,13 +182,7 @@ func (d Details) View() string {
 			Align(lipgloss.Right).
 			Width(d.width - 4)
 
-		currentHeight := lipgloss.Height(strings.Join(lines, "\n"))
-		if d.height > currentHeight+2 {
-			lines = append(lines, strings.Repeat("\n", d.height-currentHeight-2))
-			lines = append(lines, statsStyle.Render(statsLine))
-		} else {
-			lines = append(lines, statsStyle.Render(statsLine))
-		}
+		lines = append(lines, statsStyle.Render(statsLine))
 	}
 
 	return strings.Join(lines, "\n")

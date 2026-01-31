@@ -99,6 +99,72 @@ func TestSidebar_Update_Navigation(t *testing.T) {
 	}
 }
 
+func TestSidebar_MouseScrolling(t *testing.T) {
+	initialState := State{
+		Configs: make([]config.ConfigItem, 20), // 20 items
+	}
+	for i := 0; i < 20; i++ {
+		initialState.Configs[i] = config.ConfigItem{Name: strconv.Itoa(i)}
+	}
+
+	tests := []struct {
+		name               string
+		height             int
+		initialListOffset  int
+		mouseButton        tea.MouseButton
+		expectedListOffset int
+	}{
+		{
+			name:               "Wheel up from offset 5",
+			height:             10,
+			initialListOffset:  5,
+			mouseButton:        tea.MouseButtonWheelUp,
+			expectedListOffset: 4,
+		},
+		{
+			name:               "Wheel up at top stays at 0",
+			height:             10,
+			initialListOffset:  0,
+			mouseButton:        tea.MouseButtonWheelUp,
+			expectedListOffset: 0,
+		},
+		{
+			name:               "Wheel down from offset 0",
+			height:             10,
+			initialListOffset:  0,
+			mouseButton:        tea.MouseButtonWheelDown,
+			expectedListOffset: 1,
+		},
+		{
+			name:               "Wheel down at max stays at max",
+			height:             10,
+			initialListOffset:  10, // max offset for 20 items with height 10
+			mouseButton:        tea.MouseButtonWheelDown,
+			expectedListOffset: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSidebar(initialState, make(map[string]bool))
+			s.height = tt.height
+			s.listOffset = tt.initialListOffset
+
+			msg := tea.MouseMsg{
+				Button: tt.mouseButton,
+				Action: tea.MouseActionPress,
+				X:      10,
+				Y:      5,
+			}
+			s.Update(msg)
+
+			if s.listOffset != tt.expectedListOffset {
+				t.Errorf("expected list offset to be %d, but got %d", tt.expectedListOffset, s.listOffset)
+			}
+		})
+	}
+}
+
 func TestSidebar_ensureVisible(t *testing.T) {
 	initialState := State{
 		Configs: make([]config.ConfigItem, 20), // 20 items
