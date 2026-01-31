@@ -165,8 +165,9 @@ func renderPaneWithTitle(content, title string, width, height int, borderColor l
 
 	// Calculate dashes needed
 	// Border chars: ╭ (1) + ─ (1) + space (1) + title + space (1) + ─... + ╮ (1)
+	// Fixed chars = 5: ╭ + ─ + space before title + space after title + ╮
 	leftDash := borderStyle.Render("─ ")
-	rightPadding := width - 4 - titleLen // -4 for: ╭, ─, space, ╮
+	rightPadding := width - 5 - titleLen
 	if rightPadding < 0 {
 		rightPadding = 0
 	}
