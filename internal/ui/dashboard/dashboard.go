@@ -194,7 +194,8 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(msg, keys.Sync):
 			if m.state.Config != nil && !m.operationActive {
-				opts := SyncOptions{Force: false, Interactive: true}
+				// Interactive: false because we can't run huh forms inside Bubble Tea
+				opts := SyncOptions{Force: false, Interactive: false}
 				cmd := m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
 					_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
 					return err
@@ -233,7 +234,8 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Enter):
 			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) && m.state.Config != nil && !m.operationActive {
 				configName := m.state.Configs[m.sidebar.selectedIdx].Name
-				opts := SyncOptions{Force: false, Interactive: true}
+				// Interactive: false because we can't run huh forms inside Bubble Tea
+				opts := SyncOptions{Force: false, Interactive: false}
 				cmd := m.StartInlineOperation(OpSyncSingle, configName, nil, func(runner *OperationRunner) error {
 					_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, configName, opts)
 					return err
@@ -272,7 +274,8 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for name := range m.selectedConfigs {
 					names = append(names, name)
 				}
-				opts := SyncOptions{Force: false, Interactive: true}
+				// Interactive: false because we can't run huh forms inside Bubble Tea
+				opts := SyncOptions{Force: false, Interactive: false}
 				cmd := m.StartInlineOperation(OpBulkSync, "", names, func(runner *OperationRunner) error {
 					_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, names, opts)
 					return err
@@ -603,7 +606,7 @@ func (m Model) viewDashboard() string {
 	sidebarView := renderPaneWithTitle(
 		m.sidebar.View(),
 		sidebarTitle,
-		m.sidebar.width-2,
+		m.sidebar.width,
 		m.sidebar.height,
 		ui.SubtleColor,
 	)
@@ -612,7 +615,7 @@ func (m Model) viewDashboard() string {
 	detailsView := renderPaneWithTitle(
 		m.details.View(),
 		"Details",
-		m.details.width-2,
+		m.details.width,
 		m.details.height,
 		ui.PrimaryColor,
 	)
@@ -631,7 +634,7 @@ func (m Model) viewDashboard() string {
 	outputView := renderPaneWithTitle(
 		m.output.View(),
 		outputTitle,
-		m.width-2,
+		m.width,
 		m.output.height,
 		ui.SubtleColor,
 	)

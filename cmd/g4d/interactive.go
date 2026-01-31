@@ -82,35 +82,26 @@ func runInteractive(cmd *cobra.Command, args []string) {
 		cfg, configPath, err := config.LoadFromDiscovery()
 		hasConfig := err == nil && cfg != nil
 
-		var result *dashboard.Result
+		// Build dashboard state - works for both config and no-config cases
+		var dotfilesPath string
+		var driftSummary *stow.DriftSummary
+		var linkStatus map[string]*stow.ConfigLinkStatus
+		var dashStatus []dashboard.MachineStatus
+		var allConfigs []config.ConfigItem
+		hasBaseline := false
 
-		if !hasConfig {
-			// No config found - show polished init prompt
-			result = runNoConfigPrompt()
-			err = nil
-		} else {
-			// Config exists - show health dashboard
-			dotfilesPath := filepath.Dir(configPath)
+		if hasConfig {
+			dotfilesPath = filepath.Dir(configPath)
 			st, _ := state.Load()
 			if st == nil {
 				st = state.New()
 			}
 
-			var driftSummary *stow.DriftSummary
-			hasBaseline := false
-			if st != nil {
-				driftSummary, _ = stow.FullDriftCheck(cfg, dotfilesPath)
-				// Check if we have any stored symlink counts (indicates prior sync)
-				hasBaseline = len(st.SymlinkCounts) > 0
-			}
-
-			// Get link status for all configs
-			linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
+			driftSummary, _ = stow.FullDriftCheck(cfg, dotfilesPath)
+			hasBaseline = len(st.SymlinkCounts) > 0
+			linkStatus, _ = stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
 
 			machineStatus := machine.CheckMachineConfigStatus(cfg)
-
-			// Convert to dashboard type
-			var dashStatus []dashboard.MachineStatus
 			for _, s := range machineStatus {
 				dashStatus = append(dashStatus, dashboard.MachineStatus{
 					ID:          s.ID,
@@ -119,23 +110,25 @@ func runInteractive(cmd *cobra.Command, args []string) {
 				})
 			}
 
-			allConfigs := cfg.GetAllConfigs()
-			state := dashboard.State{
-				Platform:       p,
-				DriftSummary:   driftSummary,
-				LinkStatus:     linkStatus,
-				MachineStatus:  dashStatus,
-				Configs:        allConfigs,
-				Config:         cfg, // Full config for inline operations
-				DotfilesPath:   dotfilesPath,
-				UpdateMsg:      updateMsg,
-				HasBaseline:    hasBaseline,
-				HasConfig:      len(allConfigs) > 0,
-				FilterText:     lastFilter,
-				SelectedConfig: lastSelected,
-			}
-			result, err = dashboard.Run(state)
+			allConfigs = cfg.GetAllConfigs()
 		}
+
+		// Always use the dashboard - it handles no-config case with viewNoConfig
+		dashState := dashboard.State{
+			Platform:       p,
+			DriftSummary:   driftSummary,
+			LinkStatus:     linkStatus,
+			MachineStatus:  dashStatus,
+			Configs:        allConfigs,
+			Config:         cfg,
+			DotfilesPath:   dotfilesPath,
+			UpdateMsg:      updateMsg,
+			HasBaseline:    hasBaseline,
+			HasConfig:      hasConfig,
+			FilterText:     lastFilter,
+			SelectedConfig: lastSelected,
+		}
+		result, err := dashboard.Run(dashState)
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -157,35 +150,6 @@ func runInteractive(cmd *cobra.Command, args []string) {
 			return
 		}
 	}
-}
-
-// runNoConfigPrompt shows a polished prompt when no config exists
-func runNoConfigPrompt() *dashboard.Result {
-	cwd, _ := os.Getwd()
-
-	ui.PrintBanner(Version)
-	fmt.Printf("\n  No .go4dot.yaml found in %s\n\n", filepath.Base(cwd))
-
-	var initHere bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Would you like to initialize go4dot here?").
-				Description("This will scan for configs and create a .go4dot.yaml file").
-				Affirmative("Yes, set up go4dot").
-				Negative("No, quit").
-				Value(&initHere),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return &dashboard.Result{Action: dashboard.ActionQuit}
-	}
-
-	if initHere {
-		return &dashboard.Result{Action: dashboard.ActionInit}
-	}
-	return &dashboard.Result{Action: dashboard.ActionQuit}
 }
 
 // handleAction processes the user's action and returns true if we should exit
@@ -224,6 +188,9 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 						return false
 					}
 				}
+				// Clear screen before starting dashboard to prevent UI artifacts
+				// from huh forms and fmt.Printf output
+				fmt.Print("\033[H\033[2J")
 				// Run install within dashboard
 				runInstallInDashboard(newCfg, dotfilesPath)
 			}

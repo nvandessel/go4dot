@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
@@ -212,6 +213,41 @@ func TestRenderPaneWithTitle(t *testing.T) {
 			// For valid dimensions, expect non-empty result
 			if tt.width >= 5 && tt.height >= 3 && result == "" {
 				t.Error("expected non-empty result for valid dimensions")
+			}
+		})
+	}
+}
+
+func TestRenderPaneWithTitle_BorderWidth(t *testing.T) {
+	// Verify that rendered pane has exact width specified.
+	// Previously had off-by-one error where borders were 1 char too wide.
+	tests := []struct {
+		name   string
+		width  int
+		height int
+	}{
+		{"standard size", 80, 20},
+		{"wide terminal", 120, 30},
+		{"narrow terminal", 40, 15},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := "Test content"
+			title := "Title"
+
+			rendered := renderPaneWithTitle(content, title, tt.width, tt.height, ui.PrimaryColor)
+			lines := strings.Split(rendered, "\n")
+
+			for i, line := range lines {
+				lineWidth := lipgloss.Width(line)
+				if lineWidth != tt.width {
+					t.Errorf("line %d: expected width %d, got %d", i, tt.width, lineWidth)
+				}
+			}
+
+			if len(lines) != tt.height {
+				t.Errorf("expected %d lines, got %d", tt.height, len(lines))
 			}
 		})
 	}
