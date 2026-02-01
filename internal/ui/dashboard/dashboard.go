@@ -786,20 +786,31 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state.HasConfig = true
 				m.state.Configs = m.pendingNewConfig.GetAllConfigs()
 
-				// Reinitialize panels with the new config
+				// Reinitialize all panels with the new config
+				m.summaryPanel = NewSummaryPanel(m.state)
 				m.configsPanel = NewConfigsPanel(m.state, m.selectedConfigs)
 				m.healthPanel = NewHealthPanel(m.state.Config, m.state.DotfilesPath)
 				m.overridesPanel = NewOverridesPanel(m.state.Config)
 				m.externalPanel = NewExternalPanel(m.state.Config, m.state.DotfilesPath, m.state.Platform)
 				m.detailsPanel = NewDetailsPanel(m.state)
 				m.detailsPanel.SetPanels(m.configsPanel, m.healthPanel, m.overridesPanel, m.externalPanel)
+				m.outputPanel = NewOutputPanel()
 
-				// Re-register panels
+				// Re-register all panels
+				m.panels[PanelSummary] = m.summaryPanel
 				m.panels[PanelConfigs] = m.configsPanel
 				m.panels[PanelHealth] = m.healthPanel
 				m.panels[PanelOverrides] = m.overridesPanel
 				m.panels[PanelExternal] = m.externalPanel
 				m.panels[PanelDetails] = m.detailsPanel
+				m.panels[PanelOutput] = m.outputPanel
+
+				// Apply layout to set panel dimensions
+				m.layout.Calculate(m.width, m.height)
+				m.layout.ApplyToPanels(m.panels)
+
+				// Set initial focus
+				m.configsPanel.SetFocused(true)
 
 				// Clear pending state
 				m.pendingNewConfig = nil
@@ -838,20 +849,31 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state.HasConfig = true
 					m.state.Configs = m.pendingNewConfig.GetAllConfigs()
 
-					// Reinitialize panels with the new config
+					// Reinitialize all panels with the new config
+					m.summaryPanel = NewSummaryPanel(m.state)
 					m.configsPanel = NewConfigsPanel(m.state, m.selectedConfigs)
 					m.healthPanel = NewHealthPanel(m.state.Config, m.state.DotfilesPath)
 					m.overridesPanel = NewOverridesPanel(m.state.Config)
 					m.externalPanel = NewExternalPanel(m.state.Config, m.state.DotfilesPath, m.state.Platform)
 					m.detailsPanel = NewDetailsPanel(m.state)
 					m.detailsPanel.SetPanels(m.configsPanel, m.healthPanel, m.overridesPanel, m.externalPanel)
+					m.outputPanel = NewOutputPanel()
 
-					// Re-register panels
+					// Re-register all panels
+					m.panels[PanelSummary] = m.summaryPanel
 					m.panels[PanelConfigs] = m.configsPanel
 					m.panels[PanelHealth] = m.healthPanel
 					m.panels[PanelOverrides] = m.overridesPanel
 					m.panels[PanelExternal] = m.externalPanel
 					m.panels[PanelDetails] = m.detailsPanel
+					m.panels[PanelOutput] = m.outputPanel
+
+					// Apply layout to set panel dimensions
+					m.layout.Calculate(m.width, m.height)
+					m.layout.ApplyToPanels(m.panels)
+
+					// Set initial focus
+					m.configsPanel.SetFocused(true)
 				}
 			}
 
