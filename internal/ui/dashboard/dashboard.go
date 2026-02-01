@@ -376,7 +376,11 @@ func (m *Model) handleFilterMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterText = m.filterText[:len(m.filterText)-1]
 		}
 	default:
-		m.filterText += msg.String()
+		// Only append printable characters (single runes), ignore special keys
+		keyStr := msg.String()
+		if len(keyStr) == 1 && keyStr[0] >= 32 && keyStr[0] < 127 {
+			m.filterText += keyStr
+		}
 	}
 	m.configsPanel.SetFilter(m.filterText)
 	m.updateDetailsContext()
