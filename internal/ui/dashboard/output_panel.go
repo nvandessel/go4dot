@@ -31,7 +31,7 @@ func NewOutputPanel() *OutputPanel {
 	vp.Style = lipgloss.NewStyle()
 
 	return &OutputPanel{
-		BasePanel: NewBasePanel(PanelOutput, "Output"),
+		BasePanel: NewBasePanel(PanelOutput, "0 Output"),
 		viewport:  vp,
 		logs:      []LogEntry{},
 	}

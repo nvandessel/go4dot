@@ -41,7 +41,7 @@ func NewHealthPanel(cfg *config.Config, dotfilesPath string) *HealthPanel {
 	s.Style = lipgloss.NewStyle().Foreground(ui.PrimaryColor)
 
 	return &HealthPanel{
-		BasePanel:    NewBasePanel(PanelHealth, "Health"),
+		BasePanel:    NewBasePanel(PanelHealth, "2 Health"),
 		cfg:          cfg,
 		dotfilesPath: dotfilesPath,
 		spinner:      s,

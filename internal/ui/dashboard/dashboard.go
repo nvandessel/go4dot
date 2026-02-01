@@ -401,7 +401,9 @@ func (m *Model) handlePanelNavigation(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, keys.PanelDown):
 		m.focusManager.MoveDown()
 
-	// Direct panel jump (1-7)
+	// Direct panel jump (0-6): 0=Output, 1=Summary, 2=Health, etc.
+	case key.Matches(msg, keys.Panel0):
+		m.focusManager.JumpToPanel(0)
 	case key.Matches(msg, keys.Panel1):
 		m.focusManager.JumpToPanel(1)
 	case key.Matches(msg, keys.Panel2):
@@ -414,8 +416,6 @@ func (m *Model) handlePanelNavigation(msg tea.KeyMsg) tea.Cmd {
 		m.focusManager.JumpToPanel(5)
 	case key.Matches(msg, keys.Panel6):
 		m.focusManager.JumpToPanel(6)
-	case key.Matches(msg, keys.Panel7):
-		m.focusManager.JumpToPanel(7)
 
 	default:
 		return nil
@@ -1090,11 +1090,11 @@ func (m Model) viewDashboard() string {
 	)
 
 	// Build configs panel title with filter status
-	configsTitle := "Configs"
+	configsTitle := "5 Configs"
 	totalConfigs := m.configsPanel.GetTotalCount()
 	filteredConfigs := m.configsPanel.GetFilteredCount()
 	if m.filterText != "" {
-		configsTitle = fmt.Sprintf("Configs (%d/%d)", filteredConfigs, totalConfigs)
+		configsTitle = fmt.Sprintf("5 Configs (%d/%d)", filteredConfigs, totalConfigs)
 	}
 
 	// Render main panels
@@ -1115,9 +1115,9 @@ func (m Model) viewDashboard() string {
 	)
 
 	// Output panel title
-	outputTitle := "Output"
+	outputTitle := "0 Output"
 	if m.operationActive {
-		outputTitle = "Output (running...)"
+		outputTitle = "0 Output (running...)"
 	}
 
 	outputView := RenderPanelFrame(

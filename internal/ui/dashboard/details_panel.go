@@ -3,12 +3,14 @@ package dashboard
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nvandessel/go4dot/internal/doctor"
+	"github.com/nvandessel/go4dot/internal/stow"
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
@@ -46,7 +48,7 @@ func NewDetailsPanel(state State) *DetailsPanel {
 	vp.Style = lipgloss.NewStyle()
 
 	return &DetailsPanel{
-		BasePanel: NewBasePanel(PanelDetails, "Details"),
+		BasePanel: NewBasePanel(PanelDetails, "6 Details"),
 		state:     state,
 		viewport:  vp,
 		context:   DetailsContextConfigs,
@@ -182,28 +184,10 @@ func (p *DetailsPanel) renderConfigDetails() string {
 	if linkStatus != nil {
 		lines = append(lines, headerStyle.Render("FILESYSTEM MAPPINGS"))
 
-		for _, f := range linkStatus.Files {
-			icon := okStyle.Render("✓")
-			if !f.IsLinked {
-				if strings.Contains(strings.ToLower(f.Issue), "conflict") ||
-					strings.Contains(strings.ToLower(f.Issue), "exists") ||
-					strings.Contains(strings.ToLower(f.Issue), "elsewhere") {
-					icon = warnStyle.Render("⚠")
-				} else {
-					icon = errStyle.Render("✗")
-				}
-			}
-
-			source := f.RelPath
-			target := filepath.Join("~", f.RelPath)
-
-			mapping := fmt.Sprintf("%s %s %s %s", icon, source, subtleStyle.Render("→"), target)
-			lines = append(lines, mapping)
-
-			if !f.IsLinked && f.Issue != "" {
-				lines = append(lines, subtleStyle.Render("    └─ "+f.Issue))
-			}
-		}
+		// Build and render file tree
+		tree := buildFileTree(linkStatus.Files)
+		treeLines := renderFileTree(tree, "", okStyle, warnStyle, errStyle, subtleStyle)
+		lines = append(lines, treeLines...)
 		lines = append(lines, "")
 	}
 
@@ -244,6 +228,111 @@ func (p *DetailsPanel) renderConfigDetails() string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// fileTreeNode represents a node in the file tree (either a directory or file)
+type fileTreeNode struct {
+	name     string
+	isDir    bool
+	isLinked bool
+	issue    string
+	children map[string]*fileTreeNode
+}
+
+// buildFileTree creates a tree structure from flat file paths
+func buildFileTree(files []stow.FileStatus) *fileTreeNode {
+	root := &fileTreeNode{
+		name:     "/",
+		isDir:    true,
+		children: make(map[string]*fileTreeNode),
+	}
+
+	for _, f := range files {
+		parts := strings.Split(f.RelPath, string(filepath.Separator))
+		current := root
+
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+
+			isLast := i == len(parts)-1
+
+			if current.children == nil {
+				current.children = make(map[string]*fileTreeNode)
+			}
+
+			child, exists := current.children[part]
+			if !exists {
+				child = &fileTreeNode{
+					name:     part,
+					isDir:    !isLast,
+					children: make(map[string]*fileTreeNode),
+				}
+				current.children[part] = child
+			}
+
+			if isLast {
+				child.isLinked = f.IsLinked
+				child.issue = f.Issue
+				child.isDir = false
+			}
+
+			current = child
+		}
+	}
+
+	return root
+}
+
+// renderFileTree renders the tree structure as lines with proper indentation
+func renderFileTree(node *fileTreeNode, indent string, okStyle, warnStyle, errStyle, subtleStyle lipgloss.Style) []string {
+	var lines []string
+
+	// Sort children: directories first, then files, both alphabetically
+	var dirs, files []string
+	for name, child := range node.children {
+		if child.isDir {
+			dirs = append(dirs, name)
+		} else {
+			files = append(files, name)
+		}
+	}
+	sort.Strings(dirs)
+	sort.Strings(files)
+
+	// Render directories first
+	for _, name := range dirs {
+		child := node.children[name]
+		folderIcon := subtleStyle.Render("▼")
+		folderName := subtleStyle.Render(name + "/")
+		lines = append(lines, fmt.Sprintf("%s%s %s", indent, folderIcon, folderName))
+		childLines := renderFileTree(child, indent+"  ", okStyle, warnStyle, errStyle, subtleStyle)
+		lines = append(lines, childLines...)
+	}
+
+	// Then render files
+	for _, name := range files {
+		child := node.children[name]
+		var icon string
+		if child.isLinked {
+			icon = okStyle.Render("✓")
+		} else if strings.Contains(strings.ToLower(child.issue), "conflict") ||
+			strings.Contains(strings.ToLower(child.issue), "exists") ||
+			strings.Contains(strings.ToLower(child.issue), "elsewhere") {
+			icon = warnStyle.Render("⚠")
+		} else {
+			icon = errStyle.Render("✗")
+		}
+
+		lines = append(lines, fmt.Sprintf("%s%s %s", indent, icon, name))
+
+		if !child.isLinked && child.issue != "" {
+			lines = append(lines, subtleStyle.Render(indent+"  └─ "+child.issue))
+		}
+	}
+
+	return lines
 }
 
 func (p *DetailsPanel) renderHealthDetails() string {

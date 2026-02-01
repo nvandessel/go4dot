@@ -30,7 +30,7 @@ func NewOverridesPanel(cfg *config.Config) *OverridesPanel {
 	}
 
 	return &OverridesPanel{
-		BasePanel:     NewBasePanel(PanelOverrides, "Overrides"),
+		BasePanel:     NewBasePanel(PanelOverrides, "3 Overrides"),
 		cfg:           cfg,
 		machineStatus: status,
 	}

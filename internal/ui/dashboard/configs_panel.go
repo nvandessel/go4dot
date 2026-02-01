@@ -37,7 +37,7 @@ func NewConfigsPanel(state State, selected map[string]bool) *ConfigsPanel {
 	}
 
 	return &ConfigsPanel{
-		BasePanel:    NewBasePanel(PanelConfigs, "Configs"),
+		BasePanel:    NewBasePanel(PanelConfigs, "5 Configs"),
 		state:        state,
 		filteredIdxs: filteredIdxs,
 		selected:     selected,

@@ -201,20 +201,21 @@ func (fm *FocusManager) MoveDown() {
 	}
 }
 
-// JumpToPanel directly focuses a panel by number (1-7)
+// JumpToPanel directly focuses a panel by number (0-6)
+// 0=Output, 1=Summary, 2=Health, 3=Overrides, 4=External, 5=Configs, 6=Details
 func (fm *FocusManager) JumpToPanel(num int) {
-	if num < 1 || num > panelCount {
+	if num < 0 || num >= panelCount {
 		return
 	}
-	// Map numbers to panels in logical order
+	// Map numbers to panels: 0=Output (console), then 1-6 for others
 	panels := []PanelID{
+		PanelOutput,    // 0
 		PanelSummary,   // 1
 		PanelHealth,    // 2
 		PanelOverrides, // 3
 		PanelExternal,  // 4
 		PanelConfigs,   // 5
 		PanelDetails,   // 6
-		PanelOutput,    // 7
 	}
-	fm.currentFocus = panels[num-1]
+	fm.currentFocus = panels[num]
 }

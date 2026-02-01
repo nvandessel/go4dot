@@ -80,7 +80,7 @@ func (f Footer) View() string {
 
 	// Global shortcuts at lower priority
 	allActions = append(allActions,
-		action{"1-7", "Jump", 4},
+		action{"0-6", "Jump", 4},
 		action{"ctrl+hjkl", "Move", 5},
 	)
 

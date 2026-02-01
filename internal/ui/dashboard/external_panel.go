@@ -42,7 +42,7 @@ func NewExternalPanel(cfg *config.Config, dotfilesPath string, plat *platform.Pl
 	s.Style = lipgloss.NewStyle().Foreground(ui.PrimaryColor)
 
 	return &ExternalPanel{
-		BasePanel:    NewBasePanel(PanelExternal, "External"),
+		BasePanel:    NewBasePanel(PanelExternal, "4 External"),
 		cfg:          cfg,
 		dotfilesPath: dotfilesPath,
 		platform:     plat,

@@ -32,14 +32,14 @@ type keyMap struct {
 	PanelUp    key.Binding
 	PanelDown  key.Binding
 
-	// Direct panel jump (1-7)
-	Panel1 key.Binding
-	Panel2 key.Binding
-	Panel3 key.Binding
-	Panel4 key.Binding
-	Panel5 key.Binding
-	Panel6 key.Binding
-	Panel7 key.Binding
+	// Direct panel jump (0-6)
+	Panel0 key.Binding // Output/Console
+	Panel1 key.Binding // Summary
+	Panel2 key.Binding // Health
+	Panel3 key.Binding // Overrides
+	Panel4 key.Binding // External
+	Panel5 key.Binding // Configs
+	Panel6 key.Binding // Details
 }
 
 var keys = keyMap{
@@ -137,7 +137,11 @@ var keys = keyMap{
 		key.WithHelp("ctrl+j", "panel down"),
 	),
 
-	// Direct panel jump
+	// Direct panel jump (0=output, 1-6 for others)
+	Panel0: key.NewBinding(
+		key.WithKeys("0"),
+		key.WithHelp("0", "output"),
+	),
 	Panel1: key.NewBinding(
 		key.WithKeys("1"),
 		key.WithHelp("1", "summary"),
@@ -161,9 +165,5 @@ var keys = keyMap{
 	Panel6: key.NewBinding(
 		key.WithKeys("6"),
 		key.WithHelp("6", "details"),
-	),
-	Panel7: key.NewBinding(
-		key.WithKeys("7"),
-		key.WithHelp("7", "output"),
 	),
 }

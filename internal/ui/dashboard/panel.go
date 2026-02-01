@@ -122,7 +122,8 @@ func (b *BasePanel) ContentHeight() int {
 	return h
 }
 
-// RenderPanelFrame renders content inside a panel frame with title and focus styling
+// RenderPanelFrame renders content inside a panel frame with lazygit-style [N] title
+// All panels get full boxes, focused panels have highlighted borders
 func RenderPanelFrame(content, title string, width, height int, focused bool) string {
 	if width < 5 || height < 3 {
 		return ""
@@ -140,18 +141,18 @@ func RenderPanelFrame(content, title string, width, height int, focused bool) st
 	borderStyle := lipgloss.NewStyle().
 		Foreground(borderColor)
 
-	// Build top border with inline title: ╭─ Title ─────────╮
-	titleText := titleStyle.Render(title)
-	titleLen := lipgloss.Width(title)
+	// Format title with brackets: "5 Configs" -> "[5] Configs"
+	formattedTitle := formatPanelTitle(title)
+	titleText := titleStyle.Render(formattedTitle)
+	titleLen := lipgloss.Width(formattedTitle)
 
-	leftDash := borderStyle.Render("─ ")
-	rightPadding := width - 5 - titleLen
+	// Top border: ╭─[N] Title─────────────────╮
+	rightPadding := width - 4 - titleLen
 	if rightPadding < 0 {
 		rightPadding = 0
 	}
 	rightDashes := borderStyle.Render(strings.Repeat("─", rightPadding))
-
-	topBorder := borderStyle.Render("╭") + leftDash + titleText + " " + rightDashes + borderStyle.Render("╮")
+	topBorder := borderStyle.Render("╭─") + titleText + borderStyle.Render("─") + rightDashes + borderStyle.Render("╮")
 
 	// Bottom border: ╰────────────────╯
 	bottomDashes := strings.Repeat("─", width-2)
@@ -159,7 +160,7 @@ func RenderPanelFrame(content, title string, width, height int, focused bool) st
 
 	// Side borders with content
 	lines := strings.Split(content, "\n")
-	contentHeight := height - 2 // Subtract top and bottom borders
+	contentHeight := height - 2
 
 	var middleLines []string
 	for i := 0; i < contentHeight; i++ {
@@ -167,15 +168,13 @@ func RenderPanelFrame(content, title string, width, height int, focused bool) st
 		if i < len(lines) {
 			line = lines[i]
 		}
-		// Ensure line fits width (accounting for borders and padding)
 		lineWidth := lipgloss.Width(line)
-		innerWidth := width - 4 // -2 for borders, -2 for padding
+		innerWidth := width - 4
 		if innerWidth < 0 {
 			innerWidth = 0
 		}
 		if lineWidth > innerWidth {
-			// Truncate - this is simplistic, proper truncation would need rune handling
-			line = line[:innerWidth]
+			line = truncateString(line, innerWidth)
 		}
 		padding := innerWidth - lipgloss.Width(line)
 		if padding < 0 {
@@ -188,7 +187,35 @@ func RenderPanelFrame(content, title string, width, height int, focused bool) st
 	return topBorder + "\n" + strings.Join(middleLines, "\n") + "\n" + bottomBorder
 }
 
-// RenderPanelFrameCompact renders a more compact frame for mini panels
+// formatPanelTitle converts "5 Configs" to "[5] Configs"
+func formatPanelTitle(title string) string {
+	if len(title) > 0 && title[0] >= '0' && title[0] <= '9' {
+		// Find the space after the number
+		spaceIdx := strings.Index(title, " ")
+		if spaceIdx > 0 {
+			num := title[:spaceIdx]
+			rest := title[spaceIdx+1:]
+			return "[" + num + "] " + rest
+		}
+	}
+	return title
+}
+
+// truncateString truncates a string to fit within maxWidth
+func truncateString(s string, maxWidth int) string {
+	if lipgloss.Width(s) <= maxWidth {
+		return s
+	}
+	// Simple truncation - could be improved for proper rune handling
+	for i := len(s) - 1; i >= 0; i-- {
+		if lipgloss.Width(s[:i]) <= maxWidth {
+			return s[:i]
+		}
+	}
+	return ""
+}
+
+// RenderPanelFrameCompact renders a compact frame for mini panels with [N] title
 func RenderPanelFrameCompact(content, title string, width, height int, focused bool) string {
 	if width < 3 || height < 2 {
 		return ""
@@ -206,26 +233,26 @@ func RenderPanelFrameCompact(content, title string, width, height int, focused b
 	borderStyle := lipgloss.NewStyle().
 		Foreground(borderColor)
 
-	// Shorter title style for mini panels
-	displayTitle := title
-	maxTitleLen := width - 4
+	// Format and possibly truncate title
+	formattedTitle := formatPanelTitle(title)
+	maxTitleLen := width - 5
 	if maxTitleLen < 3 {
 		maxTitleLen = 3
 	}
-	if len(displayTitle) > maxTitleLen {
-		displayTitle = displayTitle[:maxTitleLen-1] + "…"
+	if lipgloss.Width(formattedTitle) > maxTitleLen {
+		formattedTitle = truncateString(formattedTitle, maxTitleLen-1) + "…"
 	}
 
-	titleText := titleStyle.Render(displayTitle)
-	titleLen := lipgloss.Width(displayTitle)
+	titleText := titleStyle.Render(formattedTitle)
+	titleLen := lipgloss.Width(formattedTitle)
 
+	// Top border: ╭─[N] Title───╮
 	rightPadding := width - 4 - titleLen
 	if rightPadding < 0 {
 		rightPadding = 0
 	}
 	rightDashes := borderStyle.Render(strings.Repeat("─", rightPadding))
-
-	topBorder := borderStyle.Render("╭─") + titleText + " " + rightDashes + borderStyle.Render("╮")
+	topBorder := borderStyle.Render("╭─") + titleText + borderStyle.Render("─") + rightDashes + borderStyle.Render("╮")
 
 	bottomDashes := strings.Repeat("─", width-2)
 	bottomBorder := borderStyle.Render("╰" + bottomDashes + "╯")
@@ -245,7 +272,7 @@ func RenderPanelFrameCompact(content, title string, width, height int, focused b
 			innerWidth = 0
 		}
 		if lineWidth > innerWidth {
-			line = line[:innerWidth]
+			line = truncateString(line, innerWidth)
 		}
 		padding := innerWidth - lipgloss.Width(line)
 		if padding < 0 {

@@ -18,7 +18,7 @@ type SummaryPanel struct {
 // NewSummaryPanel creates a new summary panel
 func NewSummaryPanel(state State) *SummaryPanel {
 	return &SummaryPanel{
-		BasePanel: NewBasePanel(PanelSummary, "Summary"),
+		BasePanel: NewBasePanel(PanelSummary, "1 Summary"),
 		state:     state,
 	}
 }
