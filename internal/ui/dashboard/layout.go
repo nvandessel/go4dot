@@ -79,6 +79,14 @@ func (l *Layout) Calculate(width, height int) {
 	l.Width = width
 	l.Height = height
 
+	// Guard against very small terminals
+	if width < 40 {
+		width = 40
+	}
+	if height < 10 {
+		height = 10
+	}
+
 	// Calculate available content area (excluding header/footer)
 	contentHeight := height - l.HeaderHeight - l.FooterHeight
 	if contentHeight < 10 {
@@ -92,6 +100,9 @@ func (l *Layout) Calculate(width, height int) {
 	}
 
 	remainingWidth := width - miniColWidth
+	if remainingWidth < 20 {
+		remainingWidth = 20
+	}
 
 	// Distribute remaining width among configs, details, output columns
 	// These share the remaining space proportionally
@@ -109,6 +120,17 @@ func (l *Layout) Calculate(width, height int) {
 	outputWidth := remainingWidth - configsWidth - detailsWidth
 	if outputWidth < l.config.MinOutputWidth {
 		outputWidth = l.config.MinOutputWidth
+	}
+
+	// Clamp total width to prevent overflow
+	totalWidth := miniColWidth + configsWidth + detailsWidth + outputWidth
+	if totalWidth > l.Width {
+		// Scale down proportionally
+		scale := float64(l.Width) / float64(totalWidth)
+		miniColWidth = int(float64(miniColWidth) * scale)
+		configsWidth = int(float64(configsWidth) * scale)
+		detailsWidth = int(float64(detailsWidth) * scale)
+		outputWidth = l.Width - miniColWidth - configsWidth - detailsWidth
 	}
 
 	// Calculate mini-column panel heights (4 stacked panels sharing contentHeight)
