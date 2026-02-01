@@ -72,7 +72,7 @@ func TestNew_WithSelectedConfig(t *testing.T) {
 }
 
 func TestModel_Update_Actions(t *testing.T) {
-	// Doctor action now shows inline view instead of quitting
+	// Doctor action now focuses the Health panel instead of opening modal
 	t.Run("Doctor action", func(t *testing.T) {
 		baseState := State{
 			Platform: &platform.Platform{OS: "linux"},
@@ -87,21 +87,23 @@ func TestModel_Update_Actions(t *testing.T) {
 		m.width = 100
 		m.height = 40
 
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
-		updatedModel, cmd := m.Update(msg)
+		// Initial focus should be on Configs panel
+		initialFocus := m.focusManager.CurrentFocus()
+		if initialFocus != PanelConfigs {
+			t.Errorf("expected initial focus on PanelConfigs, got %v", initialFocus)
+		}
 
-		// Doctor now runs inline, should get init command
-		if cmd == nil {
-			t.Error("expected init command for doctor view")
-		}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+		updatedModel, _ := m.Update(msg)
+
 		model := updatedModel.(*Model)
-		// Should switch to doctor view
-		if model.currentView != viewDoctor {
-			t.Errorf("expected viewDoctor, got %v", model.currentView)
+		// Should stay on dashboard view
+		if model.currentView != viewDashboard {
+			t.Errorf("expected viewDashboard, got %v", model.currentView)
 		}
-		// Doctor view should be initialized
-		if model.doctorView == nil {
-			t.Error("expected doctorView to be initialized")
+		// Focus should be on Health panel
+		if model.focusManager.CurrentFocus() != PanelHealth {
+			t.Errorf("expected focus on PanelHealth, got %v", model.focusManager.CurrentFocus())
 		}
 	})
 
@@ -212,8 +214,8 @@ func TestModel_InlineOperation_MessageHandling(t *testing.T) {
 	logMsg := OperationLogMsg{Level: "info", Message: "test log"}
 	updatedModel, _ = model.Update(logMsg)
 	model = updatedModel.(*Model)
-	if len(model.output.logs) != 1 {
-		t.Errorf("expected 1 log entry, got %d", len(model.output.logs))
+	if model.outputPanel.GetLogCount() != 1 {
+		t.Errorf("expected 1 log entry, got %d", model.outputPanel.GetLogCount())
 	}
 
 	// Test OperationDoneMsg
@@ -224,8 +226,8 @@ func TestModel_InlineOperation_MessageHandling(t *testing.T) {
 		t.Error("expected operationActive to be false after OperationDoneMsg")
 	}
 	// Should have 2 logs now (the log + the done summary)
-	if len(model.output.logs) != 2 {
-		t.Errorf("expected 2 log entries, got %d", len(model.output.logs))
+	if model.outputPanel.GetLogCount() != 2 {
+		t.Errorf("expected 2 log entries, got %d", model.outputPanel.GetLogCount())
 	}
 }
 
@@ -385,11 +387,8 @@ func TestModel_Update_SelectAll(t *testing.T) {
 		HasConfig: true,
 	}
 	m := New(s)
-	// Initialize filtered indexes directly because the sidebar's filteredIdxs
-	// is normally populated by updateFilter() which requires filter mode entry.
-	// For unit testing SelectAll behavior in isolation, we set this internal
-	// state to avoid coupling this test to filter mode mechanics.
-	m.sidebar.filteredIdxs = []int{0, 1, 2}
+	// The configsPanel is automatically initialized with all configs in filteredIdxs
+	// so we can test SelectAll behavior directly without setup.
 
 	// Select all with shift+A
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}}
@@ -498,8 +497,8 @@ func TestModel_Update_Menu(t *testing.T) {
 	}
 	m := New(s)
 
-	// Open menu with tab
-	msg := tea.KeyMsg{Type: tea.KeyTab}
+	// Open menu with backtick (changed from tab, which now cycles panels)
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'`'}}
 	updatedModel, _ := m.Update(msg)
 	model := updatedModel.(*Model)
 
@@ -633,7 +632,7 @@ func TestKeys_Bindings(t *testing.T) {
 		{"Install", keys.Install, []string{"i"}},
 		{"Machine", keys.Machine, []string{"m"}},
 		{"Update", keys.Update, []string{"u"}},
-		{"Menu", keys.Menu, []string{"tab"}},
+		{"Menu", keys.Menu, []string{"`"}},
 		{"Quit", keys.Quit, []string{"q", "esc", "ctrl+c"}},
 		{"Up", keys.Up, []string{"up", "k"}},
 		{"Down", keys.Down, []string{"down", "j"}},
@@ -726,7 +725,7 @@ func TestModel_SyncOperations_StartInlineOperation(t *testing.T) {
 }
 
 func TestModel_ViewDashboard_ComponentWidths(t *testing.T) {
-	// Verify component widths are set correctly after WindowSizeMsg.
+	// Verify layout is calculated correctly after WindowSizeMsg.
 	s := State{
 		Platform: &platform.Platform{OS: "linux"},
 		Configs: []config.ConfigItem{
@@ -741,16 +740,22 @@ func TestModel_ViewDashboard_ComponentWidths(t *testing.T) {
 	updatedModel, _ := m.Update(sizeMsg)
 	model := updatedModel.(*Model)
 
-	// Sidebar gets 1/3 of width
-	expectedSidebarWidth := 120 / 3
-	if model.sidebar.width != expectedSidebarWidth {
-		t.Errorf("expected sidebar width %d, got %d", expectedSidebarWidth, model.sidebar.width)
+	// Layout should be calculated
+	if model.layout.Width != 120 {
+		t.Errorf("expected layout width 120, got %d", model.layout.Width)
+	}
+	if model.layout.Height != 40 {
+		t.Errorf("expected layout height 40, got %d", model.layout.Height)
 	}
 
-	// Details gets remaining 2/3
-	expectedDetailsWidth := 120 - expectedSidebarWidth
-	if model.details.width != expectedDetailsWidth {
-		t.Errorf("expected details width %d, got %d", expectedDetailsWidth, model.details.width)
+	// Configs panel should have width set
+	if model.layout.Configs.Width <= 0 {
+		t.Error("expected configs panel width to be set")
+	}
+
+	// Details panel should have width set
+	if model.layout.Details.Width <= 0 {
+		t.Error("expected details panel width to be set")
 	}
 
 	// View should render without panic
@@ -783,16 +788,16 @@ func TestNavigationStack_PushPop(t *testing.T) {
 		t.Errorf("expected viewDashboard, got %v", m.currentView)
 	}
 
-	// Push doctor view
-	m.pushView(viewDoctor)
+	// Push external view
+	m.pushView(viewExternal)
 	if len(m.viewStack) != 1 {
 		t.Errorf("expected view stack of 1, got %d", len(m.viewStack))
 	}
 	if m.viewStack[0] != viewDashboard {
 		t.Errorf("expected viewDashboard in stack, got %v", m.viewStack[0])
 	}
-	if m.currentView != viewDoctor {
-		t.Errorf("expected currentView to be viewDoctor, got %v", m.currentView)
+	if m.currentView != viewExternal {
+		t.Errorf("expected currentView to be viewExternal, got %v", m.currentView)
 	}
 
 	// Push another view
@@ -804,13 +809,13 @@ func TestNavigationStack_PushPop(t *testing.T) {
 		t.Errorf("expected currentView to be viewMachine, got %v", m.currentView)
 	}
 
-	// Pop back to doctor
+	// Pop back to external
 	popped := m.popView()
 	if !popped {
 		t.Error("expected popView to return true")
 	}
-	if m.currentView != viewDoctor {
-		t.Errorf("expected currentView to be viewDoctor, got %v", m.currentView)
+	if m.currentView != viewExternal {
+		t.Errorf("expected currentView to be viewExternal, got %v", m.currentView)
 	}
 	if len(m.viewStack) != 1 {
 		t.Errorf("expected view stack of 1, got %d", len(m.viewStack))
@@ -863,6 +868,8 @@ func TestNavigationStack_ClearStack(t *testing.T) {
 }
 
 func TestNavigationStack_DoctorViewEscapeReturns(t *testing.T) {
+	// Test that 'd' key focuses the Health panel (new multi-panel behavior)
+	// Doctor modal is now accessed through Overrides panel -> Enter
 	s := State{
 		Platform: &platform.Platform{OS: "linux"},
 		Configs: []config.ConfigItem{
@@ -877,29 +884,22 @@ func TestNavigationStack_DoctorViewEscapeReturns(t *testing.T) {
 	m.width = 100
 	m.height = 40
 
-	// Open doctor view with 'd' key
+	// Press 'd' to focus health panel
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
 	updatedModel, _ := m.Update(msg)
 	model := updatedModel.(*Model)
 
-	if model.currentView != viewDoctor {
-		t.Errorf("expected viewDoctor, got %v", model.currentView)
-	}
-	if len(model.viewStack) != 1 {
-		t.Errorf("expected view stack of 1, got %d", len(model.viewStack))
-	}
-
-	// Press ESC to close (sends DoctorViewCloseMsg)
-	closeMsg := DoctorViewCloseMsg{}
-	updatedModel, _ = model.Update(closeMsg)
-	model = updatedModel.(*Model)
-
-	// Should return to dashboard via popView
+	// Should still be on dashboard
 	if model.currentView != viewDashboard {
-		t.Errorf("expected viewDashboard after close, got %v", model.currentView)
+		t.Errorf("expected viewDashboard, got %v", model.currentView)
 	}
+	// Focus should be on Health panel
+	if model.focusManager.CurrentFocus() != PanelHealth {
+		t.Errorf("expected focus on PanelHealth, got %v", model.focusManager.CurrentFocus())
+	}
+	// View stack should be empty (no modal pushed)
 	if len(model.viewStack) != 0 {
-		t.Errorf("expected empty view stack after close, got %d", len(model.viewStack))
+		t.Errorf("expected empty view stack, got %d", len(model.viewStack))
 	}
 }
 
@@ -918,8 +918,8 @@ func TestNavigationStack_MenuToConfigListAndBack(t *testing.T) {
 	m.width = 100
 	m.height = 40
 
-	// Open menu with tab key
-	msg := tea.KeyMsg{Type: tea.KeyTab}
+	// Open menu with backtick key (changed from tab, which now cycles panels)
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'`'}}
 	updatedModel, _ := m.Update(msg)
 	model := updatedModel.(*Model)
 

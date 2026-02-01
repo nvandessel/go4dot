@@ -4,6 +4,7 @@ import "github.com/charmbracelet/bubbles/key"
 
 // keyMap defines the key bindings
 type keyMap struct {
+	// Actions
 	Sync    key.Binding
 	Doctor  key.Binding
 	Install key.Binding
@@ -11,8 +12,6 @@ type keyMap struct {
 	Update  key.Binding
 	Menu    key.Binding
 	Quit    key.Binding
-	Up      key.Binding
-	Down    key.Binding
 	Enter   key.Binding
 	Expand  key.Binding
 	Filter  key.Binding
@@ -20,16 +19,38 @@ type keyMap struct {
 	Select  key.Binding
 	All     key.Binding
 	Bulk    key.Binding
+
+	// List navigation (within panel)
+	Up   key.Binding
+	Down key.Binding
+
+	// Panel navigation
+	PanelNext  key.Binding
+	PanelPrev  key.Binding
+	PanelLeft  key.Binding
+	PanelRight key.Binding
+	PanelUp    key.Binding
+	PanelDown  key.Binding
+
+	// Direct panel jump (1-7)
+	Panel1 key.Binding
+	Panel2 key.Binding
+	Panel3 key.Binding
+	Panel4 key.Binding
+	Panel5 key.Binding
+	Panel6 key.Binding
+	Panel7 key.Binding
 }
 
 var keys = keyMap{
+	// Actions
 	Sync: key.NewBinding(
 		key.WithKeys("s"),
 		key.WithHelp("s", "sync all"),
 	),
 	Doctor: key.NewBinding(
 		key.WithKeys("d"),
-		key.WithHelp("d", "doctor"),
+		key.WithHelp("d", "health"),
 	),
 	Install: key.NewBinding(
 		key.WithKeys("i"),
@@ -44,24 +65,16 @@ var keys = keyMap{
 		key.WithHelp("u", "update"),
 	),
 	Menu: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "more"),
+		key.WithKeys("`"),
+		key.WithHelp("`", "menu"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "esc", "ctrl+c"),
 		key.WithHelp("q", "quit"),
 	),
-	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("up/k", "up"),
-	),
-	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("down/j", "down"),
-	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
-		key.WithHelp("enter", "sync config"),
+		key.WithHelp("enter", "action"),
 	),
 	Expand: key.NewBinding(
 		key.WithKeys("e", "right"),
@@ -81,10 +94,76 @@ var keys = keyMap{
 	),
 	All: key.NewBinding(
 		key.WithKeys("A"),
-		key.WithHelp("shift+a", "select all"),
+		key.WithHelp("A", "select all"),
 	),
 	Bulk: key.NewBinding(
 		key.WithKeys("S"),
-		key.WithHelp("shift+s", "sync selected"),
+		key.WithHelp("S", "sync selected"),
+	),
+
+	// List navigation (within panel)
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "down"),
+	),
+
+	// Panel navigation
+	PanelNext: key.NewBinding(
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "next panel"),
+	),
+	PanelPrev: key.NewBinding(
+		key.WithKeys("shift+tab"),
+		key.WithHelp("shift+tab", "prev panel"),
+	),
+	PanelLeft: key.NewBinding(
+		key.WithKeys("ctrl+h"),
+		key.WithHelp("ctrl+h", "panel left"),
+	),
+	PanelRight: key.NewBinding(
+		key.WithKeys("ctrl+l"),
+		key.WithHelp("ctrl+l", "panel right"),
+	),
+	PanelUp: key.NewBinding(
+		key.WithKeys("ctrl+k"),
+		key.WithHelp("ctrl+k", "panel up"),
+	),
+	PanelDown: key.NewBinding(
+		key.WithKeys("ctrl+j"),
+		key.WithHelp("ctrl+j", "panel down"),
+	),
+
+	// Direct panel jump
+	Panel1: key.NewBinding(
+		key.WithKeys("1"),
+		key.WithHelp("1", "summary"),
+	),
+	Panel2: key.NewBinding(
+		key.WithKeys("2"),
+		key.WithHelp("2", "health"),
+	),
+	Panel3: key.NewBinding(
+		key.WithKeys("3"),
+		key.WithHelp("3", "overrides"),
+	),
+	Panel4: key.NewBinding(
+		key.WithKeys("4"),
+		key.WithHelp("4", "external"),
+	),
+	Panel5: key.NewBinding(
+		key.WithKeys("5"),
+		key.WithHelp("5", "configs"),
+	),
+	Panel6: key.NewBinding(
+		key.WithKeys("6"),
+		key.WithHelp("6", "details"),
+	),
+	Panel7: key.NewBinding(
+		key.WithKeys("7"),
+		key.WithHelp("7", "output"),
 	),
 }
