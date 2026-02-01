@@ -29,16 +29,16 @@ type LayoutConfig struct {
 // DefaultLayoutConfig returns the default layout configuration
 func DefaultLayoutConfig() LayoutConfig {
 	return LayoutConfig{
-		MinMiniColWidth:  12,
-		MinConfigsWidth:  20,
-		MinDetailsWidth:  20,
-		MinOutputWidth:   30,
-		MinPanelHeight:   3,
-		MinOutputHeight:  4,
-		MiniColPercent:   15,
-		ConfigsPercent:   30,
-		DetailsPercent:   25,
-		OutputPercent:    30,
+		MinMiniColWidth:   12,
+		MinConfigsWidth:   24, // Enough for checkbox + ~12 char name + icon
+		MinDetailsWidth:   25,
+		MinOutputWidth:    30,
+		MinPanelHeight:    3,
+		MinOutputHeight:   4,
+		MiniColPercent:    15,
+		ConfigsPercent:    24, // Narrower - just needs checkbox + name + icon
+		DetailsPercent:    33, // Wider - file trees need space
+		OutputPercent:     33, // Wider - logs need room
 		OutputHeightRatio: 3,
 	}
 }
