@@ -338,8 +338,8 @@ func TestDashboard_MenuNavigation(t *testing.T) {
 		return strings.Contains(string(out), "config")
 	})
 
-	// Open menu with tab
-	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Open menu with backtick (changed from tab, which now cycles panels)
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'`'}})
 
 	// Wait for menu to appear
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {

@@ -159,7 +159,10 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 		return true
 
 	case dashboard.ActionInit:
-		initCmd.Run(initCmd, nil)
+		// Onboarding was completed inline in the dashboard.
+		// The config file has already been created.
+		// We'll reload the config in the next iteration of the main loop.
+		// If result.ConfigName contains a path, a new config was created.
 
 		// Check if config now exists and prompt for install
 		if newCfg, newConfigPath, err := config.LoadFromDiscovery(); err == nil {

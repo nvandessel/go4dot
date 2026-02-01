@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +19,11 @@ const (
 	viewMenu
 	viewNoConfig
 	viewOperation
+	viewOnboarding
+	viewConfirm
+	viewConfigList
+	viewExternal
+	viewMachine
 )
 
 // State holds all the shared data for the dashboard.
@@ -56,20 +60,39 @@ type Model struct {
 	selectedConfigs map[string]bool
 	showHelp        bool
 	currentView     view
+	viewStack       []view // Stack for navigation history
 	operationActive bool   // true when an operation is running in the output pane
 	program         *tea.Program // reference for inline operations
 
-	// Components
+	// Multi-panel layout
+	focusManager *FocusManager
+	layout       *Layout
+	panels       map[PanelID]Panel
+
+	// Panel references for easy access
+	summaryPanel   *SummaryPanel
+	healthPanel    *HealthPanel
+	overridesPanel *OverridesPanel
+	externalPanel  *ExternalPanel
+	configsPanel   *ConfigsPanel
+	detailsPanel   *DetailsPanel
+	outputPanel    *OutputPanel
+
+	// Components (kept for backward compatibility)
 	header     Header
-	summary    Summary
-	sidebar    Sidebar
-	details    Details
 	footer     Footer
 	help       Help
 	menu       *Menu
 	noconfig   NoConfig
 	operations Operations
-	output     OutputPane
+	onboarding *Onboarding
+
+
+	// Modal views
+	confirm      *Confirm
+	configList   *ConfigListView
+	externalView *ExternalView
+	machineView  *MachineView
 }
 
 // New creates a new dashboard model.
@@ -78,6 +101,9 @@ func New(s State) Model {
 		state:           s,
 		selectedConfigs: make(map[string]bool),
 		filterText:      s.FilterText,
+		focusManager:    NewFocusManager(),
+		layout:          NewLayout(),
+		panels:          make(map[PanelID]Panel),
 	}
 	if s.SelectedConfig != "" {
 		m.selectedConfigs[s.SelectedConfig] = true
@@ -93,16 +119,40 @@ func New(s State) Model {
 		m.currentView = viewDashboard
 	}
 
+	// Initialize multi-panel components
+	m.summaryPanel = NewSummaryPanel(s)
+	m.healthPanel = NewHealthPanel(s.Config, s.DotfilesPath)
+	m.overridesPanel = NewOverridesPanel(s.Config)
+	m.externalPanel = NewExternalPanel(s.Config, s.DotfilesPath, s.Platform)
+	m.configsPanel = NewConfigsPanel(s, m.selectedConfigs)
+	m.detailsPanel = NewDetailsPanel(s)
+	m.outputPanel = NewOutputPanel()
+
+	// Set up panel references for details panel
+	m.detailsPanel.SetPanels(m.configsPanel, m.healthPanel, m.overridesPanel, m.externalPanel)
+
+	// Register panels
+	m.panels[PanelSummary] = m.summaryPanel
+	m.panels[PanelHealth] = m.healthPanel
+	m.panels[PanelOverrides] = m.overridesPanel
+	m.panels[PanelExternal] = m.externalPanel
+	m.panels[PanelConfigs] = m.configsPanel
+	m.panels[PanelDetails] = m.detailsPanel
+	m.panels[PanelOutput] = m.outputPanel
+
+	// Set initial focus
+	m.configsPanel.SetFocused(true)
+
+	// Initialize other components
 	m.header = NewHeader(s)
-	m.summary = NewSummary(s)
-	m.sidebar = NewSidebar(s, m.selectedConfigs)
-	m.details = NewDetails(s)
 	m.footer = NewFooter()
+	m.footer.SetPlatform(s.Platform)
+	m.footer.SetUpdateMsg(s.UpdateMsg)
 	m.help = NewHelp()
 	m.menu = &Menu{}
 	*m.menu = NewMenu()
 	m.noconfig = NewNoConfig()
-	m.output = NewOutputPane()
+
 	return m
 }
 
@@ -110,7 +160,38 @@ func (m Model) Init() tea.Cmd {
 	if m.currentView == viewOperation {
 		return m.operations.Init()
 	}
-	return nil
+
+	// Start async loading for Health and External panels
+	var cmds []tea.Cmd
+	if m.currentView == viewDashboard {
+		cmds = append(cmds, m.healthPanel.Init())
+		cmds = append(cmds, m.externalPanel.Init())
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// pushView pushes the current view onto the stack and switches to a new view
+func (m *Model) pushView(newView view) {
+	m.viewStack = append(m.viewStack, m.currentView)
+	m.currentView = newView
+}
+
+// popView returns to the previous view from the stack
+// Returns true if there was a view to pop, false if stack was empty
+func (m *Model) popView() bool {
+	if len(m.viewStack) == 0 {
+		return false
+	}
+	lastIdx := len(m.viewStack) - 1
+	m.currentView = m.viewStack[lastIdx]
+	m.viewStack = m.viewStack[:lastIdx]
+	return true
+}
+
+// clearViewStack clears the navigation stack
+func (m *Model) clearViewStack() {
+	m.viewStack = nil
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -132,6 +213,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateNoConfig(msg)
 	case viewOperation:
 		return m.updateOperation(msg)
+	case viewOnboarding:
+		return m.updateOnboarding(msg)
+	case viewConfirm:
+		return m.updateConfirm(msg)
+	case viewConfigList:
+		return m.updateConfigList(msg)
+	case viewExternal:
+		return m.updateExternal(msg)
+	case viewMachine:
+		return m.updateMachine(msg)
 	default:
 		return m.updateDashboard(msg)
 	}
@@ -157,34 +248,19 @@ func (m *Model) setResult(action Action, names ...string) {
 }
 
 func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var (
-		cmd  tea.Cmd
-		cmds []tea.Cmd
-	)
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.filterMode {
-			switch {
-			case key.Matches(msg, keys.Quit): // esc
-				m.filterMode = false
-			case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
-				m.filterMode = false
-			case key.Matches(msg, key.NewBinding(key.WithKeys("backspace"))):
-				if len(m.filterText) > 0 {
-					m.filterText = m.filterText[:len(m.filterText)-1]
-				}
-			default:
-				m.filterText += msg.String()
-			}
-			m.updateFilter()
-			m.details.selectedIdx = m.sidebar.selectedIdx // Ensure details are updated
-			return m, nil
+			return m.handleFilterMode(msg)
 		}
 
+		// Handle global keys first
 		switch {
 		case key.Matches(msg, keys.Help):
 			m.showHelp = true
+			return m, nil
 		case key.Matches(msg, keys.Quit):
 			m.quitting = true
 			m.setResult(ActionQuit)
@@ -192,149 +268,344 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Filter):
 			m.filterMode = true
 			return m, nil
-		case key.Matches(msg, keys.Sync):
-			if m.state.Config != nil && !m.operationActive {
-				// Interactive: false because we can't run huh forms inside Bubble Tea
-				opts := SyncOptions{Force: false, Interactive: false}
-				cmd := m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
-					_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-					return err
-				})
-				return m, cmd
-			}
-		case key.Matches(msg, keys.Doctor):
-			// TODO: Implement inline doctor - for now, fall back to CLI
-			m.setResult(ActionDoctor)
-			return m, tea.Quit
-		case key.Matches(msg, keys.Install):
-			if m.state.Config != nil && !m.operationActive {
-				opts := InstallOptions{}
-				cmd := m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
-					_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-					return err
-				})
-				return m, cmd
-			}
-		case key.Matches(msg, keys.Machine):
-			// TODO: Implement inline machine config - for now, fall back to CLI
-			m.setResult(ActionMachineConfig)
-			return m, tea.Quit
-		case key.Matches(msg, keys.Update):
-			if m.state.Config != nil && !m.operationActive {
-				opts := UpdateOptions{UpdateExternal: true}
-				cmd := m.StartInlineOperation(OpUpdate, "", nil, func(runner *OperationRunner) error {
-					_, err := RunUpdateOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-					return err
-				})
-				return m, cmd
-			}
 		case key.Matches(msg, keys.Menu):
 			m.menu.SetSize(m.width, m.height)
-			m.currentView = viewMenu
-		case key.Matches(msg, keys.Enter):
-			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) && m.state.Config != nil && !m.operationActive {
-				configName := m.state.Configs[m.sidebar.selectedIdx].Name
-				// Interactive: false because we can't run huh forms inside Bubble Tea
-				opts := SyncOptions{Force: false, Interactive: false}
-				cmd := m.StartInlineOperation(OpSyncSingle, configName, nil, func(runner *OperationRunner) error {
-					_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, configName, opts)
-					return err
-				})
-				return m, cmd
-			}
-		case key.Matches(msg, keys.Select):
-			if len(m.state.Configs) > 0 && m.sidebar.selectedIdx < len(m.state.Configs) {
-				cfgName := m.state.Configs[m.sidebar.selectedIdx].Name
-				if m.selectedConfigs[cfgName] {
-					delete(m.selectedConfigs, cfgName)
-				} else {
-					m.selectedConfigs[cfgName] = true
-				}
-			}
-		case key.Matches(msg, keys.All):
-			allSelected := true
-			for _, idx := range m.sidebar.filteredIdxs {
-				if !m.selectedConfigs[m.state.Configs[idx].Name] {
-					allSelected = false
-					break
-				}
-			}
-			if allSelected {
-				for _, idx := range m.sidebar.filteredIdxs {
-					delete(m.selectedConfigs, m.state.Configs[idx].Name)
-				}
-			} else {
-				for _, idx := range m.sidebar.filteredIdxs {
-					m.selectedConfigs[m.state.Configs[idx].Name] = true
-				}
-			}
-		case key.Matches(msg, keys.Bulk):
-			if len(m.selectedConfigs) > 0 && m.state.Config != nil && !m.operationActive {
-				names := make([]string, 0, len(m.selectedConfigs))
-				for name := range m.selectedConfigs {
-					names = append(names, name)
-				}
-				// Interactive: false because we can't run huh forms inside Bubble Tea
-				opts := SyncOptions{Force: false, Interactive: false}
-				cmd := m.StartInlineOperation(OpBulkSync, "", names, func(runner *OperationRunner) error {
-					_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, names, opts)
-					return err
-				})
-				return m, cmd
+			m.pushView(viewMenu)
+			return m, nil
+		}
+
+		// Handle panel navigation
+		if cmd := m.handlePanelNavigation(msg); cmd != nil {
+			return m, cmd
+		}
+
+		// Handle actions based on focused panel
+		if cmd := m.handlePanelActions(msg); cmd != nil {
+			return m, cmd
+		}
+
+		// Forward to focused panel
+		focused := m.focusManager.CurrentFocus()
+		if panel, ok := m.panels[focused]; ok {
+			cmd := panel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
 			}
 		}
+
+		// Update details panel context when focus changes
+		m.updateDetailsContext()
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Layout calculation:
-		// Header: ~3 lines, Summary: ~2 lines, Footer: ~2 lines = ~7 fixed
-		// Remaining height split: main content (2/3) and output pane (1/3)
-		fixedHeight := 7
-		availableHeight := msg.Height - fixedHeight
-		if availableHeight < 6 {
-			availableHeight = 6
-		}
+		// Calculate layout
+		m.layout.Calculate(msg.Width, msg.Height)
 
-		// Output pane gets 1/3 of available height (min 4 lines)
-		outputHeight := availableHeight / 3
-		if outputHeight < 4 {
-			outputHeight = 4
-		}
+		// Apply layout to panels
+		m.layout.ApplyToPanels(m.panels)
 
-		// Main content gets the rest
-		mainHeight := availableHeight - outputHeight
-		if mainHeight < 4 {
-			mainHeight = 4
-		}
-
-		m.sidebar.width = msg.Width / 3
-		m.sidebar.height = mainHeight
-		m.details.width = msg.Width - m.sidebar.width
-		m.details.height = mainHeight
-		m.output.SetSize(msg.Width, outputHeight)
+		// Update other components
 		m.footer.width = msg.Width
 		m.help.width = msg.Width
 		m.help.height = msg.Height
+
+	case tea.MouseMsg:
+		// Handle mouse for focused panel
+		focused := m.focusManager.CurrentFocus()
+		if panel, ok := m.panels[focused]; ok {
+			cmd := panel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		m.updateDetailsContext()
+
+	// Handle async panel updates
+	case healthResultMsg:
+		cmd := m.healthPanel.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+	case externalStatusMsg:
+		cmd := m.externalPanel.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	// Handle operation messages for inline operations
 	case OperationProgressMsg, OperationStepCompleteMsg, OperationLogMsg, OperationDoneMsg:
 		handled, cmd := m.handleOperationMsg(msg)
 		if handled {
-			// Reset output title when operation completes (inline operations only)
 			if _, ok := msg.(OperationDoneMsg); ok {
-				m.output.SetTitle("Output")
+				m.outputPanel.SetTitle("Output")
 			}
 			return m, cmd
 		}
 	}
 
-	cmd = m.sidebar.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.details.selectedIdx = m.sidebar.selectedIdx
+	// Forward spinner tick to loading panels
+	if _, ok := msg.(interface{ Tag() int }); ok {
+		if m.healthPanel.IsLoading() {
+			cmd := m.healthPanel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.externalPanel.IsLoading() {
+			cmd := m.externalPanel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) handleFilterMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, keys.Quit): // esc
+		m.filterMode = false
+	case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+		m.filterMode = false
+	case key.Matches(msg, key.NewBinding(key.WithKeys("backspace"))):
+		if len(m.filterText) > 0 {
+			m.filterText = m.filterText[:len(m.filterText)-1]
+		}
+	default:
+		// Only append printable characters (single runes), ignore special keys
+		keyStr := msg.String()
+		if len(keyStr) == 1 && keyStr[0] >= 32 && keyStr[0] < 127 {
+			m.filterText += keyStr
+		}
+	}
+	m.configsPanel.SetFilter(m.filterText)
+	m.updateDetailsContext()
+	return m, nil
+}
+
+func (m *Model) handlePanelNavigation(msg tea.KeyMsg) tea.Cmd {
+	oldFocus := m.focusManager.CurrentFocus()
+
+	switch {
+	// Tab cycles through panels
+	case key.Matches(msg, keys.PanelNext):
+		m.focusManager.CycleNext()
+	case key.Matches(msg, keys.PanelPrev):
+		m.focusManager.CyclePrev()
+
+	// Directional navigation (Ctrl+hjkl)
+	case key.Matches(msg, keys.PanelLeft):
+		m.focusManager.MoveLeft()
+	case key.Matches(msg, keys.PanelRight):
+		m.focusManager.MoveRight()
+	case key.Matches(msg, keys.PanelUp):
+		m.focusManager.MoveUp()
+	case key.Matches(msg, keys.PanelDown):
+		m.focusManager.MoveDown()
+
+	// Direct panel jump (0-6): 0=Output, 1=Summary, 2=Health, etc.
+	case key.Matches(msg, keys.Panel0):
+		m.focusManager.JumpToPanel(0)
+	case key.Matches(msg, keys.Panel1):
+		m.focusManager.JumpToPanel(1)
+	case key.Matches(msg, keys.Panel2):
+		m.focusManager.JumpToPanel(2)
+	case key.Matches(msg, keys.Panel3):
+		m.focusManager.JumpToPanel(3)
+	case key.Matches(msg, keys.Panel4):
+		m.focusManager.JumpToPanel(4)
+	case key.Matches(msg, keys.Panel5):
+		m.focusManager.JumpToPanel(5)
+	case key.Matches(msg, keys.Panel6):
+		m.focusManager.JumpToPanel(6)
+
+	default:
+		return nil
+	}
+
+	newFocus := m.focusManager.CurrentFocus()
+	if oldFocus != newFocus {
+		// Update focus state on panels
+		if oldPanel, ok := m.panels[oldFocus]; ok {
+			oldPanel.SetFocused(false)
+		}
+		if newPanel, ok := m.panels[newFocus]; ok {
+			newPanel.SetFocused(true)
+		}
+		m.footer.SetFocusedPanel(newFocus)
+		m.updateDetailsContext()
+	}
+
+	return nil
+}
+
+func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
+	focused := m.focusManager.CurrentFocus()
+
+	switch {
+	// Global operations (s, i, u)
+	case key.Matches(msg, keys.Sync):
+		if m.state.Config != nil && !m.operationActive {
+			opts := SyncOptions{Force: false, Interactive: false}
+			return m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
+				_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+				return err
+			})
+		}
+
+	case key.Matches(msg, keys.Install):
+		if m.state.Config != nil && !m.operationActive {
+			opts := InstallOptions{}
+			return m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
+				_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+				return err
+			})
+		}
+
+	case key.Matches(msg, keys.Update):
+		if m.state.Config != nil && !m.operationActive {
+			opts := UpdateOptions{UpdateExternal: true}
+			return m.StartInlineOperation(OpUpdate, "", nil, func(runner *OperationRunner) error {
+				_, err := RunUpdateOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+				return err
+			})
+		}
+
+	// Doctor (d) - now just focuses Health panel if not already
+	case key.Matches(msg, keys.Doctor):
+		if focused != PanelHealth {
+			m.changeFocus(PanelHealth)
+		}
+		return nil
+
+	// Machine (m) - now focuses Overrides panel
+	case key.Matches(msg, keys.Machine):
+		if focused != PanelOverrides {
+			m.changeFocus(PanelOverrides)
+		}
+		return nil
+
+	// Enter - context-specific action
+	case key.Matches(msg, keys.Enter):
+		return m.handleEnterAction(focused)
+
+	// Select (space) - only for Configs panel
+	case key.Matches(msg, keys.Select):
+		if focused == PanelConfigs {
+			m.configsPanel.ToggleSelection()
+			m.selectedConfigs = m.configsPanel.GetSelected()
+		}
+
+	// Select All (A)
+	case key.Matches(msg, keys.All):
+		if focused == PanelConfigs {
+			// Toggle select all
+			allSelected := true
+			for _, name := range m.configsPanel.GetSelectedNames() {
+				if !m.selectedConfigs[name] {
+					allSelected = false
+					break
+				}
+			}
+			if allSelected && len(m.selectedConfigs) > 0 {
+				m.configsPanel.DeselectAll()
+			} else {
+				m.configsPanel.SelectAll()
+			}
+			m.selectedConfigs = m.configsPanel.GetSelected()
+		}
+
+	// Bulk sync (S)
+	case key.Matches(msg, keys.Bulk):
+		if len(m.selectedConfigs) > 0 && m.state.Config != nil && !m.operationActive {
+			names := make([]string, 0, len(m.selectedConfigs))
+			for name := range m.selectedConfigs {
+				names = append(names, name)
+			}
+			opts := SyncOptions{Force: false, Interactive: false}
+			return m.StartInlineOperation(OpBulkSync, "", names, func(runner *OperationRunner) error {
+				_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, names, opts)
+				return err
+			})
+		}
+	}
+
+	return nil
+}
+
+func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
+	switch focused {
+	case PanelConfigs:
+		// Sync selected config
+		cfg := m.configsPanel.GetSelectedConfig()
+		if cfg != nil && m.state.Config != nil && !m.operationActive {
+			opts := SyncOptions{Force: false, Interactive: false}
+			return m.StartInlineOperation(OpSyncSingle, cfg.Name, nil, func(runner *OperationRunner) error {
+				_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, cfg.Name, opts)
+				return err
+			})
+		}
+
+	case PanelHealth:
+		// Re-run health checks
+		return m.healthPanel.Refresh()
+
+	case PanelOverrides:
+		// Open machine config form (modal)
+		mc := m.overridesPanel.GetSelectedConfig()
+		if mc != nil && m.state.Config != nil {
+			m.machineView = NewMachineView(m.state.Config)
+			m.machineView.SetSize(m.width, m.height)
+			m.pushView(viewMachine)
+			return m.machineView.Init()
+		}
+
+	case PanelExternal:
+		// Clone/update external dep
+		ext := m.externalPanel.GetSelectedExternal()
+		if ext != nil && m.state.Config != nil && !m.operationActive {
+			// TODO: Implement clone/update operation
+			m.outputPanel.AddLog("info", fmt.Sprintf("Would clone/update: %s", ext.Dep.Name))
+		}
+	}
+
+	return nil
+}
+
+func (m *Model) changeFocus(newFocus PanelID) {
+	oldFocus := m.focusManager.CurrentFocus()
+	if oldFocus == newFocus {
+		return
+	}
+
+	if oldPanel, ok := m.panels[oldFocus]; ok {
+		oldPanel.SetFocused(false)
+	}
+	m.focusManager.SetFocus(newFocus)
+	if newPanel, ok := m.panels[newFocus]; ok {
+		newPanel.SetFocused(true)
+	}
+	m.footer.SetFocusedPanel(newFocus)
+	m.updateDetailsContext()
+}
+
+func (m *Model) updateDetailsContext() {
+	focused := m.focusManager.CurrentFocus()
+
+	switch focused {
+	case PanelHealth:
+		m.detailsPanel.SetContext(DetailsContextHealth)
+	case PanelOverrides:
+		m.detailsPanel.SetContext(DetailsContextOverrides)
+	case PanelExternal:
+		m.detailsPanel.SetContext(DetailsContextExternal)
+	default:
+		m.detailsPanel.SetContext(DetailsContextConfigs)
+	}
 }
 
 func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -342,12 +613,11 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Quit):
-			m.currentView = viewDashboard
+			m.popView()
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			item, ok := m.menu.list.SelectedItem().(menuItem)
 			if ok {
-				m.setResult(item.action)
-				return m, tea.Quit
+				return m.handleMenuAction(item.action)
 			}
 		}
 	}
@@ -356,6 +626,39 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newMenu, cmd := m.menu.Update(msg)
 	m.menu = newMenu.(*Menu)
 	return m, cmd
+}
+
+func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
+	switch action {
+	case ActionList:
+		m.configList = NewConfigListView(m.state.Configs)
+		m.configList.SetSize(m.width, m.height)
+		m.pushView(viewConfigList)
+		return m, nil
+
+	case ActionExternal:
+		if m.state.Config == nil {
+			return m, nil
+		}
+		m.externalView = NewExternalView(m.state.Config, m.state.DotfilesPath, m.state.Platform)
+		m.externalView.SetSize(m.width, m.height)
+		m.pushView(viewExternal)
+		return m, m.externalView.Init()
+
+	case ActionUninstall:
+		m.confirm = NewConfirm(
+			"uninstall",
+			"Uninstall go4dot?",
+			"This will remove all symlinks and state. This action cannot be undone.",
+		).WithLabels("Yes, uninstall", "Cancel")
+		m.confirm.SetSize(m.width, m.height)
+		m.pushView(viewConfirm)
+		return m, nil
+
+	default:
+		m.setResult(action)
+		return m, tea.Quit
+	}
 }
 
 func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -367,14 +670,177 @@ func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setResult(ActionQuit)
 			return m, tea.Quit
 		case key.Matches(msg, key.NewBinding(key.WithKeys("i"), key.WithKeys("enter"))):
-			m.setResult(ActionInit)
-			return m, tea.Quit
+			return m.startOnboarding()
 		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 	}
 	return m, nil
 }
 
-// stepStatusToLogLevel converts a StepStatus to a log level string
+func (m *Model) startOnboarding() (tea.Model, tea.Cmd) {
+	path := "."
+	if m.state.DotfilesPath != "" {
+		path = m.state.DotfilesPath
+	}
+
+	onboarding := NewOnboarding(path)
+	onboarding.width = m.width
+	onboarding.height = m.height
+	m.onboarding = &onboarding
+	m.pushView(viewOnboarding)
+
+	return m, m.onboarding.Init()
+}
+
+func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.onboarding != nil {
+			m.onboarding.width = msg.Width
+			m.onboarding.height = msg.Height
+		}
+
+	case OnboardingCompleteMsg:
+		if msg.Error != nil {
+			m.popView()
+			m.onboarding = nil
+			return m, nil
+		}
+
+		m.setResult(ActionInit)
+		m.result.ConfigName = msg.ConfigPath
+		return m, tea.Quit
+	}
+
+	if m.onboarding != nil {
+		model, cmd := m.onboarding.Update(msg)
+		if ob, ok := model.(*Onboarding); ok {
+			m.onboarding = ob
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.confirm != nil {
+			m.confirm.SetSize(msg.Width, msg.Height)
+		}
+
+	case ConfirmResult:
+		if msg.ID == "uninstall" && msg.Confirmed {
+			m.setResult(ActionUninstall)
+			return m, tea.Quit
+		}
+		m.popView()
+		m.confirm = nil
+		return m, nil
+	}
+
+	if m.confirm != nil {
+		model, cmd := m.confirm.Update(msg)
+		if c, ok := model.(*Confirm); ok {
+			m.confirm = c
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateConfigList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.configList != nil {
+			m.configList.SetSize(msg.Width, msg.Height)
+		}
+
+	case ConfigListViewCloseMsg:
+		m.popView()
+		m.configList = nil
+		return m, nil
+	}
+
+	if m.configList != nil {
+		model, cmd := m.configList.Update(msg)
+		if cl, ok := model.(*ConfigListView); ok {
+			m.configList = cl
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateExternal(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.externalView != nil {
+			m.externalView.SetSize(msg.Width, msg.Height)
+		}
+
+	case ExternalViewCloseMsg:
+		m.popView()
+		m.externalView = nil
+		return m, nil
+	}
+
+	if m.externalView != nil {
+		model, cmd := m.externalView.Update(msg)
+		if ev, ok := model.(*ExternalView); ok {
+			m.externalView = ev
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateMachine(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.machineView != nil {
+			m.machineView.SetSize(msg.Width, msg.Height)
+		}
+
+	case MachineViewCloseMsg:
+		m.popView()
+		m.machineView = nil
+		return m, nil
+
+	case MachineConfigCompleteMsg:
+		m.popView()
+		m.machineView = nil
+		m.overridesPanel.RefreshStatus()
+		return m, nil
+	}
+
+	if m.machineView != nil {
+		model, cmd := m.machineView.Update(msg)
+		if mv, ok := model.(*MachineView); ok {
+			m.machineView = mv
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
 func stepStatusToLogLevel(status StepStatus) string {
 	switch status {
 	case StepSuccess:
@@ -388,7 +854,6 @@ func stepStatusToLogLevel(status StepStatus) string {
 	}
 }
 
-// handleOperationMsg processes operation-related messages and returns whether the message was handled
 func (m *Model) handleOperationMsg(msg tea.Msg) (handled bool, cmd tea.Cmd) {
 	switch msg := msg.(type) {
 	case OperationProgressMsg:
@@ -399,22 +864,22 @@ func (m *Model) handleOperationMsg(msg tea.Msg) (handled bool, cmd tea.Cmd) {
 	case OperationStepCompleteMsg:
 		m.operations, cmd = m.operations.Update(msg)
 		if msg.Detail != "" {
-			m.output.AddLog(stepStatusToLogLevel(msg.Status), msg.Detail)
+			m.outputPanel.AddLog(stepStatusToLogLevel(msg.Status), msg.Detail)
 		}
 		return true, cmd
 
 	case OperationLogMsg:
 		m.operations, cmd = m.operations.Update(msg)
-		m.output.AddLog(msg.Level, msg.Message)
+		m.outputPanel.AddLog(msg.Level, msg.Message)
 		return true, cmd
 
 	case OperationDoneMsg:
 		m.operationActive = false
 		m.operations, cmd = m.operations.Update(msg)
 		if msg.Error != nil {
-			m.output.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
+			m.outputPanel.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
 		} else if msg.Summary != "" {
-			m.output.AddLog("success", msg.Summary)
+			m.outputPanel.AddLog("success", msg.Summary)
 		}
 		return true, cmd
 	}
@@ -424,7 +889,6 @@ func (m *Model) handleOperationMsg(msg tea.Msg) (handled bool, cmd tea.Cmd) {
 func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	// Handle operation-specific messages
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.operations.IsDone() {
@@ -434,18 +898,15 @@ func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setResult(ActionQuit)
 				return m, tea.Quit
 			case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
-				// If launched via RunWithOperation (AutoStart), quit and return result
 				if m.state.AutoStart {
 					m.quitting = true
 					m.setResult(ActionQuit)
 					return m, tea.Quit
 				}
-				// Otherwise return to dashboard
 				m.currentView = viewDashboard
 				return m, nil
 			}
 		} else {
-			// Allow cancellation during operation
 			switch {
 			case key.Matches(msg, keys.Quit):
 				m.quitting = true
@@ -467,24 +928,20 @@ func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update spinner
 	m.operations, cmd = m.operations.Update(msg)
 	return m, cmd
 }
 
-// StartInlineOperation runs an operation in the background without switching views
-// Output is shown in the output pane at the bottom of the dashboard
 func (m *Model) StartInlineOperation(opType OperationType, configName string, configNames []string, operationFunc func(runner *OperationRunner) error) tea.Cmd {
 	if m.program == nil || m.operationActive {
 		return nil
 	}
 
 	m.operationActive = true
-	m.operations = NewOperations(opType, configName, configNames) // Reset operation state
-	m.output.Clear()
-	m.output.SetTitle(getOperationTitle(opType))
+	m.operations = NewOperations(opType, configName, configNames)
+	m.outputPanel.Clear()
+	m.outputPanel.SetTitle(getOperationTitle(opType))
 
-	// Run operation in goroutine
 	go func() {
 		runner := NewOperationRunner(m.program)
 		defer func() {
@@ -503,7 +960,6 @@ func (m *Model) StartInlineOperation(opType OperationType, configName string, co
 	return m.operations.Init()
 }
 
-// getOperationTitle returns a display title for an operation type
 func getOperationTitle(opType OperationType) string {
 	switch opType {
 	case OpInstall:
@@ -523,7 +979,6 @@ func getOperationTitle(opType OperationType) string {
 	}
 }
 
-// renderFilterBar renders the filter input bar
 func (m Model) renderFilterBar() string {
 	labelStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
 	inputStyle := lipgloss.NewStyle().Foreground(ui.TextColor)
@@ -532,7 +987,6 @@ func (m Model) renderFilterBar() string {
 	label := labelStyle.Render("Filter: ")
 	input := inputStyle.Render(m.filterText)
 
-	// Show cursor when in filter mode
 	cursor := ""
 	if m.filterMode {
 		cursor = lipgloss.NewStyle().
@@ -541,7 +995,6 @@ func (m Model) renderFilterBar() string {
 			Render("▌")
 	}
 
-	// Show hint
 	hint := ""
 	if m.filterText != "" && !m.filterMode {
 		hint = hintStyle.Render("  (press / to edit)")
@@ -550,26 +1003,6 @@ func (m Model) renderFilterBar() string {
 	}
 
 	return label + input + cursor + hint
-}
-
-func (m *Model) updateFilter() {
-	filtered := []int{}
-	if m.filterText == "" {
-		for i := range m.state.Configs {
-			filtered = append(filtered, i)
-		}
-	} else {
-		for i, cfg := range m.state.Configs {
-			if strings.Contains(strings.ToLower(cfg.Name), strings.ToLower(m.filterText)) {
-				filtered = append(filtered, i)
-			}
-		}
-	}
-	m.sidebar.filteredIdxs = filtered
-	m.sidebar.listOffset = 0
-	if len(filtered) > 0 {
-		m.sidebar.selectedIdx = filtered[0]
-	}
 }
 
 func (m Model) View() string {
@@ -588,55 +1021,126 @@ func (m Model) View() string {
 		return m.noconfig.View()
 	case viewOperation:
 		return m.viewOperation()
+	case viewOnboarding:
+		if m.onboarding != nil {
+			return m.onboarding.View()
+		}
+		return ""
+	case viewConfirm:
+		if m.confirm != nil {
+			return m.confirm.View()
+		}
+		return ""
+	case viewConfigList:
+		if m.configList != nil {
+			return m.configList.View()
+		}
+		return ""
+	case viewExternal:
+		if m.externalView != nil {
+			return m.externalView.View()
+		}
+		return ""
+	case viewMachine:
+		if m.machineView != nil {
+			return m.machineView.View()
+		}
+		return ""
 	default:
 		return m.viewDashboard()
 	}
 }
 
 func (m Model) viewDashboard() string {
-	// Build sidebar title with filter status
-	sidebarTitle := "Configs"
-	totalConfigs := len(m.state.Configs)
-	filteredConfigs := len(m.sidebar.filteredIdxs)
+	focused := m.focusManager.CurrentFocus()
+
+	// Render mini-column panels (left side, stacked)
+	summaryView := RenderPanelFrameCompact(
+		m.summaryPanel.View(),
+		m.summaryPanel.GetTitle(),
+		m.layout.Summary.Width,
+		m.layout.Summary.Height,
+		focused == PanelSummary,
+	)
+
+	healthView := RenderPanelFrameCompact(
+		m.healthPanel.View(),
+		m.healthPanel.GetTitle(),
+		m.layout.Health.Width,
+		m.layout.Health.Height,
+		focused == PanelHealth,
+	)
+
+	overridesView := RenderPanelFrameCompact(
+		m.overridesPanel.View(),
+		m.overridesPanel.GetTitle(),
+		m.layout.Overrides.Width,
+		m.layout.Overrides.Height,
+		focused == PanelOverrides,
+	)
+
+	externalView := RenderPanelFrameCompact(
+		m.externalPanel.View(),
+		m.externalPanel.GetTitle(),
+		m.layout.External.Width,
+		m.layout.External.Height,
+		focused == PanelExternal,
+	)
+
+	miniColumn := lipgloss.JoinVertical(
+		lipgloss.Left,
+		summaryView,
+		healthView,
+		overridesView,
+		externalView,
+	)
+
+	// Build configs panel title with filter status
+	configsTitle := "5 Configs"
+	totalConfigs := m.configsPanel.GetTotalCount()
+	filteredConfigs := m.configsPanel.GetFilteredCount()
 	if m.filterText != "" {
-		sidebarTitle = fmt.Sprintf("Configs (%d/%d)", filteredConfigs, totalConfigs)
+		configsTitle = fmt.Sprintf("5 Configs (%d/%d)", filteredConfigs, totalConfigs)
 	}
 
-	// Sidebar with inline title
-	sidebarView := renderPaneWithTitle(
-		m.sidebar.View(),
-		sidebarTitle,
-		m.sidebar.width,
-		m.sidebar.height,
-		ui.SubtleColor,
+	// Render main panels
+	configsView := RenderPanelFrame(
+		m.configsPanel.View(),
+		configsTitle,
+		m.layout.Configs.Width,
+		m.layout.Configs.Height,
+		focused == PanelConfigs,
 	)
 
-	// Details pane with inline title
-	detailsView := renderPaneWithTitle(
-		m.details.View(),
-		"Details",
-		m.details.width,
-		m.details.height,
-		ui.PrimaryColor,
+	detailsView := RenderPanelFrame(
+		m.detailsPanel.View(),
+		m.detailsPanel.GetTitle(),
+		m.layout.Details.Width,
+		m.layout.Details.Height,
+		focused == PanelDetails,
 	)
 
+	// Output panel title
+	outputTitle := "0 Output"
+	if m.operationActive {
+		outputTitle = "0 Output (running...)"
+	}
+
+	outputView := RenderPanelFrame(
+		m.outputPanel.View(),
+		outputTitle,
+		m.layout.Output.Width,
+		m.layout.Output.Height,
+		focused == PanelOutput,
+	)
+
+	// Combine panels horizontally
 	mainContent := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		sidebarView,
+		miniColumn,
+		configsView,
 		detailsView,
-	)
-
-	// Output pane with inline title
-	outputTitle := "Output"
-	if m.operationActive {
-		outputTitle = "Output (running...)"
-	}
-	outputView := renderPaneWithTitle(
-		m.output.View(),
-		outputTitle,
-		m.width,
-		m.output.height,
-		ui.SubtleColor,
+		outputView,
 	)
 
 	// Build filter bar if in filter mode or filter is active
@@ -645,19 +1149,16 @@ func (m Model) viewDashboard() string {
 		filterBar = m.renderFilterBar()
 	}
 
+	// Panels flush at top, footer at bottom (with optional filter bar above it)
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		m.header.View(),
-		m.summary.View(),
-		filterBar,
 		mainContent,
-		outputView,
+		filterBar,
 		m.footer.View(),
 	)
 }
 
 func (m Model) viewOperation() string {
-	// Ensure non-negative dimensions
 	safeWidth := m.width - 4
 	if safeWidth < 1 {
 		safeWidth = 1
@@ -667,7 +1168,6 @@ func (m Model) viewOperation() string {
 		safeHeight = 1
 	}
 
-	// Container with padding and border
 	containerStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.PrimaryColor).
@@ -722,8 +1222,8 @@ type MachineStatus struct {
 // Run starts the dashboard and returns the selected action
 func Run(s State) (*Result, error) {
 	m := New(s)
-	p := tea.NewProgram(&m, tea.WithAltScreen())
-	m.program = p // Store program reference for inline operations
+	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	m.program = p
 
 	finalModel, err := p.Run()
 	if err != nil {
@@ -734,18 +1234,15 @@ func Run(s State) (*Result, error) {
 }
 
 // RunWithOperation starts the dashboard in operation mode and executes the operation
-// The operationFunc is called with the program to send progress updates
 func RunWithOperation(s State, opType OperationType, configName string, configNames []string, operationFunc func(runner *OperationRunner) error) (*Result, error) {
-	// Set up state for operation mode
 	s.AutoStart = true
 	s.StartOperation = opType
 	s.OperationArg = configName
 	s.OperationArgs = configNames
 
 	m := New(s)
-	p := tea.NewProgram(&m, tea.WithAltScreen())
+	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
-	// Start the operation in a goroutine with panic recovery
 	go func() {
 		runner := NewOperationRunner(p)
 		defer func() {
