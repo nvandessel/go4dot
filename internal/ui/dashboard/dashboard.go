@@ -146,6 +146,8 @@ func New(s State) Model {
 	// Initialize other components
 	m.header = NewHeader(s)
 	m.footer = NewFooter()
+	m.footer.SetPlatform(s.Platform)
+	m.footer.SetUpdateMsg(s.UpdateMsg)
 	m.help = NewHelp()
 	m.menu = &Menu{}
 	*m.menu = NewMenu()
@@ -1143,11 +1145,11 @@ func (m Model) viewDashboard() string {
 		filterBar = m.renderFilterBar()
 	}
 
+	// Panels flush at top, footer at bottom (with optional filter bar above it)
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		m.header.View(),
-		filterBar,
 		mainContent,
+		filterBar,
 		m.footer.View(),
 	)
 }

@@ -69,8 +69,8 @@ type Layout struct {
 func NewLayout() *Layout {
 	return &Layout{
 		config:       DefaultLayoutConfig(),
-		HeaderHeight: 3, // Header + summary line
-		FooterHeight: 2, // Footer with keybindings
+		HeaderHeight: 0, // Panels start at top
+		FooterHeight: 2, // Footer with keybindings + header info
 	}
 }
 
