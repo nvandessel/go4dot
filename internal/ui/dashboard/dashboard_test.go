@@ -955,3 +955,166 @@ func TestNavigationStack_MenuToConfigListAndBack(t *testing.T) {
 		t.Errorf("expected view stack of 1, got %d", len(model.viewStack))
 	}
 }
+
+// TestPostOnboarding_AcceptInstall_PanelsHaveDimensions is a regression test for the bug
+// where accepting install after onboarding resulted in an empty screen because
+// layout.Calculate() and layout.ApplyToPanels() were not called after reinitializing panels.
+func TestPostOnboarding_AcceptInstall_PanelsHaveDimensions(t *testing.T) {
+	// Start with no-config state (simulating fresh onboarding)
+	s := State{
+		Platform:  &platform.Platform{OS: "linux"},
+		HasConfig: false,
+	}
+
+	m := New(s)
+	m.width = 120
+	m.height = 50
+
+	// Simulate what happens after onboarding completes:
+	// 1. pendingNewConfigPath and pendingNewConfig are set
+	// 2. currentView is viewConfirm with post-onboarding-install dialog
+	m.pendingNewConfigPath = "/tmp/test-dotfiles/.go4dot.yaml"
+	m.pendingNewConfig = &config.Config{
+		SchemaVersion: "1.0",
+		Metadata: config.Metadata{
+			Name: "test-dotfiles",
+		},
+		Configs: config.ConfigGroups{
+			Core: []config.ConfigItem{
+				{Name: "vim", Path: "vim"},
+			},
+		},
+	}
+
+	// Set up confirm dialog (this is what updateOnboarding does on OnboardingCompleteMsg)
+	m.confirm = NewConfirm(
+		"post-onboarding-install",
+		"Configuration created!",
+		"Would you like to run install now?",
+	).WithLabels("Yes, install", "Skip for now")
+	m.confirm.selected = 0 // Default to "Yes, install"
+	m.confirm.SetSize(m.width, m.height)
+	m.pushView(viewConfirm)
+
+	// Now send the ConfirmResult message (user pressed 'y' to accept install)
+	confirmMsg := ConfirmResult{
+		ID:        "post-onboarding-install",
+		Confirmed: true,
+	}
+	updatedModel, _ := m.Update(confirmMsg)
+	model := updatedModel.(*Model)
+
+	// KEY ASSERTIONS: Verify the fix works
+
+	// 1. Should be back on dashboard view
+	if model.currentView != viewDashboard {
+		t.Errorf("expected viewDashboard, got %v", model.currentView)
+	}
+
+	// 2. View stack should be cleared
+	if len(model.viewStack) != 0 {
+		t.Errorf("expected empty view stack, got %d", len(model.viewStack))
+	}
+
+	// 3. Config panel should have proper dimensions (this was the bug!)
+	configsWidth := model.configsPanel.width
+	configsHeight := model.configsPanel.height
+	if configsWidth <= 0 {
+		t.Errorf("configs panel width should be > 0, got %d (empty screen regression)", configsWidth)
+	}
+	if configsHeight <= 0 {
+		t.Errorf("configs panel height should be > 0, got %d (empty screen regression)", configsHeight)
+	}
+
+	// 4. Layout should be calculated
+	if model.layout.Width != 120 {
+		t.Errorf("expected layout width 120, got %d", model.layout.Width)
+	}
+	if model.layout.Height != 50 {
+		t.Errorf("expected layout height 50, got %d", model.layout.Height)
+	}
+
+	// 5. View should render (not be empty)
+	view := model.View()
+	if view == "" {
+		t.Error("expected non-empty view after accepting install (empty screen regression)")
+	}
+
+	// 6. State should be updated with the new config
+	if !model.state.HasConfig {
+		t.Error("expected HasConfig to be true after install")
+	}
+	if model.state.Config == nil {
+		t.Error("expected Config to be set after install")
+	}
+}
+
+// TestPostOnboarding_DeclineInstall_PanelsHaveDimensions is a regression test for the bug
+// where declining install after onboarding also resulted in an empty screen.
+func TestPostOnboarding_DeclineInstall_PanelsHaveDimensions(t *testing.T) {
+	s := State{
+		Platform:  &platform.Platform{OS: "linux"},
+		HasConfig: false,
+	}
+
+	m := New(s)
+	m.width = 120
+	m.height = 50
+
+	// Set up pending config (simulating onboarding completion)
+	m.pendingNewConfigPath = "/tmp/test-dotfiles/.go4dot.yaml"
+	m.pendingNewConfig = &config.Config{
+		SchemaVersion: "1.0",
+		Metadata: config.Metadata{
+			Name: "test-dotfiles",
+		},
+		Configs: config.ConfigGroups{
+			Core: []config.ConfigItem{
+				{Name: "zsh", Path: "zsh"},
+			},
+		},
+	}
+
+	// Set up confirm dialog
+	m.confirm = NewConfirm(
+		"post-onboarding-install",
+		"Configuration created!",
+		"Would you like to run install now?",
+	)
+	m.confirm.SetSize(m.width, m.height)
+	m.pushView(viewConfirm)
+
+	// Send decline (user pressed 'n')
+	confirmMsg := ConfirmResult{
+		ID:        "post-onboarding-install",
+		Confirmed: false,
+	}
+	updatedModel, _ := m.Update(confirmMsg)
+	model := updatedModel.(*Model)
+
+	// KEY ASSERTIONS
+
+	// 1. Should be on dashboard view
+	if model.currentView != viewDashboard {
+		t.Errorf("expected viewDashboard, got %v", model.currentView)
+	}
+
+	// 2. Config panel should have proper dimensions
+	if model.configsPanel.width <= 0 {
+		t.Errorf("configs panel width should be > 0, got %d (empty screen regression)", model.configsPanel.width)
+	}
+	if model.configsPanel.height <= 0 {
+		t.Errorf("configs panel height should be > 0, got %d (empty screen regression)", model.configsPanel.height)
+	}
+
+	// 3. View should render
+	view := model.View()
+	if view == "" {
+		t.Error("expected non-empty view after declining install (empty screen regression)")
+	}
+
+	// 4. State should still be updated with config (just not installed)
+	if !model.state.HasConfig {
+		t.Error("expected HasConfig to be true after decline")
+	}
+}

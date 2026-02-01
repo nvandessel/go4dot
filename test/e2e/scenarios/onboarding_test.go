@@ -1,5 +1,18 @@
 //go:build e2e
 
+// Package scenarios contains E2E tests using teatest for key-based TUI interactions.
+//
+// IMPORTANT: Teatest E2E tests should ONLY use key inputs (SendKeys), NOT custom messages (tm.Send()).
+// Custom messages (like OnboardingCompleteMsg) don't work reliably in teatest because:
+// - Teatest routes messages through a channel
+// - Custom messages don't match Bubble Tea's internal message loop
+//
+// For testing custom message handling, use unit tests in internal/ui/dashboard/*_test.go
+// that call Update() directly on the model.
+//
+// See internal/ui/dashboard/dashboard_test.go for:
+// - TestPostOnboarding_AcceptInstall_PanelsHaveDimensions
+// - TestPostOnboarding_DeclineInstall_PanelsHaveDimensions
 package scenarios
 
 import (
@@ -59,3 +72,10 @@ func TestOnboarding_CanStartOnboarding(t *testing.T) {
 	// Should return to no-config view or quit gracefully
 	tm.WaitFinished(3 * time.Second)
 }
+
+// NOTE: Tests for post-onboarding behavior (accepting/declining install) are in
+// internal/ui/dashboard/dashboard_test.go as unit tests because they require
+// sending custom messages (OnboardingCompleteMsg) which don't work in teatest.
+// See:
+// - TestPostOnboarding_AcceptInstall_PanelsHaveDimensions
+// - TestPostOnboarding_DeclineInstall_PanelsHaveDimensions
