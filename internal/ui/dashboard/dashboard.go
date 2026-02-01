@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,6 +94,10 @@ type Model struct {
 	configList   *ConfigListView
 	externalView *ExternalView
 	machineView  *MachineView
+
+	// Post-onboarding state
+	pendingNewConfigPath string
+	pendingNewConfig     *config.Config
 }
 
 // New creates a new dashboard model.
@@ -568,8 +573,18 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 		// Clone/update external dep
 		ext := m.externalPanel.GetSelectedExternal()
 		if ext != nil && m.state.Config != nil && !m.operationActive {
-			// TODO: Implement clone/update operation
-			m.outputPanel.AddLog("info", fmt.Sprintf("Would clone/update: %s", ext.Dep.Name))
+			extID := ext.Dep.ID
+			// If already installed, update; if missing, clone
+			shouldUpdate := ext.Status == "installed"
+			opts := ExternalSingleOptions{Update: shouldUpdate}
+			return m.StartInlineOperation(OpExternalSingle, ext.Dep.Name, nil, func(runner *OperationRunner) error {
+				_, err := RunExternalSingleOperation(runner, m.state.Config, m.state.DotfilesPath, extID, opts)
+				// Refresh external panel after operation
+				if err == nil {
+					m.externalPanel.Refresh()
+				}
+				return err
+			})
 		}
 	}
 
@@ -711,9 +726,24 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		m.setResult(ActionInit)
-		m.result.ConfigName = msg.ConfigPath
-		return m, tea.Quit
+		// Store the new config for potential install
+		m.pendingNewConfigPath = msg.ConfigPath
+		m.pendingNewConfig = msg.Config
+
+		// Show in-TUI confirmation dialog instead of quitting
+		m.onboarding = nil
+		m.confirm = NewConfirm(
+			"post-onboarding-install",
+			"Configuration created!",
+			"Would you like to run install now? This will set up dependencies and clone external repos.",
+		).WithLabels("Yes, install", "Skip for now")
+		m.confirm.selected = 0 // Default to "Yes, install"
+		m.confirm.SetSize(m.width, m.height)
+
+		// Switch from onboarding view to confirm view
+		m.popView()          // Remove onboarding from stack
+		m.pushView(viewConfirm)
+		return m, nil
 	}
 
 	if m.onboarding != nil {
@@ -741,6 +771,102 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setResult(ActionUninstall)
 			return m, tea.Quit
 		}
+
+		if msg.ID == "post-onboarding-install" {
+			m.popView()
+			m.confirm = nil
+
+			if msg.Confirmed && m.pendingNewConfig != nil && m.pendingNewConfigPath != "" {
+				// User chose to install - run install inline within the dashboard
+				dotfilesPath := filepath.Dir(m.pendingNewConfigPath)
+
+				// Update the model state with the new config
+				m.state.Config = m.pendingNewConfig
+				m.state.DotfilesPath = dotfilesPath
+				m.state.HasConfig = true
+				m.state.Configs = m.pendingNewConfig.GetAllConfigs()
+
+				// Reinitialize panels with the new config
+				m.configsPanel = NewConfigsPanel(m.state, m.selectedConfigs)
+				m.healthPanel = NewHealthPanel(m.state.Config, m.state.DotfilesPath)
+				m.overridesPanel = NewOverridesPanel(m.state.Config)
+				m.externalPanel = NewExternalPanel(m.state.Config, m.state.DotfilesPath, m.state.Platform)
+				m.detailsPanel = NewDetailsPanel(m.state)
+				m.detailsPanel.SetPanels(m.configsPanel, m.healthPanel, m.overridesPanel, m.externalPanel)
+
+				// Re-register panels
+				m.panels[PanelConfigs] = m.configsPanel
+				m.panels[PanelHealth] = m.healthPanel
+				m.panels[PanelOverrides] = m.overridesPanel
+				m.panels[PanelExternal] = m.externalPanel
+				m.panels[PanelDetails] = m.detailsPanel
+
+				// Clear pending state
+				m.pendingNewConfig = nil
+				m.pendingNewConfigPath = ""
+
+				// Switch to dashboard view and run install inline
+				m.clearViewStack()
+				m.currentView = viewDashboard
+
+				// Initialize panels
+				var initCmds []tea.Cmd
+				initCmds = append(initCmds, m.healthPanel.Init())
+				initCmds = append(initCmds, m.externalPanel.Init())
+
+				// Start the install operation inline
+				opts := InstallOptions{}
+				installCmd := m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
+					_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+					return err
+				})
+				if installCmd != nil {
+					initCmds = append(initCmds, installCmd)
+				}
+
+				return m, tea.Batch(initCmds...)
+			}
+
+			// User declined install - return to dashboard with new config loaded
+			if m.pendingNewConfigPath != "" {
+				dotfilesPath := filepath.Dir(m.pendingNewConfigPath)
+
+				// Update the model state with the new config if available
+				if m.pendingNewConfig != nil {
+					m.state.Config = m.pendingNewConfig
+					m.state.DotfilesPath = dotfilesPath
+					m.state.HasConfig = true
+					m.state.Configs = m.pendingNewConfig.GetAllConfigs()
+
+					// Reinitialize panels with the new config
+					m.configsPanel = NewConfigsPanel(m.state, m.selectedConfigs)
+					m.healthPanel = NewHealthPanel(m.state.Config, m.state.DotfilesPath)
+					m.overridesPanel = NewOverridesPanel(m.state.Config)
+					m.externalPanel = NewExternalPanel(m.state.Config, m.state.DotfilesPath, m.state.Platform)
+					m.detailsPanel = NewDetailsPanel(m.state)
+					m.detailsPanel.SetPanels(m.configsPanel, m.healthPanel, m.overridesPanel, m.externalPanel)
+
+					// Re-register panels
+					m.panels[PanelConfigs] = m.configsPanel
+					m.panels[PanelHealth] = m.healthPanel
+					m.panels[PanelOverrides] = m.overridesPanel
+					m.panels[PanelExternal] = m.externalPanel
+					m.panels[PanelDetails] = m.detailsPanel
+				}
+			}
+
+			// Clear pending state
+			m.pendingNewConfig = nil
+			m.pendingNewConfigPath = ""
+
+			// Switch to dashboard view
+			m.clearViewStack()
+			m.currentView = viewDashboard
+
+			// Initialize panels
+			return m, tea.Batch(m.healthPanel.Init(), m.externalPanel.Init())
+		}
+
 		m.popView()
 		m.confirm = nil
 		return m, nil
@@ -974,6 +1100,8 @@ func getOperationTitle(opType OperationType) string {
 		return "Updating"
 	case OpDoctor:
 		return "Health Check"
+	case OpExternalSingle:
+		return "External"
 	default:
 		return "Operation"
 	}

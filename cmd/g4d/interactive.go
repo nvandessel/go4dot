@@ -160,44 +160,8 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 
 	case dashboard.ActionInit:
 		// Onboarding was completed inline in the dashboard.
-		// The config file has already been created.
-		// We'll reload the config in the next iteration of the main loop.
-		// If result.ConfigName contains a path, a new config was created.
-
-		// Check if config now exists and prompt for install
-		if newCfg, newConfigPath, err := config.LoadFromDiscovery(); err == nil {
-			var runInstall bool
-			form := huh.NewForm(
-				huh.NewGroup(
-					huh.NewConfirm().
-						Title("Would you like to run install now?").
-						Description("This will set up dependencies and clone external repos").
-						Affirmative("Yes, install").
-						Negative("No, skip").
-						Value(&runInstall),
-				),
-			)
-			if form.Run() == nil && runInstall {
-				// Check for conflicts before install
-				dotfilesPath := filepath.Dir(newConfigPath)
-				conflicts, err := stow.DetectConflicts(newCfg, dotfilesPath)
-				if err != nil {
-					ui.Error("Failed to check conflicts: %v", err)
-				} else if len(conflicts) > 0 {
-					// Resolve conflicts before proceeding
-					if !stow.ResolveConflicts(conflicts) {
-						fmt.Println("  Install cancelled.")
-						waitForEnter()
-						return false
-					}
-				}
-				// Clear screen before starting dashboard to prevent UI artifacts
-				// from huh forms and fmt.Printf output
-				fmt.Print("\033[H\033[2J")
-				// Run install within dashboard
-				runInstallInDashboard(newCfg, dotfilesPath)
-			}
-		}
+		// The install prompt and execution is now handled within the TUI itself.
+		// Nothing to do here - the main loop will reload the config on next iteration.
 
 	// ActionSync, ActionSyncConfig, ActionBulkSync are now handled inline in dashboard
 	// and no longer trigger handleAction
@@ -219,53 +183,6 @@ func handleAction(result *dashboard.Result, cfg *config.Config, configPath strin
 	}
 
 	return false
-}
-
-// buildDashboardState creates a dashboard.State with current system information
-func buildDashboardState(cfg *config.Config, dotfilesPath string) dashboard.State {
-	p, _ := platform.Detect()
-
-	driftSummary, _ := stow.FullDriftCheck(cfg, dotfilesPath)
-	linkStatus, _ := stow.GetAllConfigLinkStatus(cfg, dotfilesPath)
-	machineStatus := machine.CheckMachineConfigStatus(cfg)
-
-	dashStatus := make([]dashboard.MachineStatus, 0, len(machineStatus))
-	for _, s := range machineStatus {
-		dashStatus = append(dashStatus, dashboard.MachineStatus{
-			ID:          s.ID,
-			Description: s.Description,
-			Status:      s.Status,
-		})
-	}
-
-	return dashboard.State{
-		Platform:      p,
-		DriftSummary:  driftSummary,
-		LinkStatus:    linkStatus,
-		MachineStatus: dashStatus,
-		Configs:       cfg.GetAllConfigs(),
-		Config:        cfg, // Full config for inline operations
-		DotfilesPath:  dotfilesPath,
-		HasConfig:     true,
-	}
-}
-
-// runInstallInDashboard runs the install operation within the dashboard UI
-func runInstallInDashboard(cfg *config.Config, dotfilesPath string) {
-	state := buildDashboardState(cfg, dotfilesPath)
-
-	opts := dashboard.InstallOptions{
-		Auto: !ui.IsInteractive(),
-	}
-
-	_, err := dashboard.RunWithOperation(state, dashboard.OpInstall, "", nil, func(runner *dashboard.OperationRunner) error {
-		_, err := dashboard.RunInstallOperation(runner, cfg, dotfilesPath, opts)
-		return err
-	})
-
-	if err != nil {
-		ui.Error("Dashboard error: %v", err)
-	}
 }
 
 func runMoreMenu(cfg *config.Config, configPath string) {
