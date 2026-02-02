@@ -132,7 +132,11 @@ func NewDockerTestContainer(t *testing.T, cfg DockerConfig) *DockerTestContainer
 
 	// Set defaults
 	if cfg.ImageName == "" {
-		cfg.ImageName = "ubuntu:22.04" // Pinned version for reproducible tests
+		if cfg.VHSEnabled {
+			cfg.ImageName = "debian:bookworm-slim" // Debian for VHS (has proper chromium package)
+		} else {
+			cfg.ImageName = "ubuntu:22.04" // Ubuntu for non-VHS tests
+		}
 	}
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = "/home/testuser"
@@ -145,7 +149,7 @@ func NewDockerTestContainer(t *testing.T, cfg DockerConfig) *DockerTestContainer
 	dockerfile := fmt.Sprintf(`FROM %s
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     stow \
     curl \
@@ -155,8 +159,8 @@ RUN apt-get update && apt-get install -y \
     locales \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up locales for UTF-8 support
-RUN locale-gen en_US.UTF-8
+# Set up locales for UTF-8 support (works on both Debian and Ubuntu)
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
@@ -205,34 +209,47 @@ CMD ["/bin/zsh", "-i"]
 	}
 
 	// Install VHS and dependencies if enabled
-	// Note: Versions are pinned for reproducibility. Checksums could be added for additional security.
+	// Note: Use Debian packages matching official charmbracelet/vhs Docker image
 	if cfg.VHSEnabled {
 		vhsInstall := `
-# Install VHS dependencies (as root)
+# Install VHS dependencies (following official charmbracelet/vhs Dockerfile)
 USER root
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    chromium-browser \
-    fonts-noto-color-emoji \
-    fonts-dejavu \
-    && rm -rf /var/lib/apt/lists/*
 
-# Install ttyd v1.7.7 for terminal recording
+# Install base dependencies including chromium for headless browser
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    chromium \
+    fonts-noto-color-emoji \
+    fonts-dejavu-core \
+    fonts-freefont-ttf \
+    locales \
+    && rm -rf /var/lib/apt/lists/* \
+    && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \
+    && locale-gen
+
+# Set locale
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+
+# Install ttyd v1.7.7 for terminal recording (matches official VHS image)
 RUN curl -sL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /usr/local/bin/ttyd && \
     chmod +x /usr/local/bin/ttyd
 
-# Install Go 1.23.5 and VHS v0.8.0 (pinned versions for reproducibility)
-RUN curl -sL https://go.dev/dl/go1.23.5.linux-amd64.tar.gz | tar -C /usr/local -xzf -
-ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
-RUN /usr/local/go/bin/go install github.com/charmbracelet/vhs@v0.8.0 && \
-    cp /root/go/bin/vhs /usr/local/bin/vhs
+# Install VHS v0.8.0 from pre-built binary
+RUN curl -sL https://github.com/charmbracelet/vhs/releases/download/v0.8.0/vhs_0.8.0_Linux_x86_64.tar.gz | \
+    tar -xzf - -C /usr/local/bin --strip-components=1 vhs_0.8.0_Linux_x86_64/vhs && \
+    chmod +x /usr/local/bin/vhs
 
-# Set Chrome path for VHS
-ENV VHS_CHROME_PATH=/usr/bin/chromium-browser
+# Configure Chromium for headless operation in Docker
+ENV CHROME_BIN=/usr/bin/chromium
+ENV VHS_CHROME_PATH=/usr/bin/chromium
 
 # Switch back to testuser
 USER testuser
-ENV PATH="/usr/local/go/bin:${PATH}"
 `
 		dockerfile += vhsInstall
 		if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
@@ -365,6 +382,10 @@ type VHSTapeConfig struct {
 	// OutputPath is the local path where output file will be saved
 	OutputPath string
 
+	// ScreenshotDir is the local directory where screenshots will be saved
+	// If empty, screenshots are not copied
+	ScreenshotDir string
+
 	// ContainerWorkDir is the working directory in the container for VHS execution
 	// Defaults to /home/testuser
 	ContainerWorkDir string
@@ -406,6 +427,15 @@ func (c *DockerTestContainer) RunVHSTape(cfg VHSTapeConfig) error {
 	containerOutputPath := filepath.Join(cfg.ContainerWorkDir, filepath.Base(outputFilename))
 	modifiedTape := modifyVHSTapeOutput(string(tapeContent), containerOutputPath)
 
+	// Extract and modify screenshot paths to use container paths
+	screenshotPaths := extractVHSScreenshotPaths(modifiedTape)
+	screenshotMapping := make(map[string]string) // container path -> original filename
+	for _, originalPath := range screenshotPaths {
+		containerScreenshotPath := filepath.Join(cfg.ContainerWorkDir, "screenshots", filepath.Base(originalPath))
+		modifiedTape = modifyVHSScreenshotPath(modifiedTape, originalPath, containerScreenshotPath)
+		screenshotMapping[containerScreenshotPath] = filepath.Base(originalPath)
+	}
+
 	// Modify tape to use g4d from PATH instead of ./bin/g4d
 	modifiedTape = strings.ReplaceAll(modifiedTape, "./bin/g4d", "g4d")
 
@@ -418,6 +448,13 @@ func (c *DockerTestContainer) RunVHSTape(cfg VHSTapeConfig) error {
 	// Copy tape to container
 	if err := c.CopyToContainer(tmpTape, containerTapePath); err != nil {
 		return fmt.Errorf("failed to copy tape to container: %w", err)
+	}
+
+	// Create screenshots directory in container if we have screenshots
+	if len(screenshotMapping) > 0 {
+		if _, err := c.Exec("mkdir", "-p", filepath.Join(cfg.ContainerWorkDir, "screenshots")); err != nil {
+			return fmt.Errorf("failed to create screenshots directory: %w", err)
+		}
 	}
 
 	// Run VHS inside container
@@ -438,6 +475,22 @@ func (c *DockerTestContainer) RunVHSTape(cfg VHSTapeConfig) error {
 		return fmt.Errorf("failed to copy output from container: %w", err)
 	}
 
+	// Copy screenshots from container if screenshot directory is specified
+	if cfg.ScreenshotDir != "" && len(screenshotMapping) > 0 {
+		if err := os.MkdirAll(cfg.ScreenshotDir, 0755); err != nil {
+			return fmt.Errorf("failed to create screenshot directory: %w", err)
+		}
+
+		for containerPath, filename := range screenshotMapping {
+			localPath := filepath.Join(cfg.ScreenshotDir, filename)
+			if err := c.CopyFromContainer(containerPath, localPath); err != nil {
+				c.t.Logf("Warning: failed to copy screenshot %s: %v", filename, err)
+			} else {
+				c.t.Logf("Copied screenshot: %s", filename)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -447,7 +500,10 @@ func extractVHSOutputFilename(tape string) string {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "Output ") {
-			return strings.TrimPrefix(line, "Output ")
+			path := strings.TrimPrefix(line, "Output ")
+			// Remove quotes if present
+			path = strings.Trim(path, "\"")
+			return path
 		}
 	}
 	return ""
@@ -459,11 +515,36 @@ func modifyVHSTapeOutput(tape, newOutputPath string) string {
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "Output ") {
-			lines[i] = "Output " + newOutputPath
+			// Use quotes around path for VHS v0.8.0+ compatibility
+			lines[i] = "Output \"" + newOutputPath + "\""
 			break
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// extractVHSScreenshotPaths extracts all Screenshot paths from a VHS tape
+func extractVHSScreenshotPaths(tape string) []string {
+	var paths []string
+	lines := strings.Split(tape, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Screenshot ") {
+			path := strings.TrimPrefix(line, "Screenshot ")
+			// Remove quotes if present
+			path = strings.Trim(path, "\"")
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// modifyVHSScreenshotPath replaces a specific Screenshot path in a VHS tape
+func modifyVHSScreenshotPath(tape, oldPath, newPath string) string {
+	// Handle both quoted and unquoted versions
+	tape = strings.ReplaceAll(tape, "Screenshot \""+oldPath+"\"", "Screenshot \""+newPath+"\"")
+	tape = strings.ReplaceAll(tape, "Screenshot "+oldPath, "Screenshot \""+newPath+"\"")
+	return tape
 }
 
 // Cleanup stops and removes the container and image

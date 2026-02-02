@@ -7,13 +7,13 @@
 
 Set Shell bash
 Set FontSize 14
-Set Width 120
-Set Height 40
+Set Width 1200
+Set Height 600
 Set Padding 10
 
 # Isolate from user's real environment
-Set Env HOME /tmp/g4d-e2e-test
-Set Env XDG_CONFIG_HOME /tmp/g4d-e2e-test/.config
+Env HOME "/tmp/g4d-e2e-test"
+Env XDG_CONFIG_HOME "/tmp/g4d-e2e-test/.config"
 
 # Run g4d in the test fixtures directory
 # Note: In container, fixtures are at /home/testuser/fixtures

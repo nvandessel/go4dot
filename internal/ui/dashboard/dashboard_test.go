@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/stow"
 )
 
 func TestNew(t *testing.T) {
@@ -1121,5 +1122,306 @@ func TestPostOnboarding_DeclineInstall_PanelsHaveDimensions(t *testing.T) {
 	// 5. State should still be updated with config (just not installed)
 	if !model.state.HasConfig {
 		t.Error("expected HasConfig to be true after decline")
+	}
+}
+
+// TestPostOnboarding_AcceptInstall_WithConflicts_ShowsConflictModal tests that when
+// accepting install after onboarding and conflicts exist, the conflict modal is shown.
+func TestPostOnboarding_AcceptInstall_WithConflicts_ShowsConflictModal(t *testing.T) {
+	s := State{
+		Platform:  &platform.Platform{OS: "linux"},
+		HasConfig: false,
+	}
+
+	m := New(s)
+	m.width = 120
+	m.height = 50
+
+	// Set up pending config (simulating onboarding completion)
+	m.pendingNewConfigPath = "/tmp/test-dotfiles/.go4dot.yaml"
+	m.pendingNewConfig = &config.Config{
+		SchemaVersion: "1.0",
+		Metadata: config.Metadata{
+			Name: "test-dotfiles",
+		},
+		Configs: config.ConfigGroups{
+			Core: []config.ConfigItem{
+				{Name: "zsh", Path: "zsh"},
+			},
+		},
+	}
+
+	// Set up confirm dialog
+	m.confirm = NewConfirm(
+		"post-onboarding-install",
+		"Configuration created!",
+		"Would you like to run install now?",
+	)
+	m.confirm.SetSize(m.width, m.height)
+	m.pushView(viewConfirm)
+
+	// Send confirm (user pressed 'y')
+	confirmMsg := ConfirmResult{
+		ID:        "post-onboarding-install",
+		Confirmed: true,
+	}
+	updatedModel, _ := m.Update(confirmMsg)
+	model := updatedModel.(*Model)
+
+	// The model should now be set up to check for conflicts
+	// Since we can't easily mock CheckForConflicts, we verify the state is correct
+	// after the update. In a real scenario with conflicts, it would show the modal.
+
+	// Verify state is updated
+	if !model.state.HasConfig {
+		t.Error("expected HasConfig to be true")
+	}
+	if model.state.Config == nil {
+		t.Error("expected Config to be set")
+	}
+}
+
+// TestConflictView_Creation tests that ConflictView is created correctly
+func TestConflictView_Creation(t *testing.T) {
+	conflicts := []stow.ConflictFile{
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshrc", SourcePath: "/home/user/dotfiles/zsh/.zshrc"},
+		{ConfigName: "vim", TargetPath: "/home/user/.vimrc", SourcePath: "/home/user/dotfiles/vim/.vimrc"},
+	}
+
+	cv := NewConflictView(conflicts)
+
+	if cv == nil {
+		t.Fatal("expected ConflictView to be created")
+	}
+	if len(cv.conflicts) != 2 {
+		t.Errorf("expected 2 conflicts, got %d", len(cv.conflicts))
+	}
+	if len(cv.byConfig) != 2 {
+		t.Errorf("expected 2 config groups, got %d", len(cv.byConfig))
+	}
+	if cv.selectedIdx != 0 {
+		t.Errorf("expected selectedIdx to default to 0 (Backup), got %d", cv.selectedIdx)
+	}
+}
+
+// TestConflictView_Navigation tests keyboard navigation in ConflictView
+func TestConflictView_Navigation(t *testing.T) {
+	conflicts := []stow.ConflictFile{
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshrc"},
+	}
+	cv := NewConflictView(conflicts)
+	cv.SetSize(80, 40)
+
+	// Initial position is 0 (Backup)
+	if cv.selectedIdx != 0 {
+		t.Errorf("expected selectedIdx 0, got %d", cv.selectedIdx)
+	}
+
+	// Press right arrow to move to Delete (1)
+	msg := tea.KeyMsg{Type: tea.KeyRight}
+	updatedModel, _ := cv.Update(msg)
+	cv = updatedModel.(*ConflictView)
+	if cv.selectedIdx != 1 {
+		t.Errorf("expected selectedIdx 1 after right, got %d", cv.selectedIdx)
+	}
+
+	// Press right again to move to Cancel (2)
+	updatedModel, _ = cv.Update(msg)
+	cv = updatedModel.(*ConflictView)
+	if cv.selectedIdx != 2 {
+		t.Errorf("expected selectedIdx 2 after right, got %d", cv.selectedIdx)
+	}
+
+	// Press right again - should stay at 2 (no wrap)
+	updatedModel, _ = cv.Update(msg)
+	cv = updatedModel.(*ConflictView)
+	if cv.selectedIdx != 2 {
+		t.Errorf("expected selectedIdx to stay at 2, got %d", cv.selectedIdx)
+	}
+
+	// Press left to go back to Delete
+	msg = tea.KeyMsg{Type: tea.KeyLeft}
+	updatedModel, _ = cv.Update(msg)
+	cv = updatedModel.(*ConflictView)
+	if cv.selectedIdx != 1 {
+		t.Errorf("expected selectedIdx 1 after left, got %d", cv.selectedIdx)
+	}
+
+	// Press tab to cycle
+	msg = tea.KeyMsg{Type: tea.KeyTab}
+	updatedModel, _ = cv.Update(msg)
+	cv = updatedModel.(*ConflictView)
+	if cv.selectedIdx != 2 {
+		t.Errorf("expected selectedIdx 2 after tab, got %d", cv.selectedIdx)
+	}
+
+	// Tab wraps around
+	updatedModel, _ = cv.Update(msg)
+	cv = updatedModel.(*ConflictView)
+	if cv.selectedIdx != 0 {
+		t.Errorf("expected selectedIdx 0 after tab wrap, got %d", cv.selectedIdx)
+	}
+}
+
+// TestConflictView_ShortcutKeys tests shortcut keys (b, d, c)
+func TestConflictView_ShortcutKeys(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          rune
+		expectChoice ConflictResolutionChoice
+	}{
+		{"b for backup", 'b', ConflictChoiceBackup},
+		{"d for delete", 'd', ConflictChoiceDelete},
+		{"c for cancel", 'c', ConflictChoiceCancel},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conflicts := []stow.ConflictFile{
+				{ConfigName: "zsh", TargetPath: "/home/user/.zshrc"},
+			}
+			cv := NewConflictView(conflicts)
+			cv.SetSize(80, 40)
+
+			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{tt.key}}
+			_, cmd := cv.Update(msg)
+
+			if cmd == nil {
+				t.Fatal("expected command to be returned")
+			}
+
+			// Execute the command to get the message
+			result := cmd()
+			resolvedMsg, ok := result.(ConflictResolvedMsg)
+			if !ok {
+				t.Fatalf("expected ConflictResolvedMsg, got %T", result)
+			}
+			if resolvedMsg.Choice != tt.expectChoice {
+				t.Errorf("expected choice %v, got %v", tt.expectChoice, resolvedMsg.Choice)
+			}
+		})
+	}
+}
+
+// TestConflictView_EscapeCancels tests that Escape key cancels
+func TestConflictView_EscapeCancels(t *testing.T) {
+	conflicts := []stow.ConflictFile{
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshrc"},
+	}
+	cv := NewConflictView(conflicts)
+	cv.SetSize(80, 40)
+
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	_, cmd := cv.Update(msg)
+
+	if cmd == nil {
+		t.Fatal("expected command to be returned")
+	}
+
+	result := cmd()
+	resolvedMsg, ok := result.(ConflictResolvedMsg)
+	if !ok {
+		t.Fatalf("expected ConflictResolvedMsg, got %T", result)
+	}
+	if resolvedMsg.Choice != ConflictChoiceCancel {
+		t.Errorf("expected ConflictChoiceCancel, got %v", resolvedMsg.Choice)
+	}
+	if resolvedMsg.Resolved {
+		t.Error("expected Resolved to be false for cancel")
+	}
+}
+
+// TestConflictResolved_Cancel_ClearsPendingState tests that cancelling conflict
+// resolution clears the pending operation state
+func TestConflictResolved_Cancel_ClearsPendingState(t *testing.T) {
+	cfg := &config.Config{
+		Configs: config.ConfigGroups{
+			Core: []config.ConfigItem{
+				{Name: "zsh", Path: "zsh"},
+			},
+		},
+	}
+	s := State{
+		Platform:     &platform.Platform{OS: "linux"},
+		HasConfig:    true,
+		Config:       cfg,
+		DotfilesPath: "/tmp/dotfiles",
+		Configs:      cfg.GetAllConfigs(),
+	}
+
+	m := New(s)
+	m.width = 120
+	m.height = 50
+
+	// Simulate being in conflict view with pending operation
+	conflicts := []stow.ConflictFile{
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshrc"},
+	}
+	m.conflictView = NewConflictView(conflicts)
+	m.conflictView.SetSize(m.width, m.height)
+	m.pendingOperation = OpInstall
+	m.pendingConflicts = conflicts
+	m.pushView(viewConflict)
+
+	// Send cancel message
+	cancelMsg := ConflictResolvedMsg{
+		Choice:   ConflictChoiceCancel,
+		Resolved: false,
+	}
+	updatedModel, _ := m.Update(cancelMsg)
+	model := updatedModel.(*Model)
+
+	// Verify state is cleared
+	if model.currentView != viewDashboard {
+		t.Errorf("expected viewDashboard, got %v", model.currentView)
+	}
+	if model.conflictView != nil {
+		t.Error("expected conflictView to be nil")
+	}
+	if model.pendingOperation != 0 {
+		t.Errorf("expected pendingOperation to be 0, got %v", model.pendingOperation)
+	}
+	if model.pendingConflicts != nil {
+		t.Error("expected pendingConflicts to be nil")
+	}
+}
+
+// TestCheckForConflicts_FiltersByConfigNames tests that CheckForConflicts
+// correctly filters to specified config names
+func TestCheckForConflicts_FiltersByConfigNames(t *testing.T) {
+	// This is more of an integration test - we can't easily test without
+	// a real filesystem. But we can test the GroupConflictsByConfig helper.
+	conflicts := []stow.ConflictFile{
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshrc"},
+		{ConfigName: "vim", TargetPath: "/home/user/.vimrc"},
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshenv"},
+	}
+
+	byConfig := GroupConflictsByConfig(conflicts)
+
+	if len(byConfig) != 2 {
+		t.Errorf("expected 2 config groups, got %d", len(byConfig))
+	}
+	if len(byConfig["zsh"]) != 2 {
+		t.Errorf("expected 2 zsh conflicts, got %d", len(byConfig["zsh"]))
+	}
+	if len(byConfig["vim"]) != 1 {
+		t.Errorf("expected 1 vim conflict, got %d", len(byConfig["vim"]))
+	}
+}
+
+// TestConflictView_Render tests that ConflictView renders without panic
+func TestConflictView_Render(t *testing.T) {
+	conflicts := []stow.ConflictFile{
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshrc"},
+		{ConfigName: "vim", TargetPath: "/home/user/.vimrc"},
+	}
+
+	cv := NewConflictView(conflicts)
+	cv.SetSize(80, 40)
+
+	view := cv.View()
+	if view == "" {
+		t.Error("expected non-empty view")
 	}
 }

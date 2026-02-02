@@ -25,6 +25,7 @@ const (
 	viewConfigList
 	viewExternal
 	viewMachine
+	viewConflict
 )
 
 // State holds all the shared data for the dashboard.
@@ -94,10 +95,17 @@ type Model struct {
 	configList   *ConfigListView
 	externalView *ExternalView
 	machineView  *MachineView
+	conflictView *ConflictView
 
 	// Post-onboarding state
 	pendingNewConfigPath string
 	pendingNewConfig     *config.Config
+
+	// Pending operation state (for conflict resolution)
+	pendingOperation   OperationType
+	pendingConfigName  string
+	pendingConfigNames []string
+	pendingConflicts   []stow.ConflictFile
 }
 
 // New creates a new dashboard model.
@@ -228,6 +236,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateExternal(msg)
 	case viewMachine:
 		return m.updateMachine(msg)
+	case viewConflict:
+		return m.updateConflict(msg)
 	default:
 		return m.updateDashboard(msg)
 	}
@@ -455,6 +465,22 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 	// Global operations (s, i, u)
 	case key.Matches(msg, keys.Sync):
 		if m.state.Config != nil && !m.operationActive {
+			// Check for conflicts before syncing
+			conflicts, err := CheckForConflicts(m.state.Config, m.state.DotfilesPath, nil)
+			if err != nil {
+				m.outputPanel.AddLog("error", fmt.Sprintf("Failed to check conflicts: %v", err))
+				return nil
+			}
+			if len(conflicts) > 0 {
+				// Show conflict resolution modal
+				m.conflictView = NewConflictView(conflicts)
+				m.conflictView.SetSize(m.width, m.height)
+				m.pendingOperation = OpSync
+				m.pendingConflicts = conflicts
+				m.pushView(viewConflict)
+				return nil
+			}
+			// No conflicts, proceed normally
 			opts := SyncOptions{Force: false, Interactive: false}
 			return m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
 				_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
@@ -464,6 +490,22 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 
 	case key.Matches(msg, keys.Install):
 		if m.state.Config != nil && !m.operationActive {
+			// Check for conflicts before installing
+			conflicts, err := CheckForConflicts(m.state.Config, m.state.DotfilesPath, nil)
+			if err != nil {
+				m.outputPanel.AddLog("error", fmt.Sprintf("Failed to check conflicts: %v", err))
+				return nil
+			}
+			if len(conflicts) > 0 {
+				// Show conflict resolution modal
+				m.conflictView = NewConflictView(conflicts)
+				m.conflictView.SetSize(m.width, m.height)
+				m.pendingOperation = OpInstall
+				m.pendingConflicts = conflicts
+				m.pushView(viewConflict)
+				return nil
+			}
+			// No conflicts, proceed normally
 			opts := InstallOptions{}
 			return m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
 				_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
@@ -531,6 +573,23 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			for name := range m.selectedConfigs {
 				names = append(names, name)
 			}
+			// Check for conflicts for selected configs only
+			conflicts, err := CheckForConflicts(m.state.Config, m.state.DotfilesPath, names)
+			if err != nil {
+				m.outputPanel.AddLog("error", fmt.Sprintf("Failed to check conflicts: %v", err))
+				return nil
+			}
+			if len(conflicts) > 0 {
+				// Show conflict resolution modal
+				m.conflictView = NewConflictView(conflicts)
+				m.conflictView.SetSize(m.width, m.height)
+				m.pendingOperation = OpBulkSync
+				m.pendingConfigNames = names
+				m.pendingConflicts = conflicts
+				m.pushView(viewConflict)
+				return nil
+			}
+			// No conflicts, proceed normally
 			opts := SyncOptions{Force: false, Interactive: false}
 			return m.StartInlineOperation(OpBulkSync, "", names, func(runner *OperationRunner) error {
 				_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, names, opts)
@@ -548,6 +607,23 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 		// Sync selected config
 		cfg := m.configsPanel.GetSelectedConfig()
 		if cfg != nil && m.state.Config != nil && !m.operationActive {
+			// Check for conflicts for this specific config
+			conflicts, err := CheckForConflicts(m.state.Config, m.state.DotfilesPath, []string{cfg.Name})
+			if err != nil {
+				m.outputPanel.AddLog("error", fmt.Sprintf("Failed to check conflicts: %v", err))
+				return nil
+			}
+			if len(conflicts) > 0 {
+				// Show conflict resolution modal
+				m.conflictView = NewConflictView(conflicts)
+				m.conflictView.SetSize(m.width, m.height)
+				m.pendingOperation = OpSyncSingle
+				m.pendingConfigName = cfg.Name
+				m.pendingConflicts = conflicts
+				m.pushView(viewConflict)
+				return nil
+			}
+			// No conflicts, proceed normally
 			opts := SyncOptions{Force: false, Interactive: false}
 			return m.StartInlineOperation(OpSyncSingle, cfg.Name, nil, func(runner *OperationRunner) error {
 				_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, cfg.Name, opts)
@@ -773,7 +849,7 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirm = nil
 
 			if msg.Confirmed && m.pendingNewConfig != nil && m.pendingNewConfigPath != "" {
-				// User chose to install - run install inline within the dashboard
+				// User chose to install - set up dashboard first, then check conflicts
 				dotfilesPath := filepath.Dir(m.pendingNewConfigPath)
 
 				// Update the model state with the new config
@@ -808,11 +884,11 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Set initial focus
 				m.configsPanel.SetFocused(true)
 
-				// Clear pending state
+				// Clear pending onboarding state
 				m.pendingNewConfig = nil
 				m.pendingNewConfigPath = ""
 
-				// Switch to dashboard view and run install inline
+				// Switch to dashboard view
 				m.clearViewStack()
 				m.currentView = viewDashboard
 
@@ -821,7 +897,24 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				initCmds = append(initCmds, m.healthPanel.Init())
 				initCmds = append(initCmds, m.externalPanel.Init())
 
-				// Start the install operation inline
+				// Check for conflicts before installing
+				conflicts, err := CheckForConflicts(m.state.Config, m.state.DotfilesPath, nil)
+				if err != nil {
+					m.outputPanel.AddLog("error", fmt.Sprintf("Failed to check conflicts: %v", err))
+					return m, tea.Batch(initCmds...)
+				}
+
+				if len(conflicts) > 0 {
+					// Show conflict resolution modal
+					m.conflictView = NewConflictView(conflicts)
+					m.conflictView.SetSize(m.width, m.height)
+					m.pendingOperation = OpInstall
+					m.pendingConflicts = conflicts
+					m.pushView(viewConflict)
+					return m, tea.Batch(initCmds...)
+				}
+
+				// No conflicts, proceed with install
 				opts := InstallOptions{}
 				installCmd := m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
 					_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
@@ -980,6 +1073,95 @@ func (m *Model) updateMachine(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.machineView = mv
 		}
 		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateConflict(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.conflictView != nil {
+			m.conflictView.SetSize(msg.Width, msg.Height)
+		}
+
+	case ConflictResolvedMsg:
+		m.popView()
+		m.conflictView = nil
+
+		if !msg.Resolved {
+			// User cancelled or error occurred
+			if msg.Error != nil {
+				m.outputPanel.AddLog("error", fmt.Sprintf("Failed to resolve conflicts: %v", msg.Error))
+			} else {
+				m.outputPanel.AddLog("info", "Operation cancelled")
+			}
+			// Clear pending operation state
+			m.pendingOperation = 0
+			m.pendingConfigName = ""
+			m.pendingConfigNames = nil
+			m.pendingConflicts = nil
+			return m, nil
+		}
+
+		// Conflicts resolved, execute the pending operation
+		m.outputPanel.AddLog("success", fmt.Sprintf("Resolved %d conflict(s)", len(m.pendingConflicts)))
+		return m.executePendingOperation()
+	}
+
+	if m.conflictView != nil {
+		model, cmd := m.conflictView.Update(msg)
+		if cv, ok := model.(*ConflictView); ok {
+			m.conflictView = cv
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) executePendingOperation() (tea.Model, tea.Cmd) {
+	opType := m.pendingOperation
+	configName := m.pendingConfigName
+	configNames := m.pendingConfigNames
+
+	// Clear pending state
+	m.pendingOperation = 0
+	m.pendingConfigName = ""
+	m.pendingConfigNames = nil
+	m.pendingConflicts = nil
+
+	// Execute the operation based on type
+	switch opType {
+	case OpSync:
+		opts := SyncOptions{Force: false, Interactive: false}
+		return m, m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
+			_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+			return err
+		})
+
+	case OpInstall:
+		opts := InstallOptions{}
+		return m, m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
+			_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
+			return err
+		})
+
+	case OpSyncSingle:
+		opts := SyncOptions{Force: false, Interactive: false}
+		return m, m.StartInlineOperation(OpSyncSingle, configName, nil, func(runner *OperationRunner) error {
+			_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, configName, opts)
+			return err
+		})
+
+	case OpBulkSync:
+		opts := SyncOptions{Force: false, Interactive: false}
+		return m, m.StartInlineOperation(OpBulkSync, "", configNames, func(runner *OperationRunner) error {
+			_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, configNames, opts)
+			return err
+		})
 	}
 
 	return m, nil
@@ -1196,6 +1378,11 @@ func (m Model) View() string {
 	case viewMachine:
 		if m.machineView != nil {
 			return m.machineView.View()
+		}
+		return ""
+	case viewConflict:
+		if m.conflictView != nil {
+			return m.conflictView.View()
 		}
 		return ""
 	default:

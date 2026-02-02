@@ -12,6 +12,13 @@ make test-coverage  # Generate coverage.html report
 make package        # Build and package release artifacts
 make release        # Tag and push a new version (interactive)
 make sandbox        # Build and deploy a local container for testing
+
+# E2E and Visual Testing (IMPORTANT for TUI work)
+make e2e-visual         # Run VHS visual tests (screenshots in test/e2e/screenshots/)
+make e2e-visual-update  # Update golden files for visual tests
+make e2e-test           # Run fast E2E TUI tests (teatest)
+make e2e-all            # Run all E2E tests
+make validate           # Full validation (build, lint, test, e2e)
 ```
 
 ### Running a Single Test
@@ -215,6 +222,109 @@ func TestDashboard_Navigation(t *testing.T) {
 
 See `test/e2e/scenarios/dashboard_tui_test.go` for more examples.
 
+### VHS Visual Testing (MANDATORY for TUI changes)
+
+**IMPORTANT:** When implementing TUI features, you MUST verify your work using VHS visual tests. This provides screenshot evidence that the feature works correctly.
+
+VHS is a terminal recording tool that captures screenshots and GIFs of terminal sessions. Tests run in isolated Docker containers.
+
+#### Running VHS Tests
+
+```bash
+# Run all VHS visual tests
+go test -v -tags=e2e ./test/e2e/scenarios/...
+
+# Run specific VHS test
+go test -v -tags=e2e -run "TestVHS_ConflictResolution" ./test/e2e/scenarios/...
+
+# Update golden files (run when expected output changes)
+UPDATE_GOLDEN=1 go test -v -tags=e2e -run "TestVHS_" ./test/e2e/scenarios/...
+```
+
+#### Creating VHS Tapes
+
+VHS tapes are script files in `test/e2e/tapes/`. **Critical settings:**
+
+```tape
+# IMPORTANT: Width/Height are in PIXELS, not characters!
+Set Shell bash
+Set FontSize 14
+Set Width 1200      # Minimum 120 pixels required
+Set Height 600      # Minimum 120 pixels required
+Set Padding 10
+
+# Environment variables (must come AFTER Set commands)
+Env HOME "/tmp/test-env"
+Env XDG_CONFIG_HOME "/tmp/test-env/.config"
+
+# Commands and interactions
+Type "g4d"
+Enter
+Sleep 2s
+
+# Screenshots are saved to test/e2e/screenshots/
+Screenshot "test/e2e/screenshots/feature_name.png"
+
+# Output captures terminal text for golden file comparison
+Output "test/e2e/outputs/feature_name.txt"
+```
+
+#### Adding a New VHS Test
+
+1. Create tape file in `test/e2e/tapes/your_feature.tape`
+2. Add test function in `test/e2e/scenarios/vhs_visual_test.go`:
+```go
+func TestVHS_YourFeature(t *testing.T) {
+    runVHSTest(t, vhsTestCase{
+        name:       "your feature",
+        tapePath:   "test/e2e/tapes/your_feature.tape",
+        outputPath: "test/e2e/outputs/your_feature.txt",
+        goldenPath: "test/e2e/golden/your_feature.txt",
+    })
+}
+```
+3. Run with `UPDATE_GOLDEN=1` to create initial golden file
+4. **View screenshots** to verify the feature works correctly
+
+#### Verifying TUI Work with Screenshots
+
+After running VHS tests, screenshots are saved to `test/e2e/screenshots/`. **You MUST view these screenshots** to verify:
+- UI renders correctly
+- Modals/dialogs appear as expected
+- User interactions produce correct results
+- No visual corruption or layout issues
+
+```bash
+# List generated screenshots
+ls -la test/e2e/screenshots/
+
+# Screenshots can be viewed with any image viewer
+# They are PNG files at 1200x600 resolution
+```
+
+#### VHS Technical Notes
+
+- **Debian base image**: VHS containers use `debian:bookworm-slim` (Ubuntu's chromium requires snap which doesn't work in Docker)
+- **Pixel dimensions**: Width/Height MUST be at least 120x120 pixels. Use 1200x600 for readable output.
+- **Screenshot paths**: Are automatically redirected to container paths and copied back
+- **Container runtime**: Supports both Docker and Podman (auto-detected)
+
+#### Test Verification Workflow
+
+When implementing TUI features:
+
+1. Write the feature code
+2. Create or update VHS tape to test the feature
+3. Run VHS test: `UPDATE_GOLDEN=1 go test -v -tags=e2e -run "TestVHS_YourFeature" ./test/e2e/scenarios/...`
+4. **View the screenshots** to verify the feature works
+5. If screenshots look wrong, fix the code and re-run
+6. Only commit when screenshots confirm correct behavior
+
+This visual verification is critical because:
+- Unit tests can pass while the UI is broken
+- TUI rendering issues are hard to detect programmatically
+- Screenshots provide evidence the feature actually works
+
 ## Development Notes
 
 - GNU stow must be installed on the system (not bundled)
@@ -238,9 +348,16 @@ make sandbox   # Run Docker/Podman container for isolated testing
 - ensure you're making feature branches
 - use gh cli when you can
 - finish all tasks with make build and make lint prior to commits
-- ensure you're writting unit tests
-- ensure you're implmenting good Architecture
+- ensure you're writing unit tests
+- ensure you're implementing good Architecture
 - focus on SOLID principles
+
+### TUI Development (CRITICAL)
+- **ALWAYS verify TUI changes with VHS visual tests** - Unit tests are not sufficient for TUI work
+- Create/update VHS tapes for any new TUI feature or modal
+- **VIEW THE SCREENSHOTS** after running tests to confirm the feature works
+- Do not consider TUI work complete until screenshots confirm correct rendering
+- See "VHS Visual Testing" section above for detailed instructions
 
 ## Issue Tracking with Beads
 

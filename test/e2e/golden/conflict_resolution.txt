@@ -1,0 +1,36 @@
+> mkdir -p /tmp/g4d-conflict-test && cd /tmp/g4d-conflict-test
+> echo 'existing zshrc' > /tmp/g4d-conflict-test/.zshrc
+> mkdir -p /tmp/g4d-conflict-test/dotfiles/zsh
+> echo 'dotfiles zshrc' > /tmp/g4d-conflict-test/dotfiles/zsh/.zshrc
+> cat > /tmp/g4d-conflict-test/dotfiles/.go4dot.yaml << 'EOF'
+> schema_version: '1.0'
+> metadata:
+>   name: test-dotfiles
+> configs:
+>   core:
+>     - name: zsh
+>       path: zsh
+> EOF
+> cd /tmp/g4d-conflict-test/dotfiles && g4d
+Bye!
+>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────

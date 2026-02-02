@@ -6,13 +6,13 @@
 
 Set Shell bash
 Set FontSize 14
-Set Width 120
-Set Height 40
+Set Width 1200
+Set Height 600
 Set Padding 10
 
 # Create an isolated test environment with NO config
-Set Env HOME /tmp/g4d-onboarding-test
-Set Env XDG_CONFIG_HOME /tmp/g4d-onboarding-test/.config
+Env HOME "/tmp/g4d-onboarding-test"
+Env XDG_CONFIG_HOME "/tmp/g4d-onboarding-test/.config"
 
 # Create a clean directory for testing (no .go4dot.yaml)
 Type "mkdir -p /tmp/g4d-onboarding-test/dotfiles && cd /tmp/g4d-onboarding-test/dotfiles"
