@@ -22,6 +22,7 @@ const (
 	OpDoctor
 	OpUninstall
 	OpExternal
+	OpExternalSingle
 )
 
 // String returns a human-readable name for the operation type
@@ -43,6 +44,8 @@ func (op OperationType) String() string {
 		return "Uninstalling"
 	case OpExternal:
 		return "External Dependencies"
+	case OpExternalSingle:
+		return "External"
 	default:
 		return "Processing"
 	}
@@ -169,6 +172,11 @@ func getStepsForOperation(opType OperationType) []OperationStep {
 			{Name: "Removing symlinks", Status: StepPending},
 			{Name: "Removing external dependencies", Status: StepPending},
 			{Name: "Cleaning state", Status: StepPending},
+		}
+	case OpExternalSingle:
+		return []OperationStep{
+			{Name: "Checking status", Status: StepPending},
+			{Name: "Processing", Status: StepPending},
 		}
 	default:
 		return []OperationStep{
@@ -363,6 +371,11 @@ func (o Operations) IsSuccess() bool {
 // GetError returns any error from the operation
 func (o Operations) GetError() error {
 	return o.err
+}
+
+// OperationType returns the type of operation
+func (o Operations) OperationType() OperationType {
+	return o.operationType
 }
 
 // OperationRunner is a helper for running operations and sending progress updates

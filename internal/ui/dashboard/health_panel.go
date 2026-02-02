@@ -99,6 +99,16 @@ func (p *HealthPanel) Update(msg tea.Msg) tea.Cmd {
 		} else {
 			p.lastError = nil
 			p.result = msg.result
+			// Clamp selection if results shrunk
+			if p.result != nil && len(p.result.Checks) > 0 {
+				if p.selectedIdx >= len(p.result.Checks) {
+					p.selectedIdx = len(p.result.Checks) - 1
+				}
+				p.ensureVisible()
+			} else {
+				p.selectedIdx = 0
+				p.listOffset = 0
+			}
 		}
 	}
 
@@ -254,11 +264,10 @@ func (p *HealthPanel) IsLoading() bool {
 	return p.loading
 }
 
-// Refresh re-runs the health checks
+// Refresh re-runs the health checks while preserving the current selection
 func (p *HealthPanel) Refresh() tea.Cmd {
 	p.loading = true
-	p.selectedIdx = 0
-	p.listOffset = 0
+	// Don't reset selectedIdx or listOffset - preserve user's position
 	return tea.Batch(
 		p.spinner.Tick,
 		p.runChecks,

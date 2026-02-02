@@ -98,6 +98,16 @@ func (p *ExternalPanel) Update(msg tea.Msg) tea.Cmd {
 		} else {
 			p.lastError = nil
 			p.status = msg.status
+			// Clamp selection if results shrunk
+			if len(p.status) > 0 {
+				if p.selectedIdx >= len(p.status) {
+					p.selectedIdx = len(p.status) - 1
+				}
+				p.ensureVisible()
+			} else {
+				p.selectedIdx = 0
+				p.listOffset = 0
+			}
 		}
 	}
 
@@ -267,11 +277,10 @@ func (p *ExternalPanel) IsLoading() bool {
 	return p.loading
 }
 
-// Refresh reloads the external status
+// Refresh reloads the external status while preserving the current selection
 func (p *ExternalPanel) Refresh() tea.Cmd {
 	p.loading = true
-	p.selectedIdx = 0
-	p.listOffset = 0
+	// Don't reset selectedIdx or listOffset - preserve user's position
 	return tea.Batch(
 		p.spinner.Tick,
 		p.loadStatus,
