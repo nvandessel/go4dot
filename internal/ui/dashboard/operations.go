@@ -373,6 +373,11 @@ func (o Operations) GetError() error {
 	return o.err
 }
 
+// OperationType returns the type of operation
+func (o Operations) OperationType() OperationType {
+	return o.operationType
+}
+
 // OperationRunner is a helper for running operations and sending progress updates
 type OperationRunner struct {
 	program *tea.Program

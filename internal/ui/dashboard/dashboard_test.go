@@ -1099,7 +1099,12 @@ func TestPostOnboarding_DeclineInstall_PanelsHaveDimensions(t *testing.T) {
 		t.Errorf("expected viewDashboard, got %v", model.currentView)
 	}
 
-	// 2. Config panel should have proper dimensions
+	// 2. View stack should be cleared
+	if len(model.viewStack) != 0 {
+		t.Errorf("expected empty view stack, got %d", len(model.viewStack))
+	}
+
+	// 3. Config panel should have proper dimensions
 	if model.configsPanel.width <= 0 {
 		t.Errorf("configs panel width should be > 0, got %d (empty screen regression)", model.configsPanel.width)
 	}
@@ -1107,13 +1112,13 @@ func TestPostOnboarding_DeclineInstall_PanelsHaveDimensions(t *testing.T) {
 		t.Errorf("configs panel height should be > 0, got %d (empty screen regression)", model.configsPanel.height)
 	}
 
-	// 3. View should render
+	// 4. View should render
 	view := model.View()
 	if view == "" {
 		t.Error("expected non-empty view after declining install (empty screen regression)")
 	}
 
-	// 4. State should still be updated with config (just not installed)
+	// 5. State should still be updated with config (just not installed)
 	if !model.state.HasConfig {
 		t.Error("expected HasConfig to be true after decline")
 	}

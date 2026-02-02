@@ -84,8 +84,16 @@ func RunExternalSingleOperation(runner *OperationRunner, cfg *config.Config, dot
 		runner.StepComplete(1, StepSkipped, "Condition not met")
 		result.Action = "skipped"
 		result.Message = extStatus.Reason
-		runner.Done(true, fmt.Sprintf("Skipped: %s (%s)", result.Name, extStatus.Reason), nil)
 		return result, nil
+	}
+
+	// Fail fast on error status
+	if extStatus.Status == "error" {
+		runner.StepComplete(0, StepError, extStatus.Reason)
+		result.Action = "failed"
+		result.Message = extStatus.Reason
+		result.Error = fmt.Errorf("external status error for '%s': %s", extID, extStatus.Reason)
+		return result, result.Error
 	}
 
 	runner.StepComplete(0, StepSuccess, fmt.Sprintf("Status: %s", extStatus.Status))
@@ -100,7 +108,6 @@ func RunExternalSingleOperation(runner *OperationRunner, cfg *config.Config, dot
 		runner.StepComplete(1, StepSuccess, "Already installed")
 		result.Action = "skipped"
 		result.Message = "Already installed"
-		runner.Done(true, fmt.Sprintf("%s is already installed", result.Name), nil)
 		return result, nil
 	}
 
@@ -119,18 +126,15 @@ func RunExternalSingleOperation(runner *OperationRunner, cfg *config.Config, dot
 		result.Action = "failed"
 		result.Message = err.Error()
 		result.Error = err
-		runner.Done(false, fmt.Sprintf("Failed: %s", err.Error()), err)
 		return result, err
 	}
 
 	if extStatus.Status == "installed" {
 		result.Action = "updated"
 		runner.StepComplete(1, StepSuccess, "Updated")
-		runner.Done(true, fmt.Sprintf("Updated %s", result.Name), nil)
 	} else {
 		result.Action = "cloned"
 		runner.StepComplete(1, StepSuccess, "Cloned")
-		runner.Done(true, fmt.Sprintf("Cloned %s", result.Name), nil)
 	}
 
 	return result, nil

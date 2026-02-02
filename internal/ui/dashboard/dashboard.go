@@ -579,10 +579,6 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 			opts := ExternalSingleOptions{Update: shouldUpdate}
 			return m.StartInlineOperation(OpExternalSingle, ext.Dep.Name, nil, func(runner *OperationRunner) error {
 				_, err := RunExternalSingleOperation(runner, m.state.Config, m.state.DotfilesPath, extID, opts)
-				// Refresh external panel after operation
-				if err == nil {
-					m.externalPanel.Refresh()
-				}
 				return err
 			})
 		}
@@ -1023,13 +1019,19 @@ func (m *Model) handleOperationMsg(msg tea.Msg) (handled bool, cmd tea.Cmd) {
 
 	case OperationDoneMsg:
 		m.operationActive = false
+		opType := m.operations.OperationType()
 		m.operations, cmd = m.operations.Update(msg)
 		if msg.Error != nil {
 			m.outputPanel.AddLog("error", fmt.Sprintf("Operation failed: %v", msg.Error))
 		} else if msg.Summary != "" {
 			m.outputPanel.AddLog("success", msg.Summary)
 		}
-		return true, cmd
+		// Refresh appropriate panel after operation completes
+		var refreshCmd tea.Cmd
+		if opType == OpExternalSingle && msg.Error == nil {
+			refreshCmd = m.externalPanel.Refresh()
+		}
+		return true, tea.Batch(cmd, refreshCmd)
 	}
 	return false, nil
 }
