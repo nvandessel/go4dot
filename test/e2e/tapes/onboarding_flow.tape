@@ -26,23 +26,23 @@ Enter
 Sleep 2s
 
 # Screenshot the no-config view
-Screenshot test/e2e/screenshots/onboarding_noconfig.png
+Screenshot "test/e2e/screenshots/onboarding_noconfig.png"
 
 # Press 'i' to start onboarding wizard
 Type "i"
 Sleep 1s
 
 # Screenshot the onboarding wizard (step 1)
-Screenshot test/e2e/screenshots/onboarding_wizard.png
+Screenshot "test/e2e/screenshots/onboarding_wizard.png"
 
 # Cancel with Esc to return to no-config view
 Escape
 Sleep 500ms
-Screenshot test/e2e/screenshots/onboarding_cancelled.png
+Screenshot "test/e2e/screenshots/onboarding_cancelled.png"
 
 # Quit
 Escape
 Sleep 500ms
 
 # Capture final output
-Output test/e2e/outputs/onboarding_flow.txt
+Output "test/e2e/outputs/onboarding_flow.txt"

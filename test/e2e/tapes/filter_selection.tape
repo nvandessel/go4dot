@@ -22,44 +22,44 @@ Enter
 Sleep 2s
 
 # Screenshot initial state
-Screenshot test/e2e/screenshots/filter_initial.png
+Screenshot "test/e2e/screenshots/filter_initial.png"
 
 # Enter filter mode with '/'
 Type "/"
 Sleep 300ms
-Screenshot test/e2e/screenshots/filter_mode.png
+Screenshot "test/e2e/screenshots/filter_mode.png"
 
 # Type filter text
 Type "vim"
 Sleep 300ms
-Screenshot test/e2e/screenshots/filter_vim.png
+Screenshot "test/e2e/screenshots/filter_vim.png"
 
 # Exit filter mode with Escape
 Escape
 Sleep 300ms
-Screenshot test/e2e/screenshots/filter_exit.png
+Screenshot "test/e2e/screenshots/filter_exit.png"
 
 # Clear filter and select all with 'A'
 Type "A"
 Sleep 300ms
-Screenshot test/e2e/screenshots/filter_select_all.png
+Screenshot "test/e2e/screenshots/filter_select_all.png"
 
 # Toggle selection with space
 Space
 Sleep 300ms
-Screenshot test/e2e/screenshots/filter_toggle.png
+Screenshot "test/e2e/screenshots/filter_toggle.png"
 
 # Navigate down and toggle
 Down
 Sleep 200ms
 Space
 Sleep 300ms
-Screenshot test/e2e/screenshots/filter_multi_select.png
+Screenshot "test/e2e/screenshots/filter_multi_select.png"
 
 # Press '?' for help
 Type "?"
 Sleep 500ms
-Screenshot test/e2e/screenshots/filter_help.png
+Screenshot "test/e2e/screenshots/filter_help.png"
 
 # Close help
 Type "?"
@@ -70,4 +70,4 @@ Type "q"
 Sleep 500ms
 
 # Capture final output
-Output test/e2e/outputs/filter_selection.txt
+Output "test/e2e/outputs/filter_selection.txt"

@@ -172,13 +172,15 @@ func (v *ConflictView) View() string {
 
 	// Build file list grouped by config
 	var fileLines []string
-	home := os.Getenv("HOME")
+	home, _ := os.UserHomeDir()
 	maxFilesToShow := 8
 	totalShown := 0
+	displayedConfigs := make(map[string]bool)
 
 	for _, configName := range v.configNames {
 		files := v.byConfig[configName]
 		fileLines = append(fileLines, configNameStyle.Render(configName+":"))
+		displayedConfigs[configName] = true
 
 		showCount := len(files)
 		remaining := maxFilesToShow - totalShown
@@ -187,8 +189,13 @@ func (v *ConflictView) View() string {
 		}
 
 		for i := 0; i < showCount; i++ {
-			relPath, _ := filepath.Rel(home, files[i].TargetPath)
-			fileLines = append(fileLines, fileStyle.Render("~/"+relPath))
+			displayPath := files[i].TargetPath
+			if home != "" {
+				if relPath, err := filepath.Rel(home, files[i].TargetPath); err == nil {
+					displayPath = "~/" + relPath
+				}
+			}
+			fileLines = append(fileLines, fileStyle.Render(displayPath))
 			totalShown++
 		}
 
@@ -203,19 +210,7 @@ func (v *ConflictView) View() string {
 
 	// Show if there are more configs not displayed
 	if totalShown >= maxFilesToShow {
-		remainingConfigs := 0
-		for _, name := range v.configNames {
-			shown := false
-			for _, line := range fileLines {
-				if strings.Contains(line, name+":") {
-					shown = true
-					break
-				}
-			}
-			if !shown {
-				remainingConfigs++
-			}
-		}
+		remainingConfigs := len(v.configNames) - len(displayedConfigs)
 		if remainingConfigs > 0 {
 			fileLines = append(fileLines, fileStyle.Render(fmt.Sprintf("... and %d more config(s)", remainingConfigs)))
 		}

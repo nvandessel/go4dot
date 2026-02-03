@@ -22,36 +22,36 @@ Enter
 Sleep 2s
 
 # Screenshot initial dashboard state
-Screenshot test/e2e/screenshots/health_initial.png
+Screenshot "test/e2e/screenshots/health_initial.png"
 
 # Press 'd' to focus health panel (doctor shortcut)
 Type "d"
 Sleep 500ms
-Screenshot test/e2e/screenshots/health_focused.png
+Screenshot "test/e2e/screenshots/health_focused.png"
 
 # Navigate down in health panel
 Down
 Sleep 300ms
-Screenshot test/e2e/screenshots/health_nav_down.png
+Screenshot "test/e2e/screenshots/health_nav_down.png"
 
 # Navigate up
 Up
 Sleep 300ms
-Screenshot test/e2e/screenshots/health_nav_up.png
+Screenshot "test/e2e/screenshots/health_nav_up.png"
 
 # Press Enter to get details on a health item
 Enter
 Sleep 500ms
-Screenshot test/e2e/screenshots/health_details.png
+Screenshot "test/e2e/screenshots/health_details.png"
 
 # Return to configs panel with number key
 Type "1"
 Sleep 500ms
-Screenshot test/e2e/screenshots/health_return_configs.png
+Screenshot "test/e2e/screenshots/health_return_configs.png"
 
 # Quit
 Type "q"
 Sleep 500ms
 
 # Capture final output
-Output test/e2e/outputs/health_panel.txt
+Output "test/e2e/outputs/health_panel.txt"

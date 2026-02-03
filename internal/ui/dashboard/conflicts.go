@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"fmt"
+
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/stow"
 )
@@ -32,13 +34,13 @@ func ResolveConflictsAction(conflicts []stow.ConflictFile, choice ConflictResolu
 	case ConflictChoiceBackup:
 		for _, conflict := range conflicts {
 			if err := stow.BackupConflict(conflict); err != nil {
-				return err
+				return fmt.Errorf("backup %s: %w", conflict.TargetPath, err)
 			}
 		}
 	case ConflictChoiceDelete:
 		for _, conflict := range conflicts {
 			if err := stow.RemoveConflict(conflict); err != nil {
-				return err
+				return fmt.Errorf("remove %s: %w", conflict.TargetPath, err)
 			}
 		}
 	}
