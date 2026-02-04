@@ -14,10 +14,11 @@ import (
 
 // VHSConfig configures VHS tape execution
 type VHSConfig struct {
-	TapePath     string
-	OutputPath   string
-	GoldenPath   string
-	UpdateGolden bool
+	TapePath      string
+	OutputPath    string
+	GoldenPath    string
+	ScreenshotDir string // Local directory where screenshots will be saved
+	UpdateGolden  bool
 }
 
 // RunVHSTape executes a VHS tape file and captures output
@@ -185,8 +186,9 @@ func RunVHSTapeInContainer(t *testing.T, container *DockerTestContainer, cfg VHS
 
 	// Run VHS in container
 	vhsCfg := VHSTapeConfig{
-		TapePath:   cfg.TapePath,
-		OutputPath: cfg.OutputPath,
+		TapePath:      cfg.TapePath,
+		OutputPath:    cfg.OutputPath,
+		ScreenshotDir: cfg.ScreenshotDir,
 	}
 
 	if err := container.RunVHSTape(vhsCfg); err != nil {

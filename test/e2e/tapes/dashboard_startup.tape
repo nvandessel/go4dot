@@ -7,13 +7,13 @@
 
 Set Shell bash
 Set FontSize 14
-Set Width 120
-Set Height 40
+Set Width 1200
+Set Height 600
 Set Padding 10
 
-# Isolate from user's real environment
-Set Env HOME /tmp/g4d-e2e-test
-Set Env XDG_CONFIG_HOME /tmp/g4d-e2e-test/.config
+# Isolate from user's real environment (Env must come after Set commands)
+Env HOME "/tmp/g4d-e2e-test"
+Env XDG_CONFIG_HOME "/tmp/g4d-e2e-test/.config"
 
 # Run g4d in the test fixtures directory (has valid .go4dot.yaml)
 # Note: In container, ./bin/g4d becomes 'g4d' and fixtures are at /home/testuser/fixtures
@@ -22,7 +22,7 @@ Enter
 Sleep 2s
 
 # Take screenshot of initial dashboard state
-Screenshot test/e2e/screenshots/dashboard_startup.png
+Screenshot "test/e2e/screenshots/dashboard_startup.png"
 
 # Wait a bit more to ensure full render
 Sleep 500ms
@@ -32,4 +32,4 @@ Type "q"
 Sleep 500ms
 
 # Capture final output
-Output test/e2e/outputs/dashboard_startup.txt
+Output "test/e2e/outputs/dashboard_startup.txt"

@@ -63,6 +63,17 @@ func TestVHS_FilterSelection(t *testing.T) {
 	})
 }
 
+// TestVHS_ConflictResolution validates that conflict resolution modal appears
+// when installing with existing files that would conflict
+func TestVHS_ConflictResolution(t *testing.T) {
+	runVHSTest(t, vhsTestCase{
+		name:       "conflict resolution",
+		tapePath:   "test/e2e/tapes/conflict_resolution.tape",
+		outputPath: "test/e2e/outputs/conflict_resolution.txt",
+		goldenPath: "test/e2e/golden/conflict_resolution.txt",
+	})
+}
+
 // runVHSTest executes a single VHS test case
 func runVHSTest(t *testing.T, tc vhsTestCase) {
 	t.Helper()
@@ -84,10 +95,11 @@ func runVHSTest(t *testing.T, tc vhsTestCase) {
 	})
 
 	cfg := helpers.VHSConfig{
-		TapePath:     filepath.Join(projectRoot, tc.tapePath),
-		OutputPath:   filepath.Join(projectRoot, tc.outputPath),
-		GoldenPath:   filepath.Join(projectRoot, tc.goldenPath),
-		UpdateGolden: updateGolden,
+		TapePath:      filepath.Join(projectRoot, tc.tapePath),
+		OutputPath:    filepath.Join(projectRoot, tc.outputPath),
+		GoldenPath:    filepath.Join(projectRoot, tc.goldenPath),
+		ScreenshotDir: filepath.Join(projectRoot, "test/e2e/screenshots"),
+		UpdateGolden:  updateGolden,
 	}
 
 	if err := helpers.RunVHSTapeInContainer(t, container, cfg); err != nil {

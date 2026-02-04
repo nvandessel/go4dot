@@ -52,3 +52,4 @@ test/e2e/reports/*.txt
 
 # Git worktrees for parallel development
 .worktrees/
+.floop/
