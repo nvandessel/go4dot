@@ -30,7 +30,7 @@ Screenshot "test/e2e/screenshots/onboarding_noconfig.png"
 
 # Press 'i' to start onboarding wizard
 Type "i"
-Sleep 1s
+Sleep 2s
 
 # Screenshot the onboarding wizard (step 1)
 Screenshot "test/e2e/screenshots/onboarding_wizard.png"

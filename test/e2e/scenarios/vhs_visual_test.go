@@ -74,6 +74,16 @@ func TestVHS_ConflictResolution(t *testing.T) {
 	})
 }
 
+// TestVHS_OnboardingFlow validates the no-config view and onboarding wizard
+func TestVHS_OnboardingFlow(t *testing.T) {
+	runVHSTest(t, vhsTestCase{
+		name:       "onboarding flow",
+		tapePath:   "test/e2e/tapes/onboarding_flow.tape",
+		outputPath: "test/e2e/outputs/onboarding_flow.txt",
+		goldenPath: "test/e2e/golden/onboarding_flow.txt",
+	})
+}
+
 // runVHSTest executes a single VHS test case
 func runVHSTest(t *testing.T, tc vhsTestCase) {
 	t.Helper()
