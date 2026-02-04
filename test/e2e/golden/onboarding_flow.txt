@@ -1,0 +1,36 @@
+> mkdir -p /tmp/g4d-onboarding-test/dotfiles && cd /tmp/g4d-onboarding-test/dotfiles
+> g4d
+Bye!
+>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
