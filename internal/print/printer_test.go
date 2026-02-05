@@ -9,12 +9,17 @@ import (
 )
 
 // captureOutput captures stdout during function execution
-func captureOutput(f func()) string {
+func captureOutput(t *testing.T, f func()) string {
+	t.Helper()
+
 	// Save original stdout
 	oldStdout := os.Stdout
 
 	// Create a pipe
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
 	os.Stdout = w
 
 	// Run the function
@@ -31,7 +36,7 @@ func captureOutput(f func()) string {
 }
 
 func TestSuccess(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Success("operation completed")
 	})
 
@@ -44,7 +49,7 @@ func TestSuccess(t *testing.T) {
 }
 
 func TestSuccessFormatted(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Success("processed %d items", 42)
 	})
 
@@ -54,7 +59,7 @@ func TestSuccessFormatted(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Error("something went wrong")
 	})
 
@@ -67,7 +72,7 @@ func TestError(t *testing.T) {
 }
 
 func TestErrorFormatted(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Error("failed with code %d: %s", 500, "server error")
 	})
 
@@ -80,7 +85,7 @@ func TestErrorFormatted(t *testing.T) {
 }
 
 func TestWarning(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Warning("this might be a problem")
 	})
 
@@ -93,7 +98,7 @@ func TestWarning(t *testing.T) {
 }
 
 func TestWarningFormatted(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Warning("found %d issues", 3)
 	})
 
@@ -103,7 +108,7 @@ func TestWarningFormatted(t *testing.T) {
 }
 
 func TestInfo(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Info("for your information")
 	})
 
@@ -116,7 +121,7 @@ func TestInfo(t *testing.T) {
 }
 
 func TestInfoFormatted(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Info("version %s", "1.0.0")
 	})
 
@@ -126,7 +131,7 @@ func TestInfoFormatted(t *testing.T) {
 }
 
 func TestSection(t *testing.T) {
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		Section("Configuration")
 	})
 

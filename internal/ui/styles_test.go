@@ -2,11 +2,13 @@ package ui
 
 import (
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestColorConstants(t *testing.T) {
-	// Verify all color constants are defined
-	colors := map[string]interface{}{
+	// Verify all color constants are defined (lipgloss.Color is a string alias)
+	colors := map[string]lipgloss.Color{
 		"PrimaryColor":   PrimaryColor,
 		"SecondaryColor": SecondaryColor,
 		"ErrorColor":     ErrorColor,
@@ -16,7 +18,7 @@ func TestColorConstants(t *testing.T) {
 	}
 
 	for name, color := range colors {
-		if color == nil {
+		if color == "" {
 			t.Errorf("%s should be defined", name)
 		}
 	}

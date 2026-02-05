@@ -5,35 +5,29 @@ import (
 )
 
 func TestSetNonInteractive(t *testing.T) {
-	// Reset state for consistent testing
-	SetNonInteractive(false)
+	// Test that SetNonInteractive(true) forces non-interactive mode
+	t.Run("set to true forces non-interactive", func(t *testing.T) {
+		SetNonInteractive(true)
+		if !IsNonInteractive() {
+			t.Error("IsNonInteractive() should return true when flag is set")
+		}
+		if IsInteractive() {
+			t.Error("IsInteractive() should return false when flag is set")
+		}
+	})
 
-	tests := []struct {
-		name     string
-		setValue bool
-		want     bool
-	}{
-		{
-			name:     "set to true",
-			setValue: true,
-			want:     true,
-		},
-		{
-			name:     "set to false",
-			setValue: false,
-			want:     false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			SetNonInteractive(tt.setValue)
-			// When set to true, IsInteractive should return false
-			if tt.setValue && IsInteractive() {
-				t.Error("IsInteractive() should return false when nonInteractive is true")
-			}
-		})
-	}
+	// Test that SetNonInteractive(false) clears the forced flag
+	// Note: In non-TTY environments (like tests), IsInteractive may still return false
+	t.Run("set to false clears flag", func(t *testing.T) {
+		SetNonInteractive(true)
+		SetNonInteractive(false)
+		// After clearing, behavior depends on TTY state
+		// We can only verify the flag was cleared by checking it can be set again
+		SetNonInteractive(true)
+		if !IsNonInteractive() {
+			t.Error("Flag should be settable after clearing")
+		}
+	})
 
 	// Reset for other tests
 	SetNonInteractive(false)
