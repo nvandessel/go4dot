@@ -409,28 +409,40 @@ func (m *Model) executePendingOperation() (tea.Model, tea.Cmd) {
 		opts := SyncOptions{Force: false, Interactive: false}
 		return m, m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
 			_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-			return err
+			if err != nil {
+				return fmt.Errorf("sync all: %w", err)
+			}
+			return nil
 		})
 
 	case OpInstall:
 		opts := InstallOptions{}
 		return m, m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
 			_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-			return err
+			if err != nil {
+				return fmt.Errorf("install: %w", err)
+			}
+			return nil
 		})
 
 	case OpSyncSingle:
 		opts := SyncOptions{Force: false, Interactive: false}
 		return m, m.StartInlineOperation(OpSyncSingle, configName, nil, func(runner *OperationRunner) error {
 			_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, configName, opts)
-			return err
+			if err != nil {
+				return fmt.Errorf("sync %s: %w", configName, err)
+			}
+			return nil
 		})
 
 	case OpBulkSync:
 		opts := SyncOptions{Force: false, Interactive: false}
 		return m, m.StartInlineOperation(OpBulkSync, "", configNames, func(runner *OperationRunner) error {
 			_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, configNames, opts)
-			return err
+			if err != nil {
+				return fmt.Errorf("bulk sync: %w", err)
+			}
+			return nil
 		})
 	}
 
@@ -461,6 +473,6 @@ func (m *Model) reinitializePanels() {
 	m.layout.Calculate(m.width, m.height)
 	m.layout.ApplyToPanels(m.panels)
 
-	// Set initial focus
-	m.configsPanel.SetFocused(true)
+	// Use changeFocus to properly sync FocusManager, footer, and details context
+	m.changeFocus(PanelConfigs)
 }

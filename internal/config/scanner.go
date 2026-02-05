@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// slugifyRegex is pre-compiled for performance in slugify function
+var slugifyRegex = regexp.MustCompile("[^a-z0-9]+")
+
 // scanDirectory scans a directory for potential dotfile configurations.
 // It returns a list of ConfigItems representing directories that appear to be
 // dotfile-related (e.g., nvim, tmux, zsh).
@@ -19,6 +22,8 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 	var items []ConfigItem
 
 	// Directories to always ignore (not dotfiles-related)
+	// Note: .vim and .nvim are NOT in this list - they're valid dotfile configs
+	// handled by the validHiddenDirs allowlist below
 	ignored := map[string]bool{
 		// Version control
 		".git":    true,
@@ -26,11 +31,9 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 		".gitlab": true,
 		".svn":    true,
 
-		// IDE/Editor
+		// IDE/Editor (these are project-specific, not portable dotfiles)
 		".idea":   true,
 		".vscode": true,
-		".vim":    false, // This IS a dotfile config
-		".nvim":   false, // This IS a dotfile config
 
 		// Build/Output
 		"bin":          true,
@@ -109,10 +112,7 @@ func scanDirectory(root string) ([]ConfigItem, error) {
 // It lowercases the string and replaces non-alphanumeric characters with hyphens.
 func slugify(s string) string {
 	s = strings.ToLower(s)
-	// Replace non-alphanumeric chars with hyphens
-	reg := regexp.MustCompile("[^a-z0-9]+")
-	s = reg.ReplaceAllString(s, "-")
-	// Trim hyphens
+	s = slugifyRegex.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	return s
 }

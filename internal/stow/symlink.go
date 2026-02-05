@@ -1,6 +1,8 @@
 package stow
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +26,7 @@ func countFiles(dir string) (int, error) {
 	})
 
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("counting files in %s: %w", dir, err)
 	}
 
 	return count, nil
@@ -39,15 +41,22 @@ func UpdateSymlinkCounts(cfg *config.Config, dotfilesPath string, st *state.Stat
 
 		count, err := countFiles(configPath)
 		if err != nil {
-			// Config dir doesn't exist - remove from state
-			st.RemoveSymlinkCount(configItem.Name)
-			continue
+			// Only treat "not exist" errors as missing config - remove from state
+			if errors.Is(err, os.ErrNotExist) {
+				st.RemoveSymlinkCount(configItem.Name)
+				continue
+			}
+			// Surface other errors (permission, IO, etc.)
+			return fmt.Errorf("updating symlink count for %s: %w", configItem.Name, err)
 		}
 
 		st.SetSymlinkCount(configItem.Name, count)
 	}
 
-	return st.Save()
+	if err := st.Save(); err != nil {
+		return fmt.Errorf("saving state: %w", err)
+	}
+	return nil
 }
 
 // findOrphanedSymlinks finds symlinks in home that point to the given config directory

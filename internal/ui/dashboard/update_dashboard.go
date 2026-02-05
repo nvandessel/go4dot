@@ -233,7 +233,10 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			opts := SyncOptions{Force: false, Interactive: false}
 			return m.StartInlineOperation(OpSync, "", nil, func(runner *OperationRunner) error {
 				_, err := RunSyncAllOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-				return err
+				if err != nil {
+					return fmt.Errorf("sync all: %w", err)
+				}
+				return nil
 			})
 		}
 
@@ -258,7 +261,10 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			opts := InstallOptions{}
 			return m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
 				_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-				return err
+				if err != nil {
+					return fmt.Errorf("install: %w", err)
+				}
+				return nil
 			})
 		}
 
@@ -267,7 +273,10 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			opts := UpdateOptions{UpdateExternal: true}
 			return m.StartInlineOperation(OpUpdate, "", nil, func(runner *OperationRunner) error {
 				_, err := RunUpdateOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-				return err
+				if err != nil {
+					return fmt.Errorf("update: %w", err)
+				}
+				return nil
 			})
 		}
 
@@ -299,15 +308,9 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 	// Select All (A)
 	case key.Matches(msg, keys.All):
 		if focused == PanelConfigs {
-			// Toggle select all
-			allSelected := true
-			for _, name := range m.configsPanel.GetSelectedNames() {
-				if !m.selectedConfigs[name] {
-					allSelected = false
-					break
-				}
-			}
-			if allSelected && len(m.selectedConfigs) > 0 {
+			// Toggle select all: compare selection count to total config count
+			totalConfigs := m.configsPanel.GetTotalCount()
+			if len(m.selectedConfigs) == totalConfigs && totalConfigs > 0 {
 				m.configsPanel.DeselectAll()
 			} else {
 				m.configsPanel.SelectAll()
@@ -342,7 +345,10 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			opts := SyncOptions{Force: false, Interactive: false}
 			return m.StartInlineOperation(OpBulkSync, "", names, func(runner *OperationRunner) error {
 				_, err := RunBulkSyncOperation(runner, m.state.Config, m.state.DotfilesPath, names, opts)
-				return err
+				if err != nil {
+					return fmt.Errorf("bulk sync: %w", err)
+				}
+				return nil
 			})
 		}
 	}
@@ -377,7 +383,10 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 			opts := SyncOptions{Force: false, Interactive: false}
 			return m.StartInlineOperation(OpSyncSingle, cfg.Name, nil, func(runner *OperationRunner) error {
 				_, err := RunSyncSingleOperation(runner, m.state.Config, m.state.DotfilesPath, cfg.Name, opts)
-				return err
+				if err != nil {
+					return fmt.Errorf("sync %s: %w", cfg.Name, err)
+				}
+				return nil
 			})
 		}
 
@@ -405,7 +414,10 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 			opts := ExternalSingleOptions{Update: shouldUpdate}
 			return m.StartInlineOperation(OpExternalSingle, ext.Dep.Name, nil, func(runner *OperationRunner) error {
 				_, err := RunExternalSingleOperation(runner, m.state.Config, m.state.DotfilesPath, extID, opts)
-				return err
+				if err != nil {
+					return fmt.Errorf("external %s: %w", ext.Dep.Name, err)
+				}
+				return nil
 			})
 		}
 	}
