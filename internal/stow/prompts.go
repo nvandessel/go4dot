@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
-	"github.com/nvandessel/go4dot/internal/ui"
+	"github.com/nvandessel/go4dot/internal/print"
 )
 
 // ResolveConflicts prompts the user to handle conflicting files.
@@ -78,7 +78,7 @@ func ResolveConflicts(conflicts []ConflictFile) bool {
 		}
 
 		if err != nil {
-			ui.Error("Failed to handle %s: %v", conflict.TargetPath, err)
+			print.Error("Failed to handle %s: %v", conflict.TargetPath, err)
 			return false
 		}
 	}

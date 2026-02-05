@@ -56,3 +56,13 @@ This guide outlines the best practices for Go development within this project, m
 - Use channels for communication between goroutines.
 - Use `sync.Mutex` for protecting shared state if not using channels.
 - Avoid global state where possible.
+
+## 9. Constructor Return Types
+- **Return pointer (`*T`)** for:
+  - Mutable `tea.Model` implementations (dashboard panels, forms)
+  - Types with internal state that needs modification
+  - Large structs where copying would be expensive
+- **Return value (`T`)** for:
+  - Immutable or simple data holders
+  - Small display-only components
+  - Types that are primarily read-only after creation
