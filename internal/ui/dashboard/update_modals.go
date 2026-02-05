@@ -159,7 +159,10 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				opts := InstallOptions{}
 				installCmd := m.StartInlineOperation(OpInstall, "", nil, func(runner *OperationRunner) error {
 					_, err := RunInstallOperation(runner, m.state.Config, m.state.DotfilesPath, opts)
-					return err
+					if err != nil {
+						return fmt.Errorf("install: %w", err)
+					}
+					return nil
 				})
 				if installCmd != nil {
 					initCmds = append(initCmds, installCmd)
