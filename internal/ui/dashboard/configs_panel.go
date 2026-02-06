@@ -134,14 +134,8 @@ func (p *ConfigsPanel) View() string {
 	selectedStyle := ui.SelectedItemStyle.Width(p.ContentWidth())
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
 
-	// Build a map of drift results for quick lookup
-	driftMap := make(map[string]*stow.DriftResult)
-	if p.state.DriftSummary != nil {
-		for i := range p.state.DriftSummary.Results {
-			r := &p.state.DriftSummary.Results[i]
-			driftMap[r.ConfigName] = r
-		}
-	}
+	// Get a map of drift results for quick lookup
+	driftMap := p.state.DriftSummary.ResultsMap()
 
 	// Calculate visible range
 	visibleHeight := p.ContentHeight()
