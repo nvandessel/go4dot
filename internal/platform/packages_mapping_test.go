@@ -71,6 +71,8 @@ func TestResolve_AcrossManagers(t *testing.T) {
 
 		// --- build-essential: meta-package differences ---
 		{"build-essential on apt", "build-essential", "apt", "build-essential"},
+		{"build-essential on dnf", "build-essential", "dnf", "@development-tools"},
+		{"build-essential on yum", "build-essential", "yum", "@development-tools"},
 		{"build-essential on pacman", "build-essential", "pacman", "base-devel"},
 
 		// --- delta: git-delta everywhere except canonical ---
@@ -264,7 +266,6 @@ func TestRegistry_Canonicals(t *testing.T) {
 	r.Register(PackageMapping{Canonical: "gamma"})
 
 	names := r.Canonicals()
-	sort.Strings(names)
 
 	expected := []string{"alpha", "beta", "gamma"}
 	if len(names) != len(expected) {
@@ -274,6 +275,20 @@ func TestRegistry_Canonicals(t *testing.T) {
 		if n != expected[i] {
 			t.Errorf("Canonicals()[%d] = %q, want %q", i, n, expected[i])
 		}
+	}
+}
+
+func TestRegistry_Canonicals_ReturnsSorted(t *testing.T) {
+	r := NewPackageMappingRegistry()
+	r.Register(PackageMapping{Canonical: "zulu"})
+	r.Register(PackageMapping{Canonical: "mike"})
+	r.Register(PackageMapping{Canonical: "alpha"})
+	r.Register(PackageMapping{Canonical: "delta"})
+
+	names := r.Canonicals()
+
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("Canonicals() should return sorted names, got %v", names)
 	}
 }
 

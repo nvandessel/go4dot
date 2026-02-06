@@ -1,6 +1,9 @@
 package platform
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // PackageMapping represents a canonical package with its per-manager names.
 type PackageMapping struct {
@@ -93,6 +96,7 @@ func (r *PackageMappingRegistry) Canonicals() []string {
 	for k := range r.mappings {
 		names = append(names, k)
 	}
+	sort.Strings(names)
 	return names
 }
 
@@ -227,7 +231,7 @@ func defaultMappings() []PackageMapping {
 		{
 			Canonical:   "build-essential",
 			Description: "Essential build tools (compiler, make, etc.)",
-			Managers:    map[string]string{"apt": "build-essential", "dnf": "gcc gcc-c++ make", "yum": "gcc gcc-c++ make", "pacman": "base-devel", "brew": "gcc"},
+			Managers:    map[string]string{"apt": "build-essential", "dnf": "@development-tools", "yum": "@development-tools", "pacman": "base-devel", "brew": "gcc"},
 		},
 
 		// --- CLI Tools ---
