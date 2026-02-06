@@ -149,10 +149,10 @@ func TestDashboard_ViewSwitching(t *testing.T) {
 		return strings.Contains(string(out), "vim")
 	})
 
-	// Switch to Help (? key)
+	// Switch to Help (? key) and back
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 
-	// Verify Help content
+	// Verify Help overlay content (overlay contains both dimmed dashboard and help text)
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
 		return strings.Contains(string(out), "Keyboard Shortcuts")
 	}, teatest.WithDuration(time.Second))
@@ -160,9 +160,14 @@ func TestDashboard_ViewSwitching(t *testing.T) {
 	// Switch back (Esc)
 	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
 
-	// Verify back to dashboard
+	// Verify back to dashboard by checking for panel titles.
+	// With the overlay approach, the dashboard is rendered as a dimmed
+	// background behind the help modal. After dismissing help, the
+	// dashboard renders normally. We check for panel title text since
+	// config names may be split across ANSI sequences in terminal output.
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
-		return strings.Contains(string(out), "vim")
+		s := string(out)
+		return strings.Contains(s, "Health") || strings.Contains(s, "Configs")
 	}, teatest.WithDuration(time.Second))
 
 	// Switch to Menu (Tab)

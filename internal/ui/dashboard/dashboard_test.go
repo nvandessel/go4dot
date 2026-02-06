@@ -1410,6 +1410,162 @@ func TestCheckForConflicts_FiltersByConfigNames(t *testing.T) {
 	}
 }
 
+// TestModel_HelpOverlayContainsKeyboardShortcuts tests that the help overlay renders correctly
+// with the dashboard visible as a dimmed background behind the help content.
+func TestModel_HelpOverlayContainsKeyboardShortcuts(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+	m := New(s)
+
+	// Apply window size
+	sizeMsg := tea.WindowSizeMsg{Width: 100, Height: 40}
+	updatedModel, _ := m.Update(sizeMsg)
+	model := updatedModel.(*Model)
+
+	// Verify dashboard contains "vim"
+	dashView := model.View()
+	if !containsText(dashView, "vim") {
+		t.Error("expected dashboard to contain 'vim'")
+	}
+
+	// Toggle help - should show overlay with dashboard as dimmed background
+	model.showHelp = true
+	helpView := model.View()
+	if !containsText(helpView, "Keyboard Shortcuts") {
+		t.Error("expected help overlay to contain 'Keyboard Shortcuts'")
+	}
+
+	// Close help - should return to normal dashboard
+	model.showHelp = false
+	afterView := model.View()
+	if !containsText(afterView, "vim") {
+		t.Errorf("expected dashboard to contain 'vim' after closing help")
+	}
+}
+
+// containsText checks if a string contains a substring, ignoring ANSI escape codes
+func containsText(s, substr string) bool {
+	// First try direct contains
+	if contains(s, substr) {
+		return true
+	}
+	// Try with ANSI stripped
+	stripped := stripAnsiForTest(s)
+	return contains(stripped, substr)
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func stripAnsiForTest(s string) string {
+	var result []byte
+	inEscape := false
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || s[i] == '~' {
+				inEscape = false
+			}
+			continue
+		}
+		result = append(result, s[i])
+	}
+	return string(result)
+}
+
+// TestModel_OverlayModals_RenderWithoutPanic tests that each overlay modal renders correctly
+func TestModel_OverlayModals_RenderWithoutPanic(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+			{Name: "zsh"},
+		},
+		Config: &config.Config{
+			MachineConfig: []config.MachinePrompt{
+				{ID: "test", Description: "Test config"},
+			},
+		},
+		HasConfig:    true,
+		DotfilesPath: "/tmp/dotfiles",
+	}
+	m := New(s)
+
+	sizeMsg := tea.WindowSizeMsg{Width: 100, Height: 40}
+	updatedModel, _ := m.Update(sizeMsg)
+	model := updatedModel.(*Model)
+
+	// Test help overlay
+	model.showHelp = true
+	helpView := model.View()
+	if helpView == "" {
+		t.Error("expected non-empty help overlay")
+	}
+	if !containsText(helpView, "Keyboard Shortcuts") {
+		t.Error("expected help overlay to contain 'Keyboard Shortcuts'")
+	}
+	model.showHelp = false
+
+	// Test menu overlay
+	model.menu.SetSize(100, 40)
+	model.pushView(viewMenu)
+	menuView := model.View()
+	if menuView == "" {
+		t.Error("expected non-empty menu overlay")
+	}
+	model.popView()
+
+	// Test confirm overlay
+	model.confirm = NewConfirm("test-confirm", "Test Title", "Test description")
+	model.confirm.SetSize(100, 40)
+	model.pushView(viewConfirm)
+	confirmView := model.View()
+	if confirmView == "" {
+		t.Error("expected non-empty confirm overlay")
+	}
+	if !containsText(confirmView, "Test Title") {
+		t.Error("expected confirm overlay to contain 'Test Title'")
+	}
+	model.popView()
+
+	// Test conflict overlay
+	conflicts := []stow.ConflictFile{
+		{ConfigName: "zsh", TargetPath: "/home/user/.zshrc"},
+	}
+	model.conflictView = NewConflictView(conflicts)
+	model.conflictView.SetSize(100, 40)
+	model.pushView(viewConflict)
+	conflictView := model.View()
+	if conflictView == "" {
+		t.Error("expected non-empty conflict overlay")
+	}
+	if !containsText(conflictView, "Conflicts") {
+		t.Error("expected conflict overlay to contain 'Conflicts'")
+	}
+	model.popView()
+
+	// Verify dashboard is intact after all overlays
+	dashView := model.View()
+	if !containsText(dashView, "vim") {
+		t.Error("expected dashboard to still contain 'vim' after all overlay tests")
+	}
+}
+
 // TestConflictView_Render tests that ConflictView renders without panic
 func TestConflictView_Render(t *testing.T) {
 	conflicts := []stow.ConflictFile{
