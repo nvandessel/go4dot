@@ -2,6 +2,7 @@ package deps
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
@@ -242,5 +243,140 @@ func TestParseVersion(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCheckDependencyManual(t *testing.T) {
+	tests := []struct {
+		name       string
+		dep        config.DependencyItem
+		wantStatus DepStatus
+	}{
+		{
+			name:       "Manual dep installed",
+			dep:        config.DependencyItem{Name: "sh", Binary: "sh", Manual: true},
+			wantStatus: StatusInstalled,
+		},
+		{
+			name:       "Manual dep missing",
+			dep:        config.DependencyItem{Name: "fake-manual-dep-xyz", Binary: "fake-manual-dep-xyz", Manual: true},
+			wantStatus: StatusManualMissing,
+		},
+		{
+			name:       "Non-manual dep missing",
+			dep:        config.DependencyItem{Name: "fake-dep-xyz", Binary: "fake-dep-xyz", Manual: false},
+			wantStatus: StatusMissing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			check := checkDependency(tt.dep)
+			if check.Status != tt.wantStatus {
+				t.Errorf("Status = %v, want %v", check.Status, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestGetManualMissing(t *testing.T) {
+	result := &CheckResult{
+		Critical: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "installed1"}, Status: StatusInstalled},
+			{Item: config.DependencyItem{Name: "manual1", Manual: true}, Status: StatusManualMissing},
+		},
+		Core: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "missing1"}, Status: StatusMissing},
+			{Item: config.DependencyItem{Name: "manual2", Manual: true}, Status: StatusManualMissing},
+		},
+	}
+
+	manual := result.GetManualMissing()
+	if len(manual) != 2 {
+		t.Errorf("len(GetManualMissing()) = %d, want 2", len(manual))
+	}
+}
+
+func TestGetMissingExcludesManual(t *testing.T) {
+	result := &CheckResult{
+		Core: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "missing1"}, Status: StatusMissing},
+			{Item: config.DependencyItem{Name: "manual1", Manual: true}, Status: StatusManualMissing},
+		},
+	}
+
+	missing := result.GetMissing()
+	if len(missing) != 1 {
+		t.Errorf("len(GetMissing()) = %d, want 1 (should exclude manual)", len(missing))
+	}
+}
+
+func TestAllInstalledIgnoresManual(t *testing.T) {
+	result := &CheckResult{
+		Core: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "installed1"}, Status: StatusInstalled},
+			{Item: config.DependencyItem{Name: "manual1", Manual: true}, Status: StatusManualMissing},
+		},
+	}
+
+	if !result.AllInstalled() {
+		t.Error("AllInstalled() should return true when only manual deps are missing")
+	}
+}
+
+func TestSummaryIncludesManual(t *testing.T) {
+	result := &CheckResult{
+		Core: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "installed1"}, Status: StatusInstalled},
+			{Item: config.DependencyItem{Name: "manual1", Manual: true}, Status: StatusManualMissing},
+		},
+	}
+
+	summary := result.Summary()
+	if !strings.Contains(summary, "1 manual") {
+		t.Errorf("Summary() = %q, expected to contain '1 manual'", summary)
+	}
+}
+
+func TestCheckWithManualDeps(t *testing.T) {
+	cfg := &config.Config{
+		Dependencies: config.Dependencies{
+			Critical: []config.DependencyItem{
+				{Name: "sh", Binary: "sh"},
+			},
+			Core: []config.DependencyItem{
+				{Name: "fake-manual-dep-xyz", Binary: "fake-manual-dep-xyz", Manual: true},
+			},
+		},
+	}
+
+	p, err := platform.Detect()
+	if err != nil {
+		t.Fatalf("Detect() failed: %v", err)
+	}
+
+	result, err := Check(cfg, p)
+	if err != nil {
+		t.Fatalf("Check() failed: %v", err)
+	}
+
+	if result.Critical[0].Status != StatusInstalled {
+		t.Errorf("Critical[0].Status = %v, want %v", result.Critical[0].Status, StatusInstalled)
+	}
+
+	if result.Core[0].Status != StatusManualMissing {
+		t.Errorf("Core[0].Status = %v, want %v", result.Core[0].Status, StatusManualMissing)
+	}
+
+	missing := result.GetMissing()
+	for _, dep := range missing {
+		if dep.Item.Name == "fake-manual-dep-xyz" {
+			t.Error("GetMissing() should not include manual deps")
+		}
+	}
+
+	manualMissing := result.GetManualMissing()
+	if len(manualMissing) != 1 {
+		t.Errorf("len(GetManualMissing()) = %d, want 1", len(manualMissing))
 	}
 }

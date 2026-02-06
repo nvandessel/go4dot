@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nvandessel/go4dot/internal/config"
+	"github.com/nvandessel/go4dot/internal/deps"
 	"github.com/nvandessel/go4dot/internal/platform"
 )
 
@@ -247,5 +249,68 @@ func TestReportWithEmptyPlatform(t *testing.T) {
 
 	if !strings.Contains(report, "go4dot Health Check") {
 		t.Error("Report should contain header even without platform")
+	}
+}
+
+func TestDetailedReportWithManualDeps(t *testing.T) {
+	result := &CheckResult{
+		Platform: &platform.Platform{
+			OS:             "linux",
+			PackageManager: "dnf",
+		},
+		Checks: []Check{
+			{
+				Name:    "Dependencies",
+				Status:  StatusWarning,
+				Message: "1 manual dependencies not installed",
+			},
+		},
+		DepsResult: &deps.CheckResult{
+			Core: []deps.DependencyCheck{
+				{
+					Item:   config.DependencyItem{Name: "1password-cli", Manual: true},
+					Status: deps.StatusManualMissing,
+				},
+			},
+		},
+	}
+
+	report := result.DetailedReport()
+
+	if !strings.Contains(report, "Manual Dependencies") {
+		t.Error("DetailedReport should contain 'Manual Dependencies' section")
+	}
+	if !strings.Contains(report, "1password-cli") {
+		t.Error("DetailedReport should mention 1password-cli")
+	}
+}
+
+func TestDetailedReportWithNoManualDeps(t *testing.T) {
+	result := &CheckResult{
+		Platform: &platform.Platform{
+			OS:             "linux",
+			PackageManager: "dnf",
+		},
+		Checks: []Check{
+			{
+				Name:    "Dependencies",
+				Status:  StatusOK,
+				Message: "All installed",
+			},
+		},
+		DepsResult: &deps.CheckResult{
+			Core: []deps.DependencyCheck{
+				{
+					Item:   config.DependencyItem{Name: "git"},
+					Status: deps.StatusInstalled,
+				},
+			},
+		},
+	}
+
+	report := result.DetailedReport()
+
+	if strings.Contains(report, "Manual Dependencies") {
+		t.Error("DetailedReport should NOT contain 'Manual Dependencies' when none exist")
 	}
 }

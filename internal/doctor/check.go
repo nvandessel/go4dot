@@ -256,6 +256,7 @@ func summarizeDepsCheck(result *deps.CheckResult) Check {
 
 	missing := result.GetMissing()
 	missingCritical := result.GetMissingCritical()
+	manualMissing := result.GetManualMissing()
 
 	if len(missingCritical) > 0 {
 		check.Status = StatusError
@@ -264,10 +265,26 @@ func summarizeDepsCheck(result *deps.CheckResult) Check {
 		return check
 	}
 
+	if len(missing) > 0 && len(manualMissing) > 0 {
+		check.Status = StatusWarning
+		var parts []string
+		parts = append(parts, fmt.Sprintf("%d optional dependencies missing", len(missing)))
+		parts = append(parts, fmt.Sprintf("%d manual (install separately)", len(manualMissing)))
+		check.Message = strings.Join(parts, ", ")
+		check.Fix = "Run 'g4d deps install' for auto-installable deps; install manual deps yourself"
+		return check
+	}
+
 	if len(missing) > 0 {
 		check.Status = StatusWarning
 		check.Message = fmt.Sprintf("%d optional dependencies missing", len(missing))
 		check.Fix = "Run 'g4d deps install' to install missing dependencies"
+		return check
+	}
+
+	if len(manualMissing) > 0 {
+		check.Status = StatusWarning
+		check.Message = fmt.Sprintf("%d manual dependencies not installed (install separately)", len(manualMissing))
 		return check
 	}
 
