@@ -331,6 +331,85 @@ func TestHealthPanel_EnsureVisible_ScrollsUp(t *testing.T) {
 	}
 }
 
+func TestHealthPanel_EnsureVisible_AccountsForScrollDownIndicator(t *testing.T) {
+	// With 10 checks and visibleHeight=2, selecting item 1 from offset 0
+	// means renderCheckItems will show a scroll-down indicator (eating 1 slot).
+	// Only 1 item slot remains, so the offset must advance to keep item 1 visible.
+	var checks []doctor.Check
+	for i := 0; i < 10; i++ {
+		checks = append(checks, doctor.Check{Name: "Check" + string(rune('A'+i)), Status: doctor.StatusOK})
+	}
+	p := newTestHealthPanel(checks)
+	p.SetSize(60, 6) // ContentHeight=4, getListVisibleHeight=2
+	p.listOffset = 0
+	p.selectedIdx = 1
+	p.ensureVisible()
+	// Without the fix, listOffset stays 0 and the scroll-down indicator
+	// hides item 1. With the fix, offset adjusts so item 1 is rendered.
+	if p.listOffset < 1 {
+		t.Errorf("expected listOffset >= 1, got %d (scroll-down indicator not accounted for)", p.listOffset)
+	}
+}
+
+func TestHealthPanel_EnsureVisible_AccountsForBothScrollIndicators(t *testing.T) {
+	// With 10 checks, visibleHeight=2, offset=3, selecting item 4:
+	// Both scroll-up and scroll-down indicators are shown, leaving only 1 item slot.
+	// The offset must advance past 3 to keep item 4 visible.
+	var checks []doctor.Check
+	for i := 0; i < 10; i++ {
+		checks = append(checks, doctor.Check{Name: "Check" + string(rune('A'+i)), Status: doctor.StatusOK})
+	}
+	p := newTestHealthPanel(checks)
+	p.SetSize(60, 6) // ContentHeight=4, getListVisibleHeight=2
+	p.listOffset = 3
+	p.selectedIdx = 4
+	p.ensureVisible()
+	// Both indicators eat a line each. Only 1 item slot remains from visibleHeight=2.
+	// Item 4 must be in the rendered range [listOffset, listOffset+1).
+	if p.selectedIdx < p.listOffset || p.selectedIdx >= p.listOffset+1 {
+		t.Errorf("selected item %d not in visible range [%d, %d)",
+			p.selectedIdx, p.listOffset, p.listOffset+1)
+	}
+}
+
+func TestHealthPanel_EnsureVisible_NoIndicatorsNoAdjustment(t *testing.T) {
+	// When all items fit without scrolling, no indicators are shown,
+	// and ensureVisible should not change the offset.
+	checks := []doctor.Check{
+		{Name: "A", Status: doctor.StatusOK},
+		{Name: "B", Status: doctor.StatusOK},
+	}
+	p := newTestHealthPanel(checks)
+	p.SetSize(60, 20) // Plenty of space
+	p.listOffset = 0
+	p.selectedIdx = 1
+	p.ensureVisible()
+	if p.listOffset != 0 {
+		t.Errorf("expected listOffset 0, got %d", p.listOffset)
+	}
+}
+
+func TestHealthPanel_EnsureVisible_ScrollUpAccountsForIndicator(t *testing.T) {
+	// When scrolling up, the scroll-up indicator at the new offset should be
+	// accounted for. With offset=1 and selectedIdx=1, the scroll-up indicator
+	// is shown (offset>0), eating 1 item slot from visibleHeight=2. Only 1 slot
+	// remains, but item 1 is at offset 1, so it's still the first rendered item.
+	var checks []doctor.Check
+	for i := 0; i < 10; i++ {
+		checks = append(checks, doctor.Check{Name: "Check" + string(rune('A'+i)), Status: doctor.StatusOK})
+	}
+	p := newTestHealthPanel(checks)
+	p.SetSize(60, 6) // ContentHeight=4, getListVisibleHeight=2
+	p.listOffset = 5
+	p.selectedIdx = 1
+	p.ensureVisible()
+	// After scrolling up, selectedIdx=1 must be within the rendered range.
+	// The rendered range starts at listOffset.
+	if p.selectedIdx < p.listOffset {
+		t.Errorf("selected item %d is above listOffset %d", p.selectedIdx, p.listOffset)
+	}
+}
+
 func TestHealthPanel_GetSelectedItem(t *testing.T) {
 	checks := []doctor.Check{
 		{Name: "Platform", Status: doctor.StatusOK},

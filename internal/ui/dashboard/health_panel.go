@@ -155,13 +155,39 @@ func (p *HealthPanel) getListVisibleHeight() int {
 	return h
 }
 
+// ensureVisible adjusts listOffset so the selected item is within the visible
+// area. It accounts for scroll indicator lines that renderCheckItems reserves
+// when the list overflows above or below the viewport.
 func (p *HealthPanel) ensureVisible() {
+	totalChecks := len(p.result.Checks)
 	visibleHeight := p.getListVisibleHeight()
 
+	// First pass: coarse adjustment using the raw visible height
 	if p.selectedIdx < p.listOffset {
 		p.listOffset = p.selectedIdx
 	} else if p.selectedIdx >= p.listOffset+visibleHeight {
 		p.listOffset = p.selectedIdx - visibleHeight + 1
+	}
+
+	// Second pass: account for scroll indicator lines.
+	// renderCheckItems reserves one line each for the scroll-up and scroll-down
+	// indicators, reducing the number of item slots available.
+	effectiveSlots := visibleHeight
+	if p.listOffset > 0 {
+		effectiveSlots-- // scroll-up indicator takes a line
+	}
+	if p.listOffset+effectiveSlots < totalChecks {
+		effectiveSlots-- // scroll-down indicator takes a line
+	}
+	if effectiveSlots < 1 {
+		effectiveSlots = 1
+	}
+
+	// Re-adjust offset so selectedIdx fits within the effective item slots
+	if p.selectedIdx < p.listOffset {
+		p.listOffset = p.selectedIdx
+	} else if p.selectedIdx >= p.listOffset+effectiveSlots {
+		p.listOffset = p.selectedIdx - effectiveSlots + 1
 	}
 }
 
