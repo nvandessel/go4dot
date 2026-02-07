@@ -77,7 +77,10 @@ func (p *HealthPanel) runChecks() tea.Msg {
 		DotfilesPath: p.dotfilesPath,
 	}
 	result, err := doctor.RunChecks(p.cfg, opts)
-	return healthResultMsg{result: result, err: err}
+	if err != nil {
+		return healthResultMsg{result: nil, err: fmt.Errorf("health checks failed: %w", err)}
+	}
+	return healthResultMsg{result: result, err: nil}
 }
 
 // Update implements Panel interface
@@ -172,22 +175,30 @@ func (p *HealthPanel) ensureVisible() {
 	// Second pass: account for scroll indicator lines.
 	// renderCheckItems reserves one line each for the scroll-up and scroll-down
 	// indicators, reducing the number of item slots available.
-	effectiveSlots := visibleHeight
-	if p.listOffset > 0 {
-		effectiveSlots-- // scroll-up indicator takes a line
-	}
-	if p.listOffset+effectiveSlots < totalChecks {
-		effectiveSlots-- // scroll-down indicator takes a line
-	}
-	if effectiveSlots < 1 {
-		effectiveSlots = 1
-	}
+	for i := 0; i < 3; i++ {
+		prevOffset := p.listOffset
 
-	// Re-adjust offset so selectedIdx fits within the effective item slots
-	if p.selectedIdx < p.listOffset {
-		p.listOffset = p.selectedIdx
-	} else if p.selectedIdx >= p.listOffset+effectiveSlots {
-		p.listOffset = p.selectedIdx - effectiveSlots + 1
+		effectiveSlots := visibleHeight
+		if p.listOffset > 0 {
+			effectiveSlots-- // scroll-up indicator takes a line
+		}
+		if p.listOffset+effectiveSlots < totalChecks {
+			effectiveSlots-- // scroll-down indicator takes a line
+		}
+		if effectiveSlots < 1 {
+			effectiveSlots = 1
+		}
+
+		// Re-adjust offset so selectedIdx fits within the effective item slots
+		if p.selectedIdx < p.listOffset {
+			p.listOffset = p.selectedIdx
+		} else if p.selectedIdx >= p.listOffset+effectiveSlots {
+			p.listOffset = p.selectedIdx - effectiveSlots + 1
+		}
+
+		if p.listOffset == prevOffset {
+			break
+		}
 	}
 }
 
@@ -235,8 +246,7 @@ func (p *HealthPanel) renderSummary() string {
 		parts = append(parts, ui.WarningStyle.Render(fmt.Sprintf("%d warn", warnings)))
 	}
 	if ok > 0 {
-		okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
-		parts = append(parts, okStyle.Render(fmt.Sprintf("%d ok", ok)))
+		parts = append(parts, okStatusStyle().Render(fmt.Sprintf("%d ok", ok)))
 	}
 
 	if len(parts) == 0 {
@@ -283,7 +293,7 @@ func (p *HealthPanel) renderCheckItems() []string {
 	}
 
 	// Render visible check items
-	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	okStyle := okStatusStyle()
 	warnStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	errStyle := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 	skipStyle := ui.SubtleStyle
@@ -329,6 +339,10 @@ func (p *HealthPanel) renderCheckItems() []string {
 	}
 
 	return lines
+}
+
+func okStatusStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(ui.SecondaryColor)
 }
 
 // GetSelectedItem implements Panel interface
