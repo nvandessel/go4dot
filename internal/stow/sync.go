@@ -103,7 +103,12 @@ func SyncAll(dotfilesPath string, cfg *config.Config, st *state.State, interacti
 	return result, nil
 }
 
-// SyncSingle restows a single config and updates state.
+// SyncSingle restows the named config, removes any orphaned symlinks for that config, and updates state.
+//
+// SyncSingle reports progress via the provided ProgressFunc when present. It returns an error if the named
+// config is not found, if the restow operation fails, or if updating symlink counts in state fails.
+// Orphaned symlink removal is skipped when running a dry run; failures to remove individual orphaned
+// symlinks are reported via ProgressFunc but do not make the function fail.
 func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *state.State, opts StowOptions) error {
 	// Find the config item
 	var configItem *config.ConfigItem

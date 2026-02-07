@@ -68,6 +68,15 @@ func runSync(cmd *cobra.Command, args []string) {
 	}
 }
 
+// syncSingleConfig syncs symlinks for the dotfiles config with the given name.
+// 
+// It performs a drift check for the repository, prints any detected changes for
+// the named config, prompts the user for confirmation when running
+// interactively, and then executes the sync while streaming progress lines.
+// 
+// Returns an error if the named config cannot be found, the drift check fails,
+// or the sync operation fails; returns nil on success or when the user cancels
+// the operation interactively.
 func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string, st *state.State) error {
 	// Find the config
 	var configItem *config.ConfigItem
