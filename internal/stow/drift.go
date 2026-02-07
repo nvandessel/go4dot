@@ -35,6 +35,36 @@ func (s *DriftSummary) HasDrift() bool {
 	return s.DriftedConfigs > 0 || len(s.RemovedConfigs) > 0
 }
 
+// ResultsMap returns a map of config names to their DriftResult for quick lookup.
+// This avoids the need to iterate over Results repeatedly when looking up
+// drift information by config name.
+func (s *DriftSummary) ResultsMap() map[string]*DriftResult {
+	if s == nil {
+		return nil
+	}
+	m := make(map[string]*DriftResult, len(s.Results))
+	for i := range s.Results {
+		r := &s.Results[i]
+		m[r.ConfigName] = r
+	}
+	return m
+}
+
+// ResultByName returns the DriftResult for a specific config name, or nil if not found.
+// Use this when looking up a single config's drift status. For multiple lookups,
+// prefer ResultsMap() to build the map once.
+func (s *DriftSummary) ResultByName(configName string) *DriftResult {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Results {
+		if s.Results[i].ConfigName == configName {
+			return &s.Results[i]
+		}
+	}
+	return nil
+}
+
 // FullDriftCheck performs a complete analysis of all configs.
 // It identifies exactly which files are new, missing, or in conflict by comparing
 // the dotfiles directory with the user's home directory.

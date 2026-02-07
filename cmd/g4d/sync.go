@@ -88,13 +88,7 @@ func syncSingleConfig(configName string, cfg *config.Config, dotfilesPath string
 		return fmt.Errorf("failed to check drift: %w", err)
 	}
 
-	var drift *stow.DriftResult
-	for _, r := range summary.Results {
-		if r.ConfigName == configName {
-			drift = &r
-			break
-		}
-	}
+	drift := summary.ResultByName(configName)
 
 	// Show what will be synced
 	if drift != nil && drift.HasDrift {

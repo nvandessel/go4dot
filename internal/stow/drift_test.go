@@ -148,3 +148,157 @@ func TestDriftSummaryHasDrift(t *testing.T) {
 		})
 	}
 }
+
+func TestDriftSummaryResultsMap(t *testing.T) {
+	tests := []struct {
+		name    string
+		summary *DriftSummary
+	}{
+		{
+			name:    "nil summary returns nil",
+			summary: nil,
+		},
+		{
+			name: "empty results returns empty map",
+			summary: &DriftSummary{
+				Results: []DriftResult{},
+			},
+		},
+		{
+			name: "single result",
+			summary: &DriftSummary{
+				Results: []DriftResult{
+					{ConfigName: "vim", HasDrift: true},
+				},
+			},
+		},
+		{
+			name: "multiple results",
+			summary: &DriftSummary{
+				Results: []DriftResult{
+					{ConfigName: "vim", HasDrift: true},
+					{ConfigName: "zsh", HasDrift: false},
+					{ConfigName: "nvim", HasDrift: true},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.summary.ResultsMap()
+
+			if tt.summary == nil {
+				if got != nil {
+					t.Errorf("ResultsMap() = %v, want nil", got)
+				}
+				return
+			}
+
+			if len(got) != len(tt.summary.Results) {
+				t.Errorf("ResultsMap() returned %d entries, want %d", len(got), len(tt.summary.Results))
+			}
+
+			// Verify each result is accessible by ConfigName and points to the original slice element
+			for i := range tt.summary.Results {
+				r := &tt.summary.Results[i]
+				if mapResult, ok := got[r.ConfigName]; !ok {
+					t.Errorf("ResultsMap() missing key %q", r.ConfigName)
+				} else if mapResult != r {
+					t.Errorf("ResultsMap()[%q] points to different memory address", r.ConfigName)
+				}
+			}
+		})
+	}
+}
+
+func TestDriftSummaryResultByName(t *testing.T) {
+	tests := []struct {
+		name       string
+		summary    *DriftSummary
+		configName string
+		wantNil    bool
+		wantName   string
+	}{
+		{
+			name:       "nil summary returns nil",
+			summary:    nil,
+			configName: "vim",
+			wantNil:    true,
+		},
+		{
+			name: "empty results returns nil",
+			summary: &DriftSummary{
+				Results: []DriftResult{},
+			},
+			configName: "vim",
+			wantNil:    true,
+		},
+		{
+			name: "config not found returns nil",
+			summary: &DriftSummary{
+				Results: []DriftResult{
+					{ConfigName: "zsh", HasDrift: false},
+				},
+			},
+			configName: "vim",
+			wantNil:    true,
+		},
+		{
+			name: "finds existing config",
+			summary: &DriftSummary{
+				Results: []DriftResult{
+					{ConfigName: "vim", HasDrift: true},
+					{ConfigName: "zsh", HasDrift: false},
+				},
+			},
+			configName: "vim",
+			wantNil:    false,
+			wantName:   "vim",
+		},
+		{
+			name: "finds last config",
+			summary: &DriftSummary{
+				Results: []DriftResult{
+					{ConfigName: "vim", HasDrift: true},
+					{ConfigName: "zsh", HasDrift: false},
+					{ConfigName: "nvim", HasDrift: true},
+				},
+			},
+			configName: "nvim",
+			wantNil:    false,
+			wantName:   "nvim",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.summary.ResultByName(tt.configName)
+
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("ResultByName(%q) = %v, want nil", tt.configName, got)
+				}
+				return
+			}
+
+			if got == nil {
+				t.Fatalf("ResultByName(%q) = nil, want non-nil", tt.configName)
+			}
+
+			if got.ConfigName != tt.wantName {
+				t.Errorf("ResultByName(%q).ConfigName = %q, want %q", tt.configName, got.ConfigName, tt.wantName)
+			}
+
+			// Verify it points to the original slice element, not a copy
+			for i := range tt.summary.Results {
+				if tt.summary.Results[i].ConfigName == tt.configName {
+					if got != &tt.summary.Results[i] {
+						t.Errorf("ResultByName(%q) returns a copy, not a pointer to the original", tt.configName)
+					}
+					break
+				}
+			}
+		})
+	}
+}
