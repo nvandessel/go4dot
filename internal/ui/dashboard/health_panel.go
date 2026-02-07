@@ -134,16 +134,71 @@ func (p *HealthPanel) moveUp() {
 }
 
 func (p *HealthPanel) ensureVisible() {
-	visibleHeight := p.ContentHeight() - 2 // Account for summary line
-	if visibleHeight < 1 {
-		visibleHeight = 1
+	if p.result == nil || len(p.result.Checks) == 0 {
+		return
 	}
 
+	totalChecks := len(p.result.Checks)
+	baseHeight := p.ContentHeight() - 1 // -1 for summary line
+	if baseHeight < 1 {
+		baseHeight = 1
+	}
+
+	// For very small panels, skip indicator accounting
+	if baseHeight < 3 {
+		if p.selectedIdx < p.listOffset {
+			p.listOffset = p.selectedIdx
+		} else if p.selectedIdx >= p.listOffset+baseHeight {
+			p.listOffset = p.selectedIdx - baseHeight + 1
+		}
+		return
+	}
+
+	// Scrolling up: selected item is above visible range
 	if p.selectedIdx < p.listOffset {
 		p.listOffset = p.selectedIdx
-	} else if p.selectedIdx >= p.listOffset+visibleHeight {
-		p.listOffset = p.selectedIdx - visibleHeight + 1
+		return
 	}
+
+	// Scrolling down: account for scroll indicators that may appear.
+	// A scroll-up indicator (↑) appears when listOffset > 0 and a
+	// scroll-down indicator (↓) appears when items remain below the
+	// visible window.  Each consumes one display line.
+	slots := p.scrollAwareSlots(totalChecks, baseHeight)
+
+	if p.selectedIdx >= p.listOffset+slots {
+		// After scrolling down, listOffset will be > 0 so ↑ is guaranteed
+		slots = baseHeight - 1 // reserve for ↑
+		newOffset := p.selectedIdx - slots + 1
+		// Check if ↓ indicator is also needed
+		if newOffset+slots < totalChecks {
+			slots--
+			newOffset = p.selectedIdx - slots + 1
+		}
+		if slots < 1 {
+			newOffset = p.selectedIdx
+		}
+		if newOffset < 0 {
+			newOffset = 0
+		}
+		p.listOffset = newOffset
+	}
+}
+
+// scrollAwareSlots returns how many check items fit in the visible area
+// given the current listOffset and whether scroll indicators are showing.
+func (p *HealthPanel) scrollAwareSlots(totalChecks, baseHeight int) int {
+	slots := baseHeight
+	if p.listOffset > 0 {
+		slots-- // ↑ indicator
+	}
+	if p.listOffset+slots < totalChecks {
+		slots-- // ↓ indicator
+	}
+	if slots < 1 {
+		slots = 1
+	}
+	return slots
 }
 
 // View implements Panel interface
@@ -180,15 +235,34 @@ func (p *HealthPanel) View() string {
 	}
 	lines = append(lines, strings.Join(summaryParts, " "))
 
-	// Check list (compact)
-	visibleHeight := p.ContentHeight() - 2
-	if visibleHeight < 1 {
-		visibleHeight = 1
+	// Check list (compact) — with scroll indicators
+	totalChecks := len(p.result.Checks)
+	baseHeight := p.ContentHeight() - 1 // -1 for summary line
+	if baseHeight < 1 {
+		baseHeight = 1
 	}
 
-	endIdx := p.listOffset + visibleHeight
-	if endIdx > len(p.result.Checks) {
-		endIdx = len(p.result.Checks)
+	showUpIndicator := p.listOffset > 0 && baseHeight >= 3
+	itemSlots := baseHeight
+	if showUpIndicator {
+		itemSlots--
+	}
+	endIdx := p.listOffset + itemSlots
+	if endIdx > totalChecks {
+		endIdx = totalChecks
+	}
+	showDownIndicator := endIdx < totalChecks && baseHeight >= 3
+	if showDownIndicator {
+		itemSlots--
+		endIdx = p.listOffset + itemSlots
+		if endIdx > totalChecks {
+			endIdx = totalChecks
+			showDownIndicator = false
+		}
+	}
+
+	if showUpIndicator {
+		lines = append(lines, ui.SubtleStyle.Render(fmt.Sprintf("↑ %d more", p.listOffset)))
 	}
 
 	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
@@ -228,6 +302,11 @@ func (p *HealthPanel) View() string {
 		}
 
 		lines = append(lines, line)
+	}
+
+	if showDownIndicator {
+		remaining := totalChecks - endIdx
+		lines = append(lines, ui.SubtleStyle.Render(fmt.Sprintf("↓ %d more", remaining)))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
