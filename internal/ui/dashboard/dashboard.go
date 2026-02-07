@@ -391,49 +391,59 @@ func (m Model) View() string {
 		return ""
 	}
 
-	if m.showHelp {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.help.View())
-	}
-
+	// Check if we need a non-overlay view first
 	switch m.currentView {
-	case viewMenu:
-		return m.menu.View()
 	case viewNoConfig:
 		return m.noconfig.View()
 	case viewOperation:
 		return m.viewOperation()
+	}
+
+	// Render the dashboard as background for overlay compositing
+	dashboardBg := m.viewDashboard()
+
+	// If help is shown, overlay it on top of the dashboard
+	if m.showHelp {
+		return ui.RenderOverlay(dashboardBg, overlayHelpContent(m.help), m.width, m.height, ui.DefaultOverlayStyle())
+	}
+
+	// Handle overlay-based modal views
+	switch m.currentView {
+	case viewMenu:
+		return ui.RenderOverlay(dashboardBg, overlayMenuContent(m.menu), m.width, m.height, ui.DefaultOverlayStyle())
 	case viewOnboarding:
 		if m.onboarding != nil {
-			return m.onboarding.View()
+			return ui.RenderOverlay(dashboardBg, overlayOnboardingContent(m.onboarding), m.width, m.height, ui.DefaultOverlayStyle())
 		}
 		return ""
 	case viewConfirm:
 		if m.confirm != nil {
-			return m.confirm.View()
+			return ui.RenderOverlay(dashboardBg, overlayConfirmContent(m.confirm), m.width, m.height, ui.DefaultOverlayStyle())
 		}
 		return ""
 	case viewConfigList:
 		if m.configList != nil {
-			return m.configList.View()
+			return ui.RenderOverlay(dashboardBg, overlayConfigListContent(m.configList), m.width, m.height, ui.DefaultOverlayStyle())
 		}
 		return ""
 	case viewExternal:
 		if m.externalView != nil {
-			return m.externalView.View()
+			return ui.RenderOverlay(dashboardBg, overlayExternalContent(m.externalView), m.width, m.height, ui.DefaultOverlayStyle())
 		}
 		return ""
 	case viewMachine:
 		if m.machineView != nil {
-			return m.machineView.View()
+			return ui.RenderOverlay(dashboardBg, overlayMachineContent(m.machineView), m.width, m.height, ui.DefaultOverlayStyle())
 		}
 		return ""
 	case viewConflict:
 		if m.conflictView != nil {
-			return m.conflictView.View()
+			return ui.RenderOverlay(dashboardBg, overlayConflictContent(m.conflictView), m.width, m.height, ui.WarningOverlayStyle())
 		}
 		return ""
 	default:
-		return m.viewDashboard()
+		// viewDashboard - return the dashboard directly
+		return dashboardBg
 	}
 }
 
