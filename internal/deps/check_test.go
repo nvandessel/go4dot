@@ -338,6 +338,61 @@ func TestSummaryIncludesManual(t *testing.T) {
 	}
 }
 
+func TestSummaryWithoutManual(t *testing.T) {
+	result := &CheckResult{
+		Core: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "installed1"}, Status: StatusInstalled},
+			{Item: config.DependencyItem{Name: "missing1"}, Status: StatusMissing},
+		},
+	}
+
+	summary := result.Summary()
+	if !strings.Contains(summary, "1 installed") {
+		t.Errorf("Summary() = %q, expected to contain '1 installed'", summary)
+	}
+	if !strings.Contains(summary, "1 missing") {
+		t.Errorf("Summary() = %q, expected to contain '1 missing'", summary)
+	}
+	if strings.Contains(summary, "manual") {
+		t.Errorf("Summary() = %q, should NOT contain 'manual' when no manual deps", summary)
+	}
+}
+
+func TestGetMissingCriticalExcludesManual(t *testing.T) {
+	result := &CheckResult{
+		Critical: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "installed1"}, Status: StatusInstalled},
+			{Item: config.DependencyItem{Name: "manual-crit", Manual: true}, Status: StatusManualMissing},
+			{Item: config.DependencyItem{Name: "missing-crit"}, Status: StatusMissing},
+		},
+	}
+
+	missing := result.GetMissingCritical()
+	if len(missing) != 1 {
+		t.Errorf("len(GetMissingCritical()) = %d, want 1 (should exclude manual)", len(missing))
+	}
+	if len(missing) > 0 && missing[0].Item.Name != "missing-crit" {
+		t.Errorf("GetMissingCritical()[0].Name = %q, want %q", missing[0].Item.Name, "missing-crit")
+	}
+}
+
+func TestGetManualMissingFromOptional(t *testing.T) {
+	result := &CheckResult{
+		Optional: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "opt-manual", Manual: true}, Status: StatusManualMissing},
+			{Item: config.DependencyItem{Name: "opt-installed"}, Status: StatusInstalled},
+		},
+	}
+
+	manual := result.GetManualMissing()
+	if len(manual) != 1 {
+		t.Errorf("len(GetManualMissing()) = %d, want 1", len(manual))
+	}
+	if len(manual) > 0 && manual[0].Item.Name != "opt-manual" {
+		t.Errorf("GetManualMissing()[0].Name = %q, want %q", manual[0].Item.Name, "opt-manual")
+	}
+}
+
 func TestCheckWithManualDeps(t *testing.T) {
 	cfg := &config.Config{
 		Dependencies: config.Dependencies{

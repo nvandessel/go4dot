@@ -464,6 +464,70 @@ func TestProgressNoCallback(t *testing.T) {
 	progress(opts, "test message")
 }
 
+func TestSummarizeDepsCheckManualOnlyFix(t *testing.T) {
+	// When only manual deps are missing, there should be no fix suggestion
+	// (user must handle manually)
+	result := &deps.CheckResult{
+		Critical: []deps.DependencyCheck{
+			{Item: config.DependencyItem{Name: "git"}, Status: deps.StatusInstalled},
+		},
+		Core: []deps.DependencyCheck{
+			{Item: config.DependencyItem{Name: "op", Manual: true}, Status: deps.StatusManualMissing},
+		},
+	}
+
+	check := summarizeDepsCheck(result)
+	if check.Status != StatusWarning {
+		t.Errorf("Status = %v, want %v", check.Status, StatusWarning)
+	}
+	if !strings.Contains(check.Message, "manual") {
+		t.Errorf("Message = %q, expected to contain 'manual'", check.Message)
+	}
+}
+
+func TestSummarizeDepsCheckMixedFix(t *testing.T) {
+	// When both missing auto-installable and manual deps exist
+	result := &deps.CheckResult{
+		Critical: []deps.DependencyCheck{
+			{Item: config.DependencyItem{Name: "git"}, Status: deps.StatusInstalled},
+		},
+		Core: []deps.DependencyCheck{
+			{Item: config.DependencyItem{Name: "op", Manual: true}, Status: deps.StatusManualMissing},
+		},
+		Optional: []deps.DependencyCheck{
+			{Item: config.DependencyItem{Name: "fzf"}, Status: deps.StatusMissing},
+		},
+	}
+
+	check := summarizeDepsCheck(result)
+	if check.Status != StatusWarning {
+		t.Errorf("Status = %v, want %v", check.Status, StatusWarning)
+	}
+	if !strings.Contains(check.Fix, "g4d deps install") {
+		t.Errorf("Fix = %q, expected to mention 'g4d deps install'", check.Fix)
+	}
+	if !strings.Contains(check.Fix, "manual") {
+		t.Errorf("Fix = %q, expected to mention 'manual'", check.Fix)
+	}
+}
+
+func TestSummarizeDepsCheckCriticalMissingWithManual(t *testing.T) {
+	// Critical missing should take priority over manual
+	result := &deps.CheckResult{
+		Critical: []deps.DependencyCheck{
+			{Item: config.DependencyItem{Name: "git"}, Status: deps.StatusMissing},
+		},
+		Core: []deps.DependencyCheck{
+			{Item: config.DependencyItem{Name: "op", Manual: true}, Status: deps.StatusManualMissing},
+		},
+	}
+
+	check := summarizeDepsCheck(result)
+	if check.Status != StatusError {
+		t.Errorf("Status = %v, want %v (critical missing should be error)", check.Status, StatusError)
+	}
+}
+
 func TestSummarizeDepsCheckWithManual(t *testing.T) {
 	tests := []struct {
 		name           string

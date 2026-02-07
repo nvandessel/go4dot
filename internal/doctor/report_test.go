@@ -285,6 +285,93 @@ func TestDetailedReportWithManualDeps(t *testing.T) {
 	}
 }
 
+func TestDetailedReportWithBothMissingAndManualDeps(t *testing.T) {
+	result := &CheckResult{
+		Platform: &platform.Platform{
+			OS:             "linux",
+			PackageManager: "dnf",
+		},
+		Checks: []Check{
+			{
+				Name:    "Dependencies",
+				Status:  StatusWarning,
+				Message: "1 optional deps missing, 1 manual",
+			},
+		},
+		DepsResult: &deps.CheckResult{
+			Core: []deps.DependencyCheck{
+				{
+					Item:   config.DependencyItem{Name: "1password-cli", Manual: true},
+					Status: deps.StatusManualMissing,
+				},
+			},
+			Optional: []deps.DependencyCheck{
+				{
+					Item:   config.DependencyItem{Name: "fzf"},
+					Status: deps.StatusMissing,
+				},
+			},
+		},
+	}
+
+	report := result.DetailedReport()
+
+	if !strings.Contains(report, "Missing Dependencies") {
+		t.Error("DetailedReport should contain 'Missing Dependencies' section")
+	}
+	if !strings.Contains(report, "fzf") {
+		t.Error("DetailedReport should mention fzf in missing deps")
+	}
+	if !strings.Contains(report, "Manual Dependencies") {
+		t.Error("DetailedReport should contain 'Manual Dependencies' section")
+	}
+	if !strings.Contains(report, "1password-cli") {
+		t.Error("DetailedReport should mention 1password-cli in manual deps")
+	}
+}
+
+func TestDetailedReportWithMissingDepsOnly(t *testing.T) {
+	result := &CheckResult{
+		Platform: &platform.Platform{
+			OS:             "linux",
+			PackageManager: "apt",
+		},
+		Checks: []Check{
+			{
+				Name:    "Dependencies",
+				Status:  StatusWarning,
+				Message: "1 optional dependencies missing",
+			},
+		},
+		DepsResult: &deps.CheckResult{
+			Core: []deps.DependencyCheck{
+				{
+					Item:   config.DependencyItem{Name: "curl"},
+					Status: deps.StatusInstalled,
+				},
+			},
+			Optional: []deps.DependencyCheck{
+				{
+					Item:   config.DependencyItem{Name: "ripgrep"},
+					Status: deps.StatusMissing,
+				},
+			},
+		},
+	}
+
+	report := result.DetailedReport()
+
+	if !strings.Contains(report, "Missing Dependencies") {
+		t.Error("DetailedReport should contain 'Missing Dependencies' section")
+	}
+	if !strings.Contains(report, "ripgrep") {
+		t.Error("DetailedReport should mention ripgrep")
+	}
+	if strings.Contains(report, "Manual Dependencies") {
+		t.Error("DetailedReport should NOT contain 'Manual Dependencies' when none exist")
+	}
+}
+
 func TestDetailedReportWithNoManualDeps(t *testing.T) {
 	result := &CheckResult{
 		Platform: &platform.Platform{
