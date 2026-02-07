@@ -36,3 +36,21 @@ func TestRunDepsInstall_ManualOnly(t *testing.T) {
 		t.Fatalf("expected auto-installable summary, got %q", output)
 	}
 }
+
+func TestRunDepsInstall_NoDeps(t *testing.T) {
+	cfg := &config.Config{
+		Dependencies: config.Dependencies{},
+	}
+	p := &platform.Platform{}
+
+	var stdout bytes.Buffer
+	err := runDepsInstall(cfg, p, &stdout)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "All dependencies are already installed!") {
+		t.Fatalf("expected all installed message, got %q", output)
+	}
+}

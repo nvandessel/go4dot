@@ -95,7 +95,11 @@ func checkDependency(dep config.DependencyItem) DependencyCheck {
 	if dep.Version != "" {
 		version, err := getVersion(binaryName, dep.VersionCmd)
 		if err != nil {
-			check.Status = StatusCheckFailed
+			if dep.Manual {
+				check.Status = StatusManualMissing
+			} else {
+				check.Status = StatusCheckFailed
+			}
 			check.Error = fmt.Errorf("failed to get version: %w", err)
 			return check
 		}
