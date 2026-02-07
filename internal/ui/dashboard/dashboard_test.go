@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -1452,21 +1453,12 @@ func TestModel_HelpOverlayContainsKeyboardShortcuts(t *testing.T) {
 // containsText checks if a string contains a substring, ignoring ANSI escape codes
 func containsText(s, substr string) bool {
 	// First try direct contains
-	if contains(s, substr) {
+	if strings.Contains(s, substr) {
 		return true
 	}
 	// Try with ANSI stripped
 	stripped := stripAnsiForTest(s)
-	return contains(stripped, substr)
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(stripped, substr)
 }
 
 func stripAnsiForTest(s string) string {

@@ -63,7 +63,7 @@ func RenderOverlay(bg, modal string, width, height int, style OverlayStyle) stri
 	styledModal := modalStyle.Render(modal)
 
 	// Composite the modal centered over the dimmed background
-	return placeOverlay(dimmedBg, styledModal, width, height)
+	return placeOverlay(dimmedBg, styledModal, width, height, style.DimColor)
 }
 
 // dimContent creates a dimmed version of the background.
@@ -92,9 +92,10 @@ func dimContent(content string, width, height int, dimChar string, dimColor lipg
 }
 
 // placeOverlay places the modal content centered over the background.
-func placeOverlay(bg, modal string, width, height int) string {
+func placeOverlay(bg, modal string, width, height int, dimColor lipgloss.Color) string {
 	bgLines := strings.Split(bg, "\n")
 	modalLines := strings.Split(modal, "\n")
+	dimStyle := lipgloss.NewStyle().Foreground(dimColor)
 
 	modalWidth := 0
 	for _, line := range modalLines {
@@ -137,16 +138,16 @@ func placeOverlay(bg, modal string, width, height int) string {
 		before := ""
 		if startX > 0 {
 			if startX <= len(bgRunes) {
-				before = string(bgRunes[:startX])
+				before = dimStyle.Render(string(bgRunes[:startX]))
 			} else {
-				before = string(bgRunes) + strings.Repeat(" ", startX-len(bgRunes))
+				before = dimStyle.Render(string(bgRunes) + strings.Repeat(" ", startX-len(bgRunes)))
 			}
 		}
 
 		afterStart := startX + modalLineWidth
 		after := ""
 		if afterStart < len(bgRunes) {
-			after = string(bgRunes[afterStart:])
+			after = dimStyle.Render(string(bgRunes[afterStart:]))
 		}
 
 		bgLines[bgIdx] = before + modalLine + after

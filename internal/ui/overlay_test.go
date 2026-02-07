@@ -152,7 +152,7 @@ func TestPlaceOverlay(t *testing.T) {
 			}
 			bg := strings.Join(bgLines, "\n")
 
-			result := placeOverlay(bg, tt.modalContent, tt.bgWidth, tt.bgHeight)
+			result := placeOverlay(bg, tt.modalContent, tt.bgWidth, tt.bgHeight, lipgloss.Color("#333333"))
 			lines := strings.Split(result, "\n")
 
 			if len(lines) != tt.expectedLines {
@@ -176,11 +176,12 @@ func TestPlaceOverlay_Centering(t *testing.T) {
 	bg := strings.Join(bgLines, "\n")
 
 	modal := "XX"
-	result := placeOverlay(bg, modal, bgWidth, bgHeight)
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, lipgloss.Color("#333333"))
 
 	lines := strings.Split(result, "\n")
 
-	expectedY := (bgHeight - 1) / 2
+	modalHeight := len(strings.Split(modal, "\n"))
+	expectedY := (bgHeight - modalHeight) / 2
 	found := false
 	for i, line := range lines {
 		if strings.Contains(line, "XX") {
@@ -273,7 +274,7 @@ func TestPlaceOverlay_MultilineModal(t *testing.T) {
 	bg := strings.Join(bgLines, "\n")
 
 	modal := "Line 1\nLine 2\nLine 3"
-	result := placeOverlay(bg, modal, bgWidth, bgHeight)
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, lipgloss.Color("#333333"))
 
 	lines := strings.Split(result, "\n")
 	if len(lines) != bgHeight {

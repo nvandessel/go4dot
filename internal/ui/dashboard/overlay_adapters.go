@@ -440,7 +440,7 @@ func overlayConflictContent(v *ConflictView) string {
 		for i := 0; i < showCount; i++ {
 			displayPath := files[i].TargetPath
 			if home != "" {
-				if relPath, err := filepath.Rel(home, files[i].TargetPath); err == nil {
+				if relPath, err := filepath.Rel(home, files[i].TargetPath); err == nil && !strings.HasPrefix(relPath, "..") {
 					displayPath = "~/" + relPath
 				}
 			}
