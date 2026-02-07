@@ -3,6 +3,7 @@ package doctor
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
@@ -461,4 +462,68 @@ func TestProgressNoCallback(t *testing.T) {
 
 	// Should not panic with nil callback
 	progress(opts, "test message")
+}
+
+func TestSummarizeDepsCheckWithManual(t *testing.T) {
+	tests := []struct {
+		name           string
+		result         *deps.CheckResult
+		expectedStatus CheckStatus
+		msgContains    string
+	}{
+		{
+			name: "Only manual missing",
+			result: &deps.CheckResult{
+				Critical: []deps.DependencyCheck{
+					{Item: config.DependencyItem{Name: "git"}, Status: deps.StatusInstalled},
+				},
+				Core: []deps.DependencyCheck{
+					{Item: config.DependencyItem{Name: "op", Manual: true}, Status: deps.StatusManualMissing},
+				},
+			},
+			expectedStatus: StatusWarning,
+			msgContains:    "manual",
+		},
+		{
+			name: "Manual and optional missing",
+			result: &deps.CheckResult{
+				Critical: []deps.DependencyCheck{
+					{Item: config.DependencyItem{Name: "git"}, Status: deps.StatusInstalled},
+				},
+				Core: []deps.DependencyCheck{
+					{Item: config.DependencyItem{Name: "op", Manual: true}, Status: deps.StatusManualMissing},
+				},
+				Optional: []deps.DependencyCheck{
+					{Item: config.DependencyItem{Name: "fzf"}, Status: deps.StatusMissing},
+				},
+			},
+			expectedStatus: StatusWarning,
+			msgContains:    "manual",
+		},
+		{
+			name: "All installed including manual",
+			result: &deps.CheckResult{
+				Critical: []deps.DependencyCheck{
+					{Item: config.DependencyItem{Name: "git"}, Status: deps.StatusInstalled},
+				},
+				Core: []deps.DependencyCheck{
+					{Item: config.DependencyItem{Name: "op", Manual: true}, Status: deps.StatusInstalled},
+				},
+			},
+			expectedStatus: StatusOK,
+			msgContains:    "installed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			check := summarizeDepsCheck(tt.result)
+			if check.Status != tt.expectedStatus {
+				t.Errorf("Status = %v, want %v", check.Status, tt.expectedStatus)
+			}
+			if !strings.Contains(strings.ToLower(check.Message), strings.ToLower(tt.msgContains)) {
+				t.Errorf("Message = %q, expected to contain %q", check.Message, tt.msgContains)
+			}
+		})
+	}
 }

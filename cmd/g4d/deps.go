@@ -155,6 +155,12 @@ var depsInstallCmd = &cobra.Command{
 		// Show results
 		fmt.Println()
 		fmt.Printf("Installed: %d packages\n", len(result.Installed))
+		if len(result.ManualSkipped) > 0 {
+			fmt.Printf("Manual (skipped): %d packages\n", len(result.ManualSkipped))
+			for _, dep := range result.ManualSkipped {
+				fmt.Printf("  - %s (install manually)\n", dep.Name)
+			}
+		}
 		if len(result.Failed) > 0 {
 			fmt.Printf("Failed: %d packages\n", len(result.Failed))
 			for _, fail := range result.Failed {
@@ -182,9 +188,17 @@ func printDepStatus(dep deps.DependencyCheck) {
 	case deps.StatusCheckFailed:
 		status = "?"
 		info = fmt.Sprintf("check failed: %v", dep.Error)
+	case deps.StatusManualMissing:
+		status = "m"
+		info = "missing (manual install required)"
 	}
 
-	fmt.Printf("  %s %s (%s)\n", status, dep.Item.Name, info)
+	label := dep.Item.Name
+	if dep.Item.Manual {
+		label += " [manual]"
+	}
+
+	fmt.Printf("  %s %s (%s)\n", status, label, info)
 }
 
 func init() {

@@ -9,9 +9,10 @@ import (
 
 // InstallResult represents the result of installing dependencies
 type InstallResult struct {
-	Installed []config.DependencyItem
-	Failed    []InstallError
-	Skipped   []config.DependencyItem
+	Installed     []config.DependencyItem
+	Failed        []InstallError
+	Skipped       []config.DependencyItem
+	ManualSkipped []config.DependencyItem // Manual deps skipped from automated install
 }
 
 // InstallError represents a failed installation
@@ -38,7 +39,17 @@ func Install(cfg *config.Config, p *platform.Platform, opts InstallOptions) (*In
 		return nil, fmt.Errorf("failed to check dependencies: %w", err)
 	}
 
-	// Get missing dependencies
+	// Report manual dependencies that must be installed by the user
+	manualMissing := checkResult.GetManualMissing()
+	for _, depCheck := range manualMissing {
+		dep := depCheck.Item
+		result.ManualSkipped = append(result.ManualSkipped, dep)
+		if opts.ProgressFunc != nil {
+			opts.ProgressFunc(0, 0, fmt.Sprintf("Skipping manual dependency: %s (install manually)", dep.Name))
+		}
+	}
+
+	// Get missing dependencies (excludes manual deps)
 	missing := checkResult.GetMissing()
 	if len(missing) == 0 {
 		return result, nil // Nothing to do
@@ -64,7 +75,7 @@ func Install(cfg *config.Config, p *platform.Platform, opts InstallOptions) (*In
 		if err := pkgMgr.Update(); err != nil {
 			// Don't fail on update errors, just warn
 			if opts.ProgressFunc != nil {
-				opts.ProgressFunc(0, total, fmt.Sprintf("⚠ Warning: failed to update package cache: %v", err))
+				opts.ProgressFunc(0, total, fmt.Sprintf("Warning: failed to update package cache: %v", err))
 			}
 		}
 	}
@@ -97,12 +108,12 @@ func Install(cfg *config.Config, p *platform.Platform, opts InstallOptions) (*In
 				Error: err,
 			})
 			if opts.ProgressFunc != nil {
-				opts.ProgressFunc(current, total, fmt.Sprintf("✗ Failed to install %s: %v", dep.Name, err))
+				opts.ProgressFunc(current, total, fmt.Sprintf("Failed to install %s: %v", dep.Name, err))
 			}
 		} else {
 			result.Installed = append(result.Installed, dep)
 			if opts.ProgressFunc != nil {
-				opts.ProgressFunc(current, total, fmt.Sprintf("✓ Installed %s", dep.Name))
+				opts.ProgressFunc(current, total, fmt.Sprintf("Installed %s", dep.Name))
 			}
 		}
 	}

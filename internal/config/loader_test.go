@@ -160,3 +160,88 @@ func TestDependencyItemUnmarshal(t *testing.T) {
 		})
 	}
 }
+
+func TestDependencyItemManualFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		yaml       string
+		wantName   string
+		wantManual bool
+	}{
+		{
+			name: "manual true",
+			yaml: `dependencies:
+  core:
+    - name: 1password-cli
+      binary: op
+      manual: true
+`,
+			wantName:   "1password-cli",
+			wantManual: true,
+		},
+		{
+			name: "manual false",
+			yaml: `dependencies:
+  core:
+    - name: curl
+      binary: curl
+      manual: false
+`,
+			wantName:   "curl",
+			wantManual: false,
+		},
+		{
+			name: "manual omitted defaults to false",
+			yaml: `dependencies:
+  core:
+    - name: wget
+      binary: wget
+`,
+			wantName:   "wget",
+			wantManual: false,
+		},
+		{
+			name:       "simple string dep defaults to false",
+			yaml:       "dependencies:\n  critical:\n    - git\n",
+			wantName:   "git",
+			wantManual: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpfile, err := os.CreateTemp("", "test-manual-*.yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = os.Remove(tmpfile.Name()) }()
+
+			content := "schema_version: \"1.0\"\nmetadata:\n  name: test\n" + tt.yaml
+			_, err = tmpfile.Write([]byte(content))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = tmpfile.Close()
+
+			cfg, err := Load(tmpfile.Name())
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			var found bool
+			for _, dep := range cfg.GetAllDependencies() {
+				if dep.Name == tt.wantName {
+					found = true
+					if dep.Manual != tt.wantManual {
+						t.Errorf("Manual = %v, want %v", dep.Manual, tt.wantManual)
+					}
+					break
+				}
+			}
+
+			if !found {
+				t.Errorf("Dependency %s not found", tt.wantName)
+			}
+		})
+	}
+}
