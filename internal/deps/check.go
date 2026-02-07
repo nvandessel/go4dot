@@ -102,7 +102,11 @@ func checkDependency(dep config.DependencyItem) DependencyCheck {
 		check.InstalledVersion = version
 
 		if !compareVersions(version, dep.Version) {
-			check.Status = StatusVersionMismatch
+			if dep.Manual {
+				check.Status = StatusManualMissing
+			} else {
+				check.Status = StatusVersionMismatch
+			}
 		}
 	}
 

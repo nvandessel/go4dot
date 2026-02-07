@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/nvandessel/go4dot/internal/config"
@@ -119,56 +120,73 @@ var depsInstallCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Check current status
-		checkResult, err := deps.Check(cfg, p)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error checking dependencies: %v\n", err)
-			os.Exit(1)
-		}
-
-		missing := checkResult.GetMissing()
-		if len(missing) == 0 {
-			fmt.Println("All dependencies are already installed!")
-			return
-		}
-
-		fmt.Printf("Installing %d missing dependencies...\n\n", len(missing))
-
-		// Install with progress
-		opts := deps.InstallOptions{
-			OnlyMissing: true,
-			ProgressFunc: func(current, total int, msg string) {
-				if total > 0 && current > 0 {
-					fmt.Printf("[%d/%d] %s\n", current, total, msg)
-				} else {
-					fmt.Println(msg)
-				}
-			},
-		}
-
-		result, err := deps.Install(cfg, p, opts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error during installation: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Show results
-		fmt.Println()
-		fmt.Printf("Installed: %d packages\n", len(result.Installed))
-		if len(result.ManualSkipped) > 0 {
-			fmt.Printf("Manual (skipped): %d packages\n", len(result.ManualSkipped))
-			for _, dep := range result.ManualSkipped {
-				fmt.Printf("  - %s (install manually)\n", dep.Name)
-			}
-		}
-		if len(result.Failed) > 0 {
-			fmt.Printf("Failed: %d packages\n", len(result.Failed))
-			for _, fail := range result.Failed {
-				fmt.Printf("  - %s: %v\n", fail.Item.Name, fail.Error)
-			}
+		if err := runDepsInstall(cfg, p, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	},
+}
+
+func runDepsInstall(cfg *config.Config, p *platform.Platform, stdout io.Writer) error {
+	// Check current status
+	checkResult, err := deps.Check(cfg, p)
+	if err != nil {
+		return fmt.Errorf("error checking dependencies: %w", err)
+	}
+
+	manualMissing := checkResult.GetManualMissing()
+	missing := checkResult.GetMissing()
+	if len(missing) == 0 {
+		if len(manualMissing) == 0 {
+			_, _ = fmt.Fprintln(stdout, "All dependencies are already installed!")
+			return nil
+		}
+
+		_, _ = fmt.Fprintf(stdout, "Manual (install required): %d packages\n", len(manualMissing))
+		for _, dep := range manualMissing {
+			_, _ = fmt.Fprintf(stdout, "  - %s (install manually)\n", dep.Item.Name)
+		}
+		_, _ = fmt.Fprintln(stdout, "\nAll auto-installable dependencies are already installed.")
+		return nil
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Installing %d missing dependencies...\n\n", len(missing))
+
+	// Install with progress
+	opts := deps.InstallOptions{
+		OnlyMissing: true,
+		ProgressFunc: func(current, total int, msg string) {
+			if total > 0 && current > 0 {
+				_, _ = fmt.Fprintf(stdout, "[%d/%d] %s\n", current, total, msg)
+			} else {
+				_, _ = fmt.Fprintln(stdout, msg)
+			}
+		},
+	}
+
+	result, err := deps.Install(cfg, p, opts)
+	if err != nil {
+		return fmt.Errorf("error during installation: %w", err)
+	}
+
+	// Show results
+	_, _ = fmt.Fprintln(stdout)
+	_, _ = fmt.Fprintf(stdout, "Installed: %d packages\n", len(result.Installed))
+	if len(result.ManualSkipped) > 0 {
+		_, _ = fmt.Fprintf(stdout, "Manual (skipped): %d packages\n", len(result.ManualSkipped))
+		for _, dep := range result.ManualSkipped {
+			_, _ = fmt.Fprintf(stdout, "  - %s (install manually)\n", dep.Name)
+		}
+	}
+	if len(result.Failed) > 0 {
+		_, _ = fmt.Fprintf(stdout, "Failed: %d packages\n", len(result.Failed))
+		for _, fail := range result.Failed {
+			_, _ = fmt.Fprintf(stdout, "  - %s: %v\n", fail.Item.Name, fail.Error)
+		}
+		return fmt.Errorf("error during installation: %d packages failed", len(result.Failed))
+	}
+
+	return nil
 }
 
 func printDepStatus(dep deps.DependencyCheck) {

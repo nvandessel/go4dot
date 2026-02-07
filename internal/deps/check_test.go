@@ -279,6 +279,24 @@ func TestCheckDependencyManual(t *testing.T) {
 	}
 }
 
+func TestCheckDependencyManualVersionMismatch(t *testing.T) {
+	dep := config.DependencyItem{
+		Name:       "echo",
+		Binary:     "echo",
+		Version:    "2.0.0",
+		VersionCmd: "1.2.3",
+		Manual:     true,
+	}
+
+	check := checkDependency(dep)
+	if check.Status != StatusManualMissing {
+		t.Fatalf("expected status %v, got %v", StatusManualMissing, check.Status)
+	}
+	if check.InstalledVersion == "" {
+		t.Fatal("expected installed version to be set for manual version mismatch")
+	}
+}
+
 func TestGetManualMissing(t *testing.T) {
 	result := &CheckResult{
 		Critical: []DependencyCheck{
