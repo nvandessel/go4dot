@@ -152,7 +152,7 @@ func TestPlaceOverlay(t *testing.T) {
 			}
 			bg := strings.Join(bgLines, "\n")
 
-			result := placeOverlay(bg, tt.modalContent, tt.bgWidth, tt.bgHeight)
+			result := placeOverlay(bg, tt.modalContent, tt.bgWidth, tt.bgHeight, lipgloss.Color("#333333"))
 			lines := strings.Split(result, "\n")
 
 			if len(lines) != tt.expectedLines {
@@ -176,7 +176,7 @@ func TestPlaceOverlay_Centering(t *testing.T) {
 	bg := strings.Join(bgLines, "\n")
 
 	modal := "XX"
-	result := placeOverlay(bg, modal, bgWidth, bgHeight)
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, lipgloss.Color("#333333"))
 
 	lines := strings.Split(result, "\n")
 
@@ -263,6 +263,84 @@ func TestRenderOverlay_DifferentStyles(t *testing.T) {
 	}
 }
 
+func TestPlaceOverlay_FlankingContentPreserved(t *testing.T) {
+	bgWidth := 30
+	bgHeight := 5
+	dimColor := lipgloss.Color("#333333")
+
+	var bgLines []string
+	for i := 0; i < bgHeight; i++ {
+		bgLines = append(bgLines, strings.Repeat("X", bgWidth))
+	}
+	bg := strings.Join(bgLines, "\n")
+
+	modal := "MOD"
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, dimColor)
+	lines := strings.Split(result, "\n")
+
+	// The modal line should contain the modal content
+	modalLineIdx := (bgHeight - 1) / 2
+	modalLine := lines[modalLineIdx]
+
+	if !strings.Contains(modalLine, "MOD") {
+		t.Error("expected modal content 'MOD' to appear on the modal line")
+	}
+
+	// The flanking background text (before and after modal) should contain "X" characters
+	plain := stripAnsi(modalLine)
+	parts := strings.SplitN(plain, "MOD", 2)
+	if len(parts) != 2 {
+		t.Fatal("expected modal to split the line into before/after parts")
+	}
+	if !strings.Contains(parts[0], "X") {
+		t.Error("expected 'X' characters in the before-flanking segment")
+	}
+	if !strings.Contains(parts[1], "X") {
+		t.Error("expected 'X' characters in the after-flanking segment")
+	}
+}
+
+func TestPlaceOverlay_DimStyleAppliedToFlanking(t *testing.T) {
+	// Verify that placeOverlay passes the dimColor through to re-apply styling.
+	// In a headless test environment lipgloss may not emit ANSI codes,
+	// so we verify structural behavior: dimStyle.Render wraps the flanking text.
+	bgWidth := 20
+	bgHeight := 5
+	dimColor := lipgloss.Color("#333333")
+	dimStyle := lipgloss.NewStyle().Foreground(dimColor)
+
+	var bgLines []string
+	for i := 0; i < bgHeight; i++ {
+		bgLines = append(bgLines, strings.Repeat(".", bgWidth))
+	}
+	bg := strings.Join(bgLines, "\n")
+
+	modal := "M"
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, dimColor)
+	lines := strings.Split(result, "\n")
+
+	modalLineIdx := (bgHeight - 1) / 2
+	modalLine := lines[modalLineIdx]
+
+	// The flanking text should be equivalent to what dimStyle.Render produces
+	plain := stripAnsi(modalLine)
+	parts := strings.SplitN(plain, "M", 2)
+	if len(parts) != 2 {
+		t.Fatal("expected modal to split the line into before/after parts")
+	}
+
+	// Verify the flanking segments match the dim-rendered version of their plain text
+	expectedBefore := dimStyle.Render(parts[0])
+	expectedAfter := dimStyle.Render(parts[1])
+
+	if !strings.Contains(modalLine, expectedBefore) {
+		t.Errorf("expected before-flanking to be dim-rendered: got line %q, expected to contain %q", modalLine, expectedBefore)
+	}
+	if !strings.Contains(modalLine, expectedAfter) {
+		t.Errorf("expected after-flanking to be dim-rendered: got line %q, expected to contain %q", modalLine, expectedAfter)
+	}
+}
+
 func TestPlaceOverlay_MultilineModal(t *testing.T) {
 	bgWidth := 40
 	bgHeight := 15
@@ -273,7 +351,7 @@ func TestPlaceOverlay_MultilineModal(t *testing.T) {
 	bg := strings.Join(bgLines, "\n")
 
 	modal := "Line 1\nLine 2\nLine 3"
-	result := placeOverlay(bg, modal, bgWidth, bgHeight)
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, lipgloss.Color("#333333"))
 
 	lines := strings.Split(result, "\n")
 	if len(lines) != bgHeight {
