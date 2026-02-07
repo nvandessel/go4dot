@@ -303,6 +303,7 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 		if focused == PanelConfigs {
 			m.configsPanel.ToggleSelection()
 			m.selectedConfigs = m.configsPanel.GetSelected()
+			m.summaryPanel.SetSelectedCount(len(m.selectedConfigs))
 		}
 
 	// Select All (A)
@@ -316,6 +317,7 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 				m.configsPanel.SelectAll()
 			}
 			m.selectedConfigs = m.configsPanel.GetSelected()
+			m.summaryPanel.SetSelectedCount(len(m.selectedConfigs))
 		}
 
 	// Bulk sync (S)
