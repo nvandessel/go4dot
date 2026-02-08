@@ -90,6 +90,13 @@ vet:
 	@echo "Running go vet..."
 	go vet ./...
 
+# Run vulnerability check
+.PHONY: vuln
+vuln:
+	@echo "Running govulncheck..."
+	@command -v govulncheck >/dev/null 2>&1 || { echo "Installing govulncheck..."; go install golang.org/x/vuln/cmd/govulncheck@latest; }
+	govulncheck ./...
+
 # Tidy dependencies
 .PHONY: tidy
 tidy:
@@ -135,6 +142,7 @@ help:
 	@echo "  fmt           - Format code with go fmt"
 	@echo "  lint          - Run golangci-lint"
 	@echo "  vet           - Run go vet"
+	@echo "  vuln          - Run govulncheck for known vulnerabilities"
 	@echo "  tidy          - Tidy go.mod dependencies"
 	@echo ""
 	@echo "Release & Deployment:"
