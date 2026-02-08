@@ -1,12 +1,48 @@
 package machine
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
 )
+
+// homeTempDir creates a temporary directory under $HOME and returns:
+//   - the absolute path to the temp dir
+//   - a cleanup function
+//
+// This is needed because expandPath now requires paths to start with ~/
+// and stay within the home directory.
+func homeTempDir(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Failed to get home dir: %v", err)
+	}
+	tmpDir, err := os.MkdirTemp(home, ".go4dot-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir under home: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+	return tmpDir
+}
+
+// tildeRelPath converts an absolute path under $HOME to a ~/ relative path.
+func tildeRelPath(t *testing.T, absPath string) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Failed to get home dir: %v", err)
+	}
+	rel, err := filepath.Rel(home, absPath)
+	if err != nil {
+		t.Fatalf("Failed to compute relative path: %v", err)
+	}
+	return "~/" + rel
+}
 
 func TestRenderMachineConfig(t *testing.T) {
 	mc := &config.MachinePrompt{
@@ -57,13 +93,14 @@ func TestRenderMachineConfigInvalidTemplate(t *testing.T) {
 }
 
 func TestRenderAndWrite(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 	destPath := filepath.Join(tmpDir, "config.txt")
+	tildeDest := tildeRelPath(t, destPath)
 
 	mc := &config.MachinePrompt{
 		ID:          "test",
 		Description: "Test config",
-		Destination: destPath,
+		Destination: tildeDest,
 		Template:    "Hello, {{ .name }}!",
 	}
 
@@ -103,12 +140,13 @@ func TestRenderAndWrite(t *testing.T) {
 }
 
 func TestRenderAndWriteDryRun(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 	destPath := filepath.Join(tmpDir, "dryrun.txt")
+	tildeDest := tildeRelPath(t, destPath)
 
 	mc := &config.MachinePrompt{
 		ID:          "test",
-		Destination: destPath,
+		Destination: tildeDest,
 		Template:    "Content",
 	}
 
@@ -132,17 +170,18 @@ func TestRenderAndWriteDryRun(t *testing.T) {
 }
 
 func TestRenderAndWriteExistingFileNoOverwrite(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 	destPath := filepath.Join(tmpDir, "existing.txt")
+	tildeDest := tildeRelPath(t, destPath)
 
 	// Create existing file
-	if err := os.WriteFile(destPath, []byte("existing"), 0644); err != nil {
+	if err := os.WriteFile(destPath, []byte("existing"), 0600); err != nil {
 		t.Fatalf("Failed to create existing file: %v", err)
 	}
 
 	mc := &config.MachinePrompt{
 		ID:          "test",
-		Destination: destPath,
+		Destination: tildeDest,
 		Template:    "new content",
 	}
 
@@ -157,17 +196,18 @@ func TestRenderAndWriteExistingFileNoOverwrite(t *testing.T) {
 }
 
 func TestRenderAndWriteExistingFileWithOverwrite(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 	destPath := filepath.Join(tmpDir, "existing.txt")
+	tildeDest := tildeRelPath(t, destPath)
 
 	// Create existing file
-	if err := os.WriteFile(destPath, []byte("existing"), 0644); err != nil {
+	if err := os.WriteFile(destPath, []byte("existing"), 0600); err != nil {
 		t.Fatalf("Failed to create existing file: %v", err)
 	}
 
 	mc := &config.MachinePrompt{
 		ID:          "test",
-		Destination: destPath,
+		Destination: tildeDest,
 		Template:    "new content",
 	}
 
@@ -195,11 +235,11 @@ func TestRenderAndWriteExistingFileWithOverwrite(t *testing.T) {
 }
 
 func TestCheckMachineConfigStatus(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 
 	// Create an existing file
 	existingPath := filepath.Join(tmpDir, "existing.txt")
-	if err := os.WriteFile(existingPath, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(existingPath, []byte("test"), 0600); err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
@@ -208,12 +248,12 @@ func TestCheckMachineConfigStatus(t *testing.T) {
 			{
 				ID:          "existing",
 				Description: "Existing config",
-				Destination: existingPath,
+				Destination: tildeRelPath(t, existingPath),
 			},
 			{
 				ID:          "missing",
 				Description: "Missing config",
-				Destination: filepath.Join(tmpDir, "missing.txt"),
+				Destination: tildeRelPath(t, filepath.Join(tmpDir, "missing.txt")),
 			},
 		},
 	}
@@ -245,17 +285,18 @@ func TestCheckMachineConfigStatus(t *testing.T) {
 }
 
 func TestRemoveMachineConfig(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 	filePath := filepath.Join(tmpDir, "toremove.txt")
+	tildePath := tildeRelPath(t, filePath)
 
 	// Create file to remove
-	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("test"), 0600); err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
 	mc := &config.MachinePrompt{
 		ID:          "test",
-		Destination: filePath,
+		Destination: tildePath,
 	}
 
 	var progressMessages []string
@@ -281,17 +322,18 @@ func TestRemoveMachineConfig(t *testing.T) {
 }
 
 func TestRemoveMachineConfigDryRun(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 	filePath := filepath.Join(tmpDir, "dryrun.txt")
+	tildePath := tildeRelPath(t, filePath)
 
 	// Create file
-	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("test"), 0600); err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
 	mc := &config.MachinePrompt{
 		ID:          "test",
-		Destination: filePath,
+		Destination: tildePath,
 	}
 
 	opts := RenderOptions{DryRun: true}
@@ -310,7 +352,7 @@ func TestRemoveMachineConfigDryRun(t *testing.T) {
 func TestRemoveMachineConfigNotExists(t *testing.T) {
 	mc := &config.MachinePrompt{
 		ID:          "test",
-		Destination: "/nonexistent/path/file.txt",
+		Destination: "~/nonexistent-go4dot-test/file.txt",
 	}
 
 	err := RemoveMachineConfig(mc, RenderOptions{})
@@ -387,40 +429,131 @@ func TestExpandPath(t *testing.T) {
 		t.Fatalf("Failed to get home dir: %v", err)
 	}
 
+	t.Run("valid tilde path", func(t *testing.T) {
+		result, err := expandPath("~/.config")
+		if err != nil {
+			t.Fatalf("expandPath(\"~/.config\") failed: %v", err)
+		}
+		expected := filepath.Join(home, ".config")
+		if result != expected {
+			t.Errorf("expandPath(\"~/.config\") = %q, want %q", result, expected)
+		}
+	})
+
+	t.Run("valid nested tilde path", func(t *testing.T) {
+		result, err := expandPath("~/.config/nvim/init.vim")
+		if err != nil {
+			t.Fatalf("expandPath failed: %v", err)
+		}
+		expected := filepath.Join(home, ".config/nvim/init.vim")
+		if result != expected {
+			t.Errorf("expandPath = %q, want %q", result, expected)
+		}
+	})
+}
+
+func TestExpandPathRejectsNonTildePaths(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected string
+		name  string
+		input string
 	}{
-		{"~/.config", filepath.Join(home, ".config")},
-		{"/absolute/path", "/absolute/path"},
-		{"relative/path", "relative/path"},
+		{name: "absolute path", input: "/absolute/path"},
+		{name: "relative path", input: "relative/path"},
+		{name: "empty string", input: ""},
+		{name: "tilde only", input: "~"},
+		{name: "tilde without slash", input: "~config"},
+		{name: "dot path", input: "./config"},
 	}
 
 	for _, tt := range tests {
-		result, err := expandPath(tt.input)
-		if err != nil {
-			t.Errorf("expandPath(%q) failed: %v", tt.input, err)
-			continue
-		}
-		if result != tt.expected {
-			t.Errorf("expandPath(%q) = %q, want %q", tt.input, result, tt.expected)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := expandPath(tt.input)
+			if err == nil {
+				t.Errorf("expandPath(%q) should have returned error for non-~/ path", tt.input)
+			}
+			if err != nil && !strings.Contains(err.Error(), "must start with ~/") {
+				t.Errorf("expandPath(%q) error = %q, expected 'must start with ~/' message", tt.input, err.Error())
+			}
+		})
+	}
+}
+
+func TestExpandPathRejectsTraversal(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "parent traversal", input: "~/../../etc/shadow"},
+		{name: "deep traversal", input: "~/../../../tmp/evil"},
+		{name: "single parent", input: "~/.."},
+		{name: "dotdot in middle", input: "~/.config/../../etc/passwd"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := expandPath(tt.input)
+			if err == nil {
+				t.Errorf("expandPath(%q) should have returned error for path traversal", tt.input)
+			}
+			if err != nil && !strings.Contains(err.Error(), "escapes base directory") {
+				t.Errorf("expandPath(%q) error = %q, expected 'escapes base directory' message", tt.input, err.Error())
+			}
+		})
+	}
+}
+
+func TestRenderAndWriteFilePermissions(t *testing.T) {
+	tmpDir := homeTempDir(t)
+	destPath := filepath.Join(tmpDir, "subdir", "secret.conf")
+	tildeDest := tildeRelPath(t, destPath)
+
+	mc := &config.MachinePrompt{
+		ID:          "test",
+		Destination: tildeDest,
+		Template:    "secret_key = abc123",
+	}
+
+	opts := RenderOptions{Overwrite: true}
+
+	_, err := RenderAndWrite(mc, nil, opts)
+	if err != nil {
+		t.Fatalf("RenderAndWrite failed: %v", err)
+	}
+
+	// Verify file permissions are 0600 (owner read/write only)
+	info, err := os.Stat(destPath)
+	if err != nil {
+		t.Fatalf("Failed to stat file: %v", err)
+	}
+	filePerm := info.Mode().Perm()
+	if filePerm != fs.FileMode(0600) {
+		t.Errorf("File permissions = %o, want 0600", filePerm)
+	}
+
+	// Verify parent directory permissions are 0700 (owner only)
+	dirInfo, err := os.Stat(filepath.Dir(destPath))
+	if err != nil {
+		t.Fatalf("Failed to stat directory: %v", err)
+	}
+	dirPerm := dirInfo.Mode().Perm()
+	if dirPerm != fs.FileMode(0700) {
+		t.Errorf("Directory permissions = %o, want 0700", dirPerm)
 	}
 }
 
 func TestRenderAll(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := homeTempDir(t)
 
 	cfg := &config.Config{
 		MachineConfig: []config.MachinePrompt{
 			{
 				ID:          "config1",
-				Destination: filepath.Join(tmpDir, "config1.txt"),
+				Destination: tildeRelPath(t, filepath.Join(tmpDir, "config1.txt")),
 				Template:    "Config 1: {{ .value }}",
 			},
 			{
 				ID:          "config2",
-				Destination: filepath.Join(tmpDir, "config2.txt"),
+				Destination: tildeRelPath(t, filepath.Join(tmpDir, "config2.txt")),
 				Template:    "Config 2: {{ .value }}",
 			},
 		},

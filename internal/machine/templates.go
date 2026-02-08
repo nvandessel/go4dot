@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"github.com/nvandessel/go4dot/internal/config"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // RenderResult holds the result of rendering a template
@@ -78,12 +79,12 @@ func RenderAndWrite(mc *config.MachinePrompt, values map[string]string, opts Ren
 
 	// Create parent directory if needed
 	parentDir := filepath.Dir(result.Destination)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create directory %s: %w", parentDir, err)
 	}
 
 	// Write the file
-	if err := os.WriteFile(result.Destination, []byte(result.Content), 0644); err != nil {
+	if err := os.WriteFile(result.Destination, []byte(result.Content), 0600); err != nil {
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -192,16 +193,25 @@ func RemoveMachineConfig(mc *config.MachinePrompt, opts RenderOptions) error {
 	return nil
 }
 
-// expandPath expands ~ to home directory
+// expandPath expands ~ to home directory and validates the path stays within it.
+// Paths must start with "~/" to ensure they are relative to the home directory.
 func expandPath(path string) (string, error) {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		path = filepath.Join(home, path[2:])
+	if !strings.HasPrefix(path, "~/") {
+		return "", fmt.Errorf("destination path must start with ~/: %q", path)
 	}
-	return filepath.Clean(path), nil
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	expanded := filepath.Clean(filepath.Join(home, path[2:]))
+
+	if err := validation.ValidateDestinationPath(expanded, home); err != nil {
+		return "", fmt.Errorf("invalid destination path: %w", err)
+	}
+
+	return expanded, nil
 }
 
 // ValidateTemplate checks if a template is valid
