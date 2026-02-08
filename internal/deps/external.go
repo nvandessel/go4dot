@@ -9,6 +9,7 @@ import (
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // ExternalResult represents the result of cloning external dependencies
@@ -300,21 +301,33 @@ type ExternalStatus struct {
 	Path   string
 }
 
-// expandPath expands ~ to home directory and resolves @repoRoot
+// expandPath expands ~ to home directory and resolves @repoRoot.
+// It validates that expanded paths stay within their base directory
+// and rejects bare absolute paths that don't use ~/ or @repoRoot/ prefixes.
 func expandPath(path, repoRoot string) (string, error) {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", fmt.Errorf("failed to get home directory: %w", err)
 		}
-		path = filepath.Join(home, path[2:])
+		expanded := filepath.Clean(filepath.Join(home, path[2:]))
+		if err := validation.ValidateDestinationPath(expanded, home); err != nil {
+			return "", fmt.Errorf("path traversal detected: %w", err)
+		}
+		return expanded, nil
 	} else if strings.HasPrefix(path, "@repoRoot/") {
 		if repoRoot == "" {
 			return "", fmt.Errorf("repoRoot is not set, cannot expand @repoRoot")
 		}
-		path = filepath.Join(repoRoot, path[10:]) // 10 is length of "@repoRoot/"
+		expanded := filepath.Clean(filepath.Join(repoRoot, path[10:])) // 10 is length of "@repoRoot/"
+		if err := validation.ValidateDestinationPath(expanded, repoRoot); err != nil {
+			return "", fmt.Errorf("path traversal detected: %w", err)
+		}
+		return expanded, nil
 	}
-	return filepath.Clean(path), nil
+
+	// Reject bare absolute paths and any other paths not using ~/ or @repoRoot/
+	return "", fmt.Errorf("destination path must start with ~/ or @repoRoot/, got: %q", path)
 }
 
 // checkDestination returns whether the path exists and if it's a git repo

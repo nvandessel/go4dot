@@ -22,6 +22,7 @@ func TestExpandPath(t *testing.T) {
 		input    string
 		repoRoot string
 		expected string
+		wantErr  bool
 	}{
 		{
 			name:     "Home directory expansion",
@@ -30,16 +31,14 @@ func TestExpandPath(t *testing.T) {
 			expected: filepath.Join(home, ".config/test"),
 		},
 		{
-			name:     "Absolute path unchanged",
-			input:    "/usr/local/bin",
-			repoRoot: "",
-			expected: "/usr/local/bin",
+			name:    "Absolute path rejected",
+			input:   "/usr/local/bin",
+			wantErr: true,
 		},
 		{
-			name:     "Relative path cleaned",
-			input:    "./foo/../bar",
-			repoRoot: "",
-			expected: "bar",
+			name:    "Relative path rejected",
+			input:   "./foo/../bar",
+			wantErr: true,
 		},
 		{
 			name:     "Home only",
@@ -58,11 +57,63 @@ func TestExpandPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := expandPath(tt.input, tt.repoRoot)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expandPath(%q) expected error, got result %q", tt.input, result)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("expandPath() error = %v", err)
 			}
 			if result != tt.expected {
 				t.Errorf("expandPath(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExpandPath_PathTraversal(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		repoRoot string
+		wantErr  bool
+	}{
+		{
+			name:    "valid home path",
+			path:    "~/.config/nvim",
+			wantErr: false,
+		},
+		{
+			name:     "valid repoRoot path",
+			path:     "@repoRoot/plugins",
+			repoRoot: "/tmp/dotfiles",
+			wantErr:  false,
+		},
+		{
+			name:    "home traversal",
+			path:    "~/../../etc/shadow",
+			wantErr: true,
+		},
+		{
+			name:     "repoRoot traversal",
+			path:     "@repoRoot/../../etc/shadow",
+			repoRoot: "/tmp/dotfiles",
+			wantErr:  true,
+		},
+		{
+			name:    "bare absolute path",
+			path:    "/etc/shadow",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := expandPath(tt.path, tt.repoRoot)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expandPath(%q, %q) error = %v, wantErr %v", tt.path, tt.repoRoot, err, tt.wantErr)
 			}
 		})
 	}
@@ -293,19 +344,19 @@ func TestCheckExternalStatus(t *testing.T) {
 				ID:          "installed",
 				Name:        "Installed Dep",
 				URL:         "https://github.com/example/repo.git",
-				Destination: installedPath,
+				Destination: "@repoRoot/installed",
 			},
 			{
 				ID:          "missing",
 				Name:        "Missing Dep",
 				URL:         "https://github.com/example/missing.git",
-				Destination: filepath.Join(tmpDir, "nonexistent"),
+				Destination: "@repoRoot/nonexistent",
 			},
 			{
 				ID:          "skipped",
 				Name:        "Skipped Dep",
 				URL:         "https://github.com/example/skipped.git",
-				Destination: filepath.Join(tmpDir, "skipped"),
+				Destination: "@repoRoot/skipped",
 				Condition:   map[string]string{"os": "windows"}, // Will not match
 			},
 		},
@@ -317,7 +368,7 @@ func TestCheckExternalStatus(t *testing.T) {
 		PackageManager: "dnf",
 	}
 
-	statuses := CheckExternalStatus(cfg, p, "")
+	statuses := CheckExternalStatus(cfg, p, tmpDir)
 
 	if len(statuses) != 3 {
 		t.Fatalf("len(statuses) = %d, want 3", len(statuses))
@@ -358,13 +409,13 @@ func TestCloneExternalDryRun(t *testing.T) {
 				ID:          "test1",
 				Name:        "Test Repo 1",
 				URL:         "https://github.com/example/repo1.git",
-				Destination: filepath.Join(tmpDir, "repo1"),
+				Destination: "@repoRoot/repo1",
 			},
 			{
 				ID:          "test2",
 				Name:        "Test Repo 2",
 				URL:         "https://github.com/example/repo2.git",
-				Destination: filepath.Join(tmpDir, "repo2"),
+				Destination: "@repoRoot/repo2",
 				Condition:   map[string]string{"os": "windows"}, // Will be skipped
 			},
 		},
@@ -378,7 +429,8 @@ func TestCloneExternalDryRun(t *testing.T) {
 
 	var progressMessages []string
 	opts := ExternalOptions{
-		DryRun: true,
+		DryRun:   true,
+		RepoRoot: tmpDir,
 		ProgressFunc: func(current, total int, msg string) {
 			progressMessages = append(progressMessages, msg)
 		},
@@ -424,7 +476,7 @@ func TestCloneExternalSkipsExisting(t *testing.T) {
 				ID:          "existing",
 				Name:        "Existing Repo",
 				URL:         "https://github.com/example/existing.git",
-				Destination: existingPath,
+				Destination: "@repoRoot/existing",
 			},
 		},
 	}
@@ -435,7 +487,7 @@ func TestCloneExternalSkipsExisting(t *testing.T) {
 		PackageManager: "dnf",
 	}
 
-	result, err := CloneExternal(cfg, p, ExternalOptions{})
+	result, err := CloneExternal(cfg, p, ExternalOptions{RepoRoot: tmpDir})
 	if err != nil {
 		t.Fatalf("CloneExternal() error = %v", err)
 	}
@@ -460,7 +512,7 @@ func TestCloneSingleNotFound(t *testing.T) {
 				ID:          "test",
 				Name:        "Test Repo",
 				URL:         "https://github.com/example/test.git",
-				Destination: "/tmp/test",
+				Destination: "@repoRoot/test",
 			},
 		},
 	}
@@ -469,7 +521,7 @@ func TestCloneSingleNotFound(t *testing.T) {
 		OS: "linux",
 	}
 
-	err := CloneSingle(cfg, p, "nonexistent", ExternalOptions{})
+	err := CloneSingle(cfg, p, "nonexistent", ExternalOptions{RepoRoot: "/tmp"})
 	if err == nil {
 		t.Error("Expected error for nonexistent ID")
 	}
@@ -486,12 +538,12 @@ func TestRemoveExternalNotFound(t *testing.T) {
 				ID:          "test",
 				Name:        "Test Repo",
 				URL:         "https://github.com/example/test.git",
-				Destination: "/tmp/test",
+				Destination: "@repoRoot/test",
 			},
 		},
 	}
 
-	err := RemoveExternal(cfg, "nonexistent", ExternalOptions{})
+	err := RemoveExternal(cfg, "nonexistent", ExternalOptions{RepoRoot: "/tmp"})
 	if err == nil {
 		t.Error("Expected error for nonexistent ID")
 	}
@@ -512,14 +564,15 @@ func TestRemoveExternalDryRun(t *testing.T) {
 				ID:          "toremove",
 				Name:        "To Remove",
 				URL:         "https://github.com/example/toremove.git",
-				Destination: toRemove,
+				Destination: "@repoRoot/toremove",
 			},
 		},
 	}
 
 	var progressMessages []string
 	opts := ExternalOptions{
-		DryRun: true,
+		DryRun:   true,
+		RepoRoot: tmpDir,
 		ProgressFunc: func(current, total int, msg string) {
 			progressMessages = append(progressMessages, msg)
 		},
@@ -555,12 +608,12 @@ func TestRemoveExternal(t *testing.T) {
 				ID:          "toremove",
 				Name:        "To Remove",
 				URL:         "https://github.com/example/toremove.git",
-				Destination: toRemove,
+				Destination: "@repoRoot/toremove",
 			},
 		},
 	}
 
-	err := RemoveExternal(cfg, "toremove", ExternalOptions{})
+	err := RemoveExternal(cfg, "toremove", ExternalOptions{RepoRoot: tmpDir})
 	if err != nil {
 		t.Fatalf("RemoveExternal() error = %v", err)
 	}
