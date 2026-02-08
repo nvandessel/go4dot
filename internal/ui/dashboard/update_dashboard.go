@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nvandessel/go4dot/internal/ui"
 )
 
 // updateDashboard handles messages when in the main dashboard view
@@ -30,7 +31,8 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterMode = true
 			return m, nil
 		case key.Matches(msg, keys.Menu):
-			m.menu.SetSize(m.width, m.height)
+			contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+			m.menu.SetSize(contentWidth, contentHeight)
 			m.pushView(viewMenu)
 			return m, nil
 		}
@@ -69,8 +71,9 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update other components
 		m.footer.width = msg.Width
-		m.help.width = msg.Width
-		m.help.height = msg.Height
+		helpWidth, helpHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+		m.help.width = helpWidth
+		m.help.height = helpHeight
 
 	case tea.MouseMsg:
 		// Handle mouse for focused panel
@@ -223,7 +226,8 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				m.conflictView.SetSize(m.width, m.height)
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpSync
 				m.pendingConflicts = conflicts
 				m.pushView(viewConflict)
@@ -251,7 +255,8 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				m.conflictView.SetSize(m.width, m.height)
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpInstall
 				m.pendingConflicts = conflicts
 				m.pushView(viewConflict)
@@ -334,7 +339,8 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				m.conflictView.SetSize(m.width, m.height)
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpBulkSync
 				m.pendingConfigNames = names
 				m.pendingConflicts = conflicts
@@ -372,7 +378,8 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				m.conflictView.SetSize(m.width, m.height)
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpSyncSingle
 				m.pendingConfigName = cfg.Name
 				m.pendingConflicts = conflicts
@@ -399,7 +406,8 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 		mc := m.overridesPanel.GetSelectedConfig()
 		if mc != nil && m.state.Config != nil {
 			m.machineView = NewMachineView(m.state.Config)
-			m.machineView.SetSize(m.width, m.height)
+			contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+			m.machineView.SetSize(contentWidth, contentHeight)
 			m.pushView(viewMachine)
 			return m.machineView.Init()
 		}

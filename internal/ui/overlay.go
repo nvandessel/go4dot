@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // OverlayStyle defines the visual properties for a floating modal overlay.
@@ -63,7 +64,7 @@ func RenderOverlay(bg, modal string, width, height int, style OverlayStyle) stri
 	styledModal := modalStyle.Render(modal)
 
 	// Composite the modal centered over the dimmed background
-	return placeOverlay(dimmedBg, styledModal, width, height)
+	return placeOverlay(dimmedBg, styledModal, width, height, style.DimColor)
 }
 
 // dimContent creates a dimmed version of the background.
@@ -92,9 +93,10 @@ func dimContent(content string, width, height int, dimChar string, dimColor lipg
 }
 
 // placeOverlay places the modal content centered over the background.
-func placeOverlay(bg, modal string, width, height int) string {
+func placeOverlay(bg, modal string, width, height int, dimColor lipgloss.Color) string {
 	bgLines := strings.Split(bg, "\n")
 	modalLines := strings.Split(modal, "\n")
+	dimStyle := lipgloss.NewStyle().Foreground(dimColor)
 
 	modalWidth := 0
 	for _, line := range modalLines {
@@ -126,33 +128,85 @@ func placeOverlay(bg, modal string, width, height int) string {
 		}
 
 		bgLine := bgLines[bgIdx]
-		bgRunes := []rune(stripAnsi(bgLine))
-
-		for len(bgRunes) < width {
-			bgRunes = append(bgRunes, ' ')
-		}
-
 		modalLineWidth := lipgloss.Width(modalLine)
+
+		bgPlain := stripAnsi(bgLine)
+		beforePlain := sliceByCells(bgPlain, 0, startX)
+		afterPlain := sliceByCells(bgPlain, startX+modalLineWidth, width-(startX+modalLineWidth))
 
 		before := ""
 		if startX > 0 {
-			if startX <= len(bgRunes) {
-				before = string(bgRunes[:startX])
-			} else {
-				before = string(bgRunes) + strings.Repeat(" ", startX-len(bgRunes))
-			}
+			before = dimStyle.Render(beforePlain)
 		}
 
-		afterStart := startX + modalLineWidth
 		after := ""
-		if afterStart < len(bgRunes) {
-			after = string(bgRunes[afterStart:])
+		if afterPlain != "" {
+			after = dimStyle.Render(afterPlain)
 		}
 
 		bgLines[bgIdx] = before + modalLine + after
 	}
 
 	return strings.Join(bgLines[:height], "\n")
+}
+
+func sliceByCells(s string, start, length int) string {
+	if length <= 0 {
+		return ""
+	}
+
+	end := start + length
+	col := 0
+	var b strings.Builder
+	for _, r := range s {
+		w := runewidth.RuneWidth(r)
+		if w < 1 {
+			w = 1
+		}
+		runeStart := col
+		runeEnd := col + w
+
+		if runeEnd <= start {
+			col = runeEnd
+			continue
+		}
+		if runeStart >= end {
+			break
+		}
+
+		if runeStart >= start && runeEnd <= end {
+			b.WriteRune(r)
+		} else {
+			overlapStart := maxInt(runeStart, start)
+			overlapEnd := minInt(runeEnd, end)
+			if overlapEnd > overlapStart {
+				b.WriteString(strings.Repeat(" ", overlapEnd-overlapStart))
+			}
+		}
+
+		col = runeEnd
+	}
+
+	current := runewidth.StringWidth(b.String())
+	if current < length {
+		b.WriteString(strings.Repeat(" ", length-current))
+	}
+
+	return b.String()
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // stripAnsi removes ANSI escape sequences from a string.

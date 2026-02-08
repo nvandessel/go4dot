@@ -62,6 +62,13 @@ Sleep 2s
 # Screenshot the dashboard before triggering install
 Screenshot "test/e2e/screenshots/conflict_before_install.png"
 
+# Show help overlay to validate overlay rendering
+Type "?"
+Sleep 1s
+Screenshot "test/e2e/screenshots/conflict_help_overlay.png"
+Type "?"
+Sleep 500ms
+
 # Press 'i' to trigger install (should show conflict modal)
 Type "i"
 Sleep 2s

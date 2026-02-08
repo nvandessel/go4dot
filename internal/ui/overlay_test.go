@@ -152,7 +152,7 @@ func TestPlaceOverlay(t *testing.T) {
 			}
 			bg := strings.Join(bgLines, "\n")
 
-			result := placeOverlay(bg, tt.modalContent, tt.bgWidth, tt.bgHeight)
+			result := placeOverlay(bg, tt.modalContent, tt.bgWidth, tt.bgHeight, lipgloss.Color("#333333"))
 			lines := strings.Split(result, "\n")
 
 			if len(lines) != tt.expectedLines {
@@ -176,7 +176,7 @@ func TestPlaceOverlay_Centering(t *testing.T) {
 	bg := strings.Join(bgLines, "\n")
 
 	modal := "XX"
-	result := placeOverlay(bg, modal, bgWidth, bgHeight)
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, lipgloss.Color("#333333"))
 
 	lines := strings.Split(result, "\n")
 
@@ -273,7 +273,7 @@ func TestPlaceOverlay_MultilineModal(t *testing.T) {
 	bg := strings.Join(bgLines, "\n")
 
 	modal := "Line 1\nLine 2\nLine 3"
-	result := placeOverlay(bg, modal, bgWidth, bgHeight)
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, lipgloss.Color("#333333"))
 
 	lines := strings.Split(result, "\n")
 	if len(lines) != bgHeight {
@@ -288,5 +288,32 @@ func TestPlaceOverlay_MultilineModal(t *testing.T) {
 	}
 	if !strings.Contains(result, "Line 3") {
 		t.Error("expected result to contain 'Line 3'")
+	}
+}
+
+func TestPlaceOverlay_WideBackground(t *testing.T) {
+	bgWidth := 10
+	bgHeight := 3
+	line := strings.Repeat("界", 5) // width 10
+	var bgLines []string
+	for i := 0; i < bgHeight; i++ {
+		bgLines = append(bgLines, line)
+	}
+	bg := strings.Join(bgLines, "\n")
+
+	modal := "X"
+	result := placeOverlay(bg, modal, bgWidth, bgHeight, lipgloss.Color("#333333"))
+
+	lines := strings.Split(result, "\n")
+	if len(lines) != bgHeight {
+		t.Errorf("expected %d lines, got %d", bgHeight, len(lines))
+	}
+	if !strings.Contains(result, modal) {
+		t.Error("expected result to contain modal content")
+	}
+	for _, line := range lines {
+		if lipgloss.Width(line) != bgWidth {
+			t.Errorf("expected line width %d, got %d", bgWidth, lipgloss.Width(line))
+		}
 	}
 }

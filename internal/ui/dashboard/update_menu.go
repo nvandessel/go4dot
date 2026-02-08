@@ -3,11 +3,19 @@ package dashboard
 import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nvandessel/go4dot/internal/ui"
 )
 
 // updateMenu handles messages when in the menu view
 func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+		m.menu.SetSize(contentWidth, contentHeight)
+		return m, nil
+
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Quit):
@@ -31,7 +39,8 @@ func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
 	switch action {
 	case ActionList:
 		m.configList = NewConfigListView(m.state.Configs)
-		m.configList.SetSize(m.width, m.height)
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		m.configList.SetSize(contentWidth, contentHeight)
 		m.pushView(viewConfigList)
 		return m, nil
 
@@ -40,7 +49,8 @@ func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.externalView = NewExternalView(m.state.Config, m.state.DotfilesPath, m.state.Platform)
-		m.externalView.SetSize(m.width, m.height)
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		m.externalView.SetSize(contentWidth, contentHeight)
 		m.pushView(viewExternal)
 		return m, m.externalView.Init()
 
@@ -50,7 +60,8 @@ func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
 			"Uninstall go4dot?",
 			"This will remove all symlinks and state. This action cannot be undone.",
 		).WithLabels("Yes, uninstall", "Cancel")
-		m.confirm.SetSize(m.width, m.height)
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		m.confirm.SetSize(contentWidth, contentHeight)
 		m.pushView(viewConfirm)
 		return m, nil
 
