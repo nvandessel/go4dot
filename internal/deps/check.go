@@ -9,6 +9,7 @@ import (
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // DepStatus represents the status of a dependency
@@ -110,12 +111,19 @@ func checkDependency(dep config.DependencyItem) DependencyCheck {
 }
 
 func getVersion(binary, cmd string) (string, error) {
+	if err := validation.ValidateBinaryName(binary); err != nil {
+		return "", fmt.Errorf("invalid binary name: %w", err)
+	}
+
 	if cmd == "" {
 		cmd = "--version"
 	}
 
-	args := strings.Fields(cmd)
-	out, err := exec.Command(binary, args...).Output()
+	if err := validation.ValidateVersionCmd(cmd); err != nil {
+		return "", fmt.Errorf("invalid version command: %w", err)
+	}
+
+	out, err := exec.Command(binary, cmd).Output()
 	if err != nil {
 		return "", err
 	}
