@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nvandessel/go4dot/internal/config"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // StowResult represents the result of a stow operation across multiple configurations.
@@ -171,8 +172,17 @@ func Stow(dotfilesPath string, configName string, opts StowOptions) error {
 // StowWithCount symlinks a config directory using GNU stow with progress tracking.
 // It allows specifying the current and total item counts for progress reporting.
 func StowWithCount(dotfilesPath string, configName string, current, total int, opts StowOptions) error {
+	if err := validation.ValidateConfigName(configName); err != nil {
+		return fmt.Errorf("invalid config name: %w", err)
+	}
+
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(current, total, fmt.Sprintf("Stowing %s...", configName))
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
 	// Build stow command
@@ -186,9 +196,9 @@ func StowWithCount(dotfilesPath string, configName string, current, total int, o
 		args = append(args, "--adopt") // Adopt existing files
 	}
 
-	args = append(args, "-t", os.Getenv("HOME")) // Target home directory
-	args = append(args, "-d", dotfilesPath)      // Directory containing packages
-	args = append(args, configName)              // Package to stow
+	args = append(args, "-t", homeDir)         // Target home directory
+	args = append(args, "-d", dotfilesPath)    // Directory containing packages
+	args = append(args, "--", configName)      // Package to stow (-- prevents flag injection)
 
 	output, err := CurrentCommander.Run("stow", args...)
 
@@ -212,8 +222,17 @@ func Unstow(dotfilesPath string, configName string, opts StowOptions) error {
 // UnstowWithCount removes symlinks for a config with progress tracking.
 // It uses the -D flag of GNU stow to remove the symlinks created for a package.
 func UnstowWithCount(dotfilesPath string, configName string, current, total int, opts StowOptions) error {
+	if err := validation.ValidateConfigName(configName); err != nil {
+		return fmt.Errorf("invalid config name: %w", err)
+	}
+
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(current, total, fmt.Sprintf("Unstowing %s...", configName))
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
 	args := []string{"-v", "-D"} // Delete/unstow
@@ -222,9 +241,9 @@ func UnstowWithCount(dotfilesPath string, configName string, current, total int,
 		args = append(args, "-n")
 	}
 
-	args = append(args, "-t", os.Getenv("HOME"))
+	args = append(args, "-t", homeDir)
 	args = append(args, "-d", dotfilesPath)
-	args = append(args, configName)
+	args = append(args, "--", configName)
 
 	output, err := CurrentCommander.Run("stow", args...)
 
@@ -248,8 +267,17 @@ func Restow(dotfilesPath string, configName string, opts StowOptions) error {
 // RestowWithCount refreshes symlinks for a config with progress tracking.
 // It uses the -R flag of GNU stow to rebuild the symlink tree.
 func RestowWithCount(dotfilesPath string, configName string, current, total int, opts StowOptions) error {
+	if err := validation.ValidateConfigName(configName); err != nil {
+		return fmt.Errorf("invalid config name: %w", err)
+	}
+
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(current, total, fmt.Sprintf("Restowing %s...", configName))
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
 	args := []string{"-v", "-R"} // Restow
@@ -262,9 +290,9 @@ func RestowWithCount(dotfilesPath string, configName string, current, total int,
 		args = append(args, "--adopt")
 	}
 
-	args = append(args, "-t", os.Getenv("HOME"))
+	args = append(args, "-t", homeDir)
 	args = append(args, "-d", dotfilesPath)
-	args = append(args, configName)
+	args = append(args, "--", configName)
 
 	output, err := CurrentCommander.Run("stow", args...)
 

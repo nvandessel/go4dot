@@ -121,7 +121,7 @@ func (s *State) Save() error {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func (s *State) Save() error {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	if err := os.WriteFile(statePath, data, 0644); err != nil {
+	if err := os.WriteFile(statePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 
