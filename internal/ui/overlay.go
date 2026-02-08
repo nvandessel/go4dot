@@ -25,15 +25,17 @@ type OverlayStyle struct {
 }
 
 // DefaultOverlayStyle returns the standard floating modal style.
+// Colors are drawn from the Catppuccin Mocha palette to match the
+// purple-accented theme used throughout the dashboard.
 func DefaultOverlayStyle() OverlayStyle {
 	return OverlayStyle{
 		BorderStyle: lipgloss.RoundedBorder(),
 		BorderColor: PrimaryColor,
 		PaddingH:    2,
 		PaddingV:    1,
-		Background:  lipgloss.Color("#252545"),
+		Background:  lipgloss.Color("#313244"), // Catppuccin Mocha Surface0
 		DimChar:     " ",
-		DimColor:    lipgloss.Color("#333333"),
+		DimColor:    lipgloss.Color("#45475a"), // Catppuccin Mocha Surface1
 	}
 }
 

@@ -5,13 +5,13 @@ import (
 )
 
 var (
-	// Colors
-	PrimaryColor   = lipgloss.Color("#7D56F4") // Purple
-	SecondaryColor = lipgloss.Color("#04B575") // Green
-	ErrorColor     = lipgloss.Color("#FF0000") // Red
-	WarningColor   = lipgloss.Color("#FFCC00") // Yellow
-	SubtleColor    = lipgloss.Color("#626262") // Gray
-	TextColor      = lipgloss.Color("#FFFFFF") // White
+	// Colors — Catppuccin Mocha inspired, purple-accented
+	PrimaryColor   = lipgloss.Color("#cba6f7") // Mauve (Catppuccin Mocha)
+	SecondaryColor = lipgloss.Color("#a6e3a1") // Green (Catppuccin Mocha)
+	ErrorColor     = lipgloss.Color("#f38ba8") // Red (Catppuccin Mocha)
+	WarningColor   = lipgloss.Color("#f9e2af") // Yellow (Catppuccin Mocha)
+	SubtleColor    = lipgloss.Color("#6c7086") // Overlay0 (Catppuccin Mocha)
+	TextColor      = lipgloss.Color("#cdd6f4") // Text (Catppuccin Mocha)
 
 	// Text Styles
 	TitleStyle = lipgloss.NewStyle().
