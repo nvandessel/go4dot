@@ -74,6 +74,16 @@ func TestVHS_ConflictResolution(t *testing.T) {
 	})
 }
 
+// TestVHS_ConfirmDialog validates the confirm dialog overlay triggered via menu
+func TestVHS_ConfirmDialog(t *testing.T) {
+	runVHSTest(t, vhsTestCase{
+		name:       "confirm dialog",
+		tapePath:   "test/e2e/tapes/confirm_dialog.tape",
+		outputPath: "test/e2e/outputs/confirm_dialog.txt",
+		goldenPath: "test/e2e/golden/confirm_dialog.txt",
+	})
+}
+
 // TestVHS_OnboardingFlow validates the no-config view and onboarding wizard
 func TestVHS_OnboardingFlow(t *testing.T) {
 	runVHSTest(t, vhsTestCase{

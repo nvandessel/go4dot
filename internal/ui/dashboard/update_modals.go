@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nvandessel/go4dot/internal/ui"
 )
 
 // updateNoConfig handles messages when no config file is found
@@ -35,8 +36,9 @@ func (m *Model) startOnboarding() (tea.Model, tea.Cmd) {
 	}
 
 	onboarding := NewOnboarding(path)
-	onboarding.width = m.width
-	onboarding.height = m.height
+	contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+	onboarding.width = contentWidth
+	onboarding.height = contentHeight
 	m.onboarding = &onboarding
 	m.pushView(viewOnboarding)
 
@@ -50,8 +52,9 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.onboarding != nil {
-			m.onboarding.width = msg.Width
-			m.onboarding.height = msg.Height
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+			m.onboarding.width = contentWidth
+			m.onboarding.height = contentHeight
 		}
 
 	case OnboardingCompleteMsg:
@@ -73,10 +76,11 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 			"Would you like to run install now? This will set up dependencies and clone external repos.",
 		).WithLabels("Yes, install", "Skip for now")
 		m.confirm.selected = 0 // Default to "Yes, install"
-		m.confirm.SetSize(m.width, m.height)
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		m.confirm.SetSize(contentWidth, contentHeight)
 
 		// Switch from onboarding view to confirm view
-		m.popView()          // Remove onboarding from stack
+		m.popView() // Remove onboarding from stack
 		m.pushView(viewConfirm)
 		return m, nil
 	}
@@ -99,7 +103,8 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.confirm != nil {
-			m.confirm.SetSize(msg.Width, msg.Height)
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+			m.confirm.SetSize(contentWidth, contentHeight)
 		}
 
 	case ConfirmResult:
@@ -148,7 +153,8 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(conflicts) > 0 {
 					// Show conflict resolution modal
 					m.conflictView = NewConflictView(conflicts)
-					m.conflictView.SetSize(m.width, m.height)
+					contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+					m.conflictView.SetSize(contentWidth, contentHeight)
 					m.pendingOperation = OpInstall
 					m.pendingConflicts = conflicts
 					m.pushView(viewConflict)
@@ -222,7 +228,8 @@ func (m *Model) updateConfigList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.configList != nil {
-			m.configList.SetSize(msg.Width, msg.Height)
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+			m.configList.SetSize(contentWidth, contentHeight)
 		}
 
 	case ConfigListViewCloseMsg:
@@ -249,7 +256,8 @@ func (m *Model) updateExternal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.externalView != nil {
-			m.externalView.SetSize(msg.Width, msg.Height)
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+			m.externalView.SetSize(contentWidth, contentHeight)
 		}
 
 	case ExternalViewCloseMsg:
@@ -276,7 +284,8 @@ func (m *Model) updateMachine(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.machineView != nil {
-			m.machineView.SetSize(msg.Width, msg.Height)
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+			m.machineView.SetSize(contentWidth, contentHeight)
 		}
 
 	case MachineViewCloseMsg:
@@ -309,7 +318,8 @@ func (m *Model) updateConflict(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.conflictView != nil {
-			m.conflictView.SetSize(msg.Width, msg.Height)
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.WarningOverlayStyle())
+			m.conflictView.SetSize(contentWidth, contentHeight)
 		}
 
 	case ConflictResolvedMsg:
