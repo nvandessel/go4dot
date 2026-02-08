@@ -13,6 +13,18 @@ import (
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
+// ASCII-safe status icons for consistent rendering across terminals
+const (
+	iconOK      = "[ok]"
+	iconWarning = "[!]"
+	iconError   = "[x]"
+	iconSkipped = "[-]"
+)
+
+// Lines reserved for non-list content in the panel:
+// 1 line for the summary, 1 line for the blank separator
+const healthSummaryLines = 2
+
 // healthResultMsg is sent when doctor checks complete
 type healthResultMsg struct {
 	result *doctor.CheckResult
@@ -65,7 +77,10 @@ func (p *HealthPanel) runChecks() tea.Msg {
 		DotfilesPath: p.dotfilesPath,
 	}
 	result, err := doctor.RunChecks(p.cfg, opts)
-	return healthResultMsg{result: result, err: err}
+	if err != nil {
+		return healthResultMsg{result: nil, err: fmt.Errorf("health checks failed: %w", err)}
+	}
+	return healthResultMsg{result: result, err: nil}
 }
 
 // Update implements Panel interface
@@ -133,16 +148,57 @@ func (p *HealthPanel) moveUp() {
 	}
 }
 
-func (p *HealthPanel) ensureVisible() {
-	visibleHeight := p.ContentHeight() - 2 // Account for summary line
-	if visibleHeight < 1 {
-		visibleHeight = 1
+// getListVisibleHeight returns the number of check items that can be displayed
+// in the panel's content area after accounting for the summary line and separator.
+func (p *HealthPanel) getListVisibleHeight() int {
+	h := p.ContentHeight() - healthSummaryLines
+	if h < 1 {
+		return 1
 	}
+	return h
+}
 
+// ensureVisible adjusts listOffset so the selected item is within the visible
+// area. It accounts for scroll indicator lines that renderCheckItems reserves
+// when the list overflows above or below the viewport.
+func (p *HealthPanel) ensureVisible() {
+	totalChecks := len(p.result.Checks)
+	visibleHeight := p.getListVisibleHeight()
+
+	// First pass: coarse adjustment using the raw visible height
 	if p.selectedIdx < p.listOffset {
 		p.listOffset = p.selectedIdx
 	} else if p.selectedIdx >= p.listOffset+visibleHeight {
 		p.listOffset = p.selectedIdx - visibleHeight + 1
+	}
+
+	// Second pass: account for scroll indicator lines.
+	// renderCheckItems reserves one line each for the scroll-up and scroll-down
+	// indicators, reducing the number of item slots available.
+	for i := 0; i < 3; i++ {
+		prevOffset := p.listOffset
+
+		effectiveSlots := visibleHeight
+		if p.listOffset > 0 {
+			effectiveSlots-- // scroll-up indicator takes a line
+		}
+		if p.listOffset+effectiveSlots < totalChecks {
+			effectiveSlots-- // scroll-down indicator takes a line
+		}
+		if effectiveSlots < 1 {
+			effectiveSlots = 1
+		}
+
+		// Re-adjust offset so selectedIdx fits within the effective item slots
+		if p.selectedIdx < p.listOffset {
+			p.listOffset = p.selectedIdx
+		} else if p.selectedIdx >= p.listOffset+effectiveSlots {
+			p.listOffset = p.selectedIdx - effectiveSlots + 1
+		}
+
+		if p.listOffset == prevOffset {
+			break
+		}
 	}
 }
 
@@ -166,32 +222,78 @@ func (p *HealthPanel) View() string {
 
 	var lines []string
 
-	// Summary counts
+	// Summary line with proper spacing
+	lines = append(lines, p.renderSummary())
+
+	// Blank separator between summary and check list
+	lines = append(lines, "")
+
+	// Check items with scroll indicators
+	lines = append(lines, p.renderCheckItems()...)
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderSummary builds the summary counts line with proper spacing between items.
+func (p *HealthPanel) renderSummary() string {
 	ok, warnings, errors, _ := p.result.CountByStatus()
-	summaryParts := []string{}
+	var parts []string
+
 	if errors > 0 {
-		summaryParts = append(summaryParts, ui.ErrorStyle.Render(fmt.Sprintf("%d✗", errors)))
+		parts = append(parts, ui.ErrorStyle.Render(fmt.Sprintf("%d err", errors)))
 	}
 	if warnings > 0 {
-		summaryParts = append(summaryParts, ui.WarningStyle.Render(fmt.Sprintf("%d⚠", warnings)))
+		parts = append(parts, ui.WarningStyle.Render(fmt.Sprintf("%d warn", warnings)))
 	}
 	if ok > 0 {
-		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(ui.SecondaryColor).Render(fmt.Sprintf("%d✓", ok)))
-	}
-	lines = append(lines, strings.Join(summaryParts, " "))
-
-	// Check list (compact)
-	visibleHeight := p.ContentHeight() - 2
-	if visibleHeight < 1 {
-		visibleHeight = 1
+		parts = append(parts, okStatusStyle().Render(fmt.Sprintf("%d ok", ok)))
 	}
 
-	endIdx := p.listOffset + visibleHeight
-	if endIdx > len(p.result.Checks) {
-		endIdx = len(p.result.Checks)
+	if len(parts) == 0 {
+		return ui.SubtleStyle.Render("No checks")
 	}
 
-	okStyle := lipgloss.NewStyle().Foreground(ui.SecondaryColor)
+	return strings.Join(parts, "  ")
+}
+
+// renderCheckItems builds the visible slice of check items, including scroll
+// indicators when the list overflows above or below the visible area.
+func (p *HealthPanel) renderCheckItems() []string {
+	totalChecks := len(p.result.Checks)
+	visibleHeight := p.getListVisibleHeight()
+
+	// Determine if we need scroll indicators and adjust available height
+	hasScrollUp := p.listOffset > 0
+	hasScrollDown := p.listOffset+visibleHeight < totalChecks
+
+	// Reserve lines for scroll indicators
+	itemSlots := visibleHeight
+	if hasScrollUp {
+		itemSlots--
+	}
+	if hasScrollDown {
+		itemSlots--
+	}
+	if itemSlots < 1 {
+		itemSlots = 1
+	}
+
+	// Recalculate end index with adjusted item slots
+	endIdx := p.listOffset + itemSlots
+	if endIdx > totalChecks {
+		endIdx = totalChecks
+	}
+
+	var lines []string
+
+	// Scroll-up indicator
+	if hasScrollUp {
+		above := p.listOffset
+		lines = append(lines, ui.SubtleStyle.Render(fmt.Sprintf("^^ %d more", above)))
+	}
+
+	// Render visible check items
+	okStyle := okStatusStyle()
 	warnStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	errStyle := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 	skipStyle := ui.SubtleStyle
@@ -202,23 +304,23 @@ func (p *HealthPanel) View() string {
 		var icon string
 		switch check.Status {
 		case doctor.StatusOK:
-			icon = okStyle.Render("✓")
+			icon = okStyle.Render(iconOK)
 		case doctor.StatusWarning:
-			icon = warnStyle.Render("⚠")
+			icon = warnStyle.Render(iconWarning)
 		case doctor.StatusError:
-			icon = errStyle.Render("✗")
+			icon = errStyle.Render(iconError)
 		case doctor.StatusSkipped:
-			icon = skipStyle.Render("○")
+			icon = skipStyle.Render(iconSkipped)
 		}
 
-		// Truncate name to fit
+		// Truncate name to fit (icon + space + name)
 		name := check.Name
-		maxLen := p.ContentWidth() - 4
+		maxLen := p.ContentWidth() - 6 // icon width (4) + space (1) + margin (1)
 		if maxLen < 5 {
 			maxLen = 5
 		}
 		if len(name) > maxLen {
-			name = name[:maxLen-1] + "…"
+			name = name[:maxLen-3] + "..."
 		}
 
 		line := fmt.Sprintf("%s %s", icon, name)
@@ -230,7 +332,17 @@ func (p *HealthPanel) View() string {
 		lines = append(lines, line)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	// Scroll-down indicator
+	if hasScrollDown {
+		below := totalChecks - endIdx
+		lines = append(lines, ui.SubtleStyle.Render(fmt.Sprintf("vv %d more", below)))
+	}
+
+	return lines
+}
+
+func okStatusStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(ui.SecondaryColor)
 }
 
 // GetSelectedItem implements Panel interface
