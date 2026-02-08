@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // PacmanManager implements PackageManager for Pacman (Arch Linux, Manjaro)
@@ -26,6 +28,13 @@ func (p *PacmanManager) Install(packages ...string) error {
 	mapped := make([]string, len(packages))
 	for i, pkg := range packages {
 		mapped[i] = MapPackageName(pkg, "pacman")
+	}
+
+	// Validate package names after mapping to prevent flag injection
+	for _, m := range mapped {
+		if err := validation.ValidatePackageName(m); err != nil {
+			return fmt.Errorf("invalid package name %q: %w", m, err)
+		}
 	}
 
 	args := []string{"-S", "--noconfirm"}

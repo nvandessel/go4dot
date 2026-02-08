@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // DNFManager implements PackageManager for DNF (Fedora, RHEL 8+)
@@ -26,6 +28,13 @@ func (d *DNFManager) Install(packages ...string) error {
 	mapped := make([]string, len(packages))
 	for i, pkg := range packages {
 		mapped[i] = MapPackageName(pkg, "dnf")
+	}
+
+	// Validate package names after mapping to prevent flag injection
+	for _, m := range mapped {
+		if err := validation.ValidatePackageName(m); err != nil {
+			return fmt.Errorf("invalid package name %q: %w", m, err)
+		}
 	}
 
 	args := []string{"install", "-y"}

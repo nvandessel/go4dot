@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // APTManager implements PackageManager for APT (Debian, Ubuntu)
@@ -26,6 +28,13 @@ func (a *APTManager) Install(packages ...string) error {
 	mapped := make([]string, len(packages))
 	for i, pkg := range packages {
 		mapped[i] = MapPackageName(pkg, "apt")
+	}
+
+	// Validate package names after mapping to prevent flag injection
+	for _, m := range mapped {
+		if err := validation.ValidatePackageName(m); err != nil {
+			return fmt.Errorf("invalid package name %q: %w", m, err)
+		}
 	}
 
 	// Set DEBIAN_FRONTEND=noninteractive to avoid prompts
