@@ -317,3 +317,83 @@ func TestPlaceOverlay_WideBackground(t *testing.T) {
 		}
 	}
 }
+
+func TestColorToANSIBg(t *testing.T) {
+	// colorToANSIBg uses lipgloss rendering, which may return empty when
+	// no terminal is attached (e.g., during tests). This is correct behavior.
+	t.Run("does not panic", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("colorToANSIBg panicked: %v", r)
+			}
+		}()
+		colorToANSIBg(lipgloss.Color("#252545"))
+		colorToANSIBg(lipgloss.Color("#FF0000"))
+		colorToANSIBg(lipgloss.Color(""))
+	})
+
+	t.Run("returns valid ANSI or empty", func(t *testing.T) {
+		result := colorToANSIBg(lipgloss.Color("#252545"))
+		// In a terminal, this returns an ANSI sequence; in tests, it may be empty
+		if result != "" && !strings.HasPrefix(result, "\x1b[") {
+			t.Errorf("if non-empty, expected ANSI escape prefix, got %q", result)
+		}
+	})
+}
+
+func TestFillBackground(t *testing.T) {
+	bg := lipgloss.Color("#252545")
+
+	t.Run("preserves line count", func(t *testing.T) {
+		content := "short\nlonger line here"
+		result := fillBackground(content, bg)
+		lines := strings.Split(result, "\n")
+		if len(lines) != 2 {
+			t.Fatalf("expected 2 lines, got %d", len(lines))
+		}
+	})
+
+	t.Run("normalizes line widths", func(t *testing.T) {
+		content := "short\nlonger line here"
+		result := fillBackground(content, bg)
+		lines := strings.Split(result, "\n")
+		if len(lines) != 2 {
+			t.Fatalf("expected 2 lines, got %d", len(lines))
+		}
+		w0 := lipgloss.Width(lines[0])
+		w1 := lipgloss.Width(lines[1])
+		if w0 != w1 {
+			t.Errorf("expected equal widths, got %d and %d", w0, w1)
+		}
+	})
+
+	t.Run("preserves content text", func(t *testing.T) {
+		content := "hello world"
+		result := fillBackground(content, bg)
+		plain := stripAnsi(result)
+		if !strings.Contains(plain, "hello world") {
+			t.Errorf("expected output to contain 'hello world', got %q", plain)
+		}
+	})
+
+	t.Run("handles empty content", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("fillBackground panicked on empty content: %v", r)
+			}
+		}()
+		fillBackground("", bg)
+	})
+
+	t.Run("handles styled content with resets", func(t *testing.T) {
+		styled := "\x1b[31mred text\x1b[0m and more"
+		result := fillBackground(styled, bg)
+		plain := stripAnsi(result)
+		if !strings.Contains(plain, "red text") {
+			t.Error("expected styled text to be preserved")
+		}
+		if !strings.Contains(plain, "and more") {
+			t.Error("expected text after reset to be preserved")
+		}
+	})
+}

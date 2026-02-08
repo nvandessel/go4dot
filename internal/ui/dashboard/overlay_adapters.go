@@ -80,7 +80,8 @@ func overlayHelpContent(h Help) string {
 
 	b.WriteString(subtleStyle.Render("Press ?, q, or esc to close"))
 
-	return b.String()
+	// Force all lines to uniform width so the overlay background fills evenly
+	return lipgloss.NewStyle().Width(boxWidth).Render(b.String())
 }
 
 // overlayMenuContent returns the menu content for overlay compositing (without box frame).
