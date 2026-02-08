@@ -289,8 +289,8 @@ func TestCheckDependencyManualVersionMismatch(t *testing.T) {
 	}
 
 	check := checkDependency(dep)
-	if check.Status != StatusManualMissing {
-		t.Fatalf("expected status %v, got %v", StatusManualMissing, check.Status)
+	if check.Status != StatusVersionMismatch {
+		t.Fatalf("expected status %v, got %v", StatusVersionMismatch, check.Status)
 	}
 	if check.InstalledVersion == "" {
 		t.Fatal("expected installed version to be set for manual version mismatch")
@@ -306,8 +306,8 @@ func TestCheckDependencyManualVersionError(t *testing.T) {
 	}
 
 	check := checkDependency(dep)
-	if check.Status != StatusManualMissing {
-		t.Fatalf("expected status %v, got %v", StatusManualMissing, check.Status)
+	if check.Status != StatusCheckFailed {
+		t.Fatalf("expected status %v, got %v", StatusCheckFailed, check.Status)
 	}
 	if check.Error == nil {
 		t.Fatal("expected version error to be set for manual dependency")
@@ -343,6 +343,23 @@ func TestGetMissingExcludesManual(t *testing.T) {
 	missing := result.GetMissing()
 	if len(missing) != 1 {
 		t.Errorf("len(GetMissing()) = %d, want 1 (should exclude manual)", len(missing))
+	}
+}
+
+func TestGetMissingExcludesManualVersionMismatch(t *testing.T) {
+	result := &CheckResult{
+		Core: []DependencyCheck{
+			{Item: config.DependencyItem{Name: "missing1"}, Status: StatusMissing},
+			{Item: config.DependencyItem{Name: "manual1", Manual: true}, Status: StatusVersionMismatch},
+		},
+	}
+
+	missing := result.GetMissing()
+	if len(missing) != 1 {
+		t.Fatalf("len(GetMissing()) = %d, want 1 (should exclude manual mismatch)", len(missing))
+	}
+	if missing[0].Item.Name != "missing1" {
+		t.Errorf("GetMissing()[0].Name = %s, want missing1", missing[0].Item.Name)
 	}
 }
 

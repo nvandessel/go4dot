@@ -95,22 +95,14 @@ func checkDependency(dep config.DependencyItem) DependencyCheck {
 	if dep.Version != "" {
 		version, err := getVersion(binaryName, dep.VersionCmd)
 		if err != nil {
-			if dep.Manual {
-				check.Status = StatusManualMissing
-			} else {
-				check.Status = StatusCheckFailed
-			}
+			check.Status = StatusCheckFailed
 			check.Error = fmt.Errorf("failed to get version: %w", err)
 			return check
 		}
 		check.InstalledVersion = version
 
 		if !compareVersions(version, dep.Version) {
-			if dep.Manual {
-				check.Status = StatusManualMissing
-			} else {
-				check.Status = StatusVersionMismatch
-			}
+			check.Status = StatusVersionMismatch
 		}
 	}
 
@@ -200,12 +192,15 @@ func versionEqual(v1, v2 []int) bool {
 }
 
 // GetMissing returns all missing dependencies or those with version mismatch.
-// Manual dependencies (StatusManualMissing) are excluded; use GetManualMissing instead.
+// Manual dependencies are excluded; use GetManualMissing for manual missing deps.
 func (r *CheckResult) GetMissing() []DependencyCheck {
 	var missing []DependencyCheck
 
 	for _, checks := range [][]DependencyCheck{r.Critical, r.Core, r.Optional} {
 		for _, check := range checks {
+			if check.Item.Manual {
+				continue
+			}
 			if check.Status == StatusMissing || check.Status == StatusVersionMismatch {
 				missing = append(missing, check)
 			}
@@ -221,6 +216,9 @@ func (r *CheckResult) GetMissingCritical() []DependencyCheck {
 	var missing []DependencyCheck
 
 	for _, dep := range r.Critical {
+		if dep.Item.Manual {
+			continue
+		}
 		if dep.Status == StatusMissing || dep.Status == StatusVersionMismatch {
 			missing = append(missing, dep)
 		}
