@@ -241,8 +241,8 @@ func sliceByCells(s string, start, length int) string {
 		if runeStart >= start && runeEnd <= end {
 			b.WriteRune(r)
 		} else {
-			overlapStart := maxInt(runeStart, start)
-			overlapEnd := minInt(runeEnd, end)
+			overlapStart := max(runeStart, start)
+			overlapEnd := min(runeEnd, end)
 			if overlapEnd > overlapStart {
 				b.WriteString(strings.Repeat(" ", overlapEnd-overlapStart))
 			}
@@ -257,20 +257,6 @@ func sliceByCells(s string, start, length int) string {
 	}
 
 	return b.String()
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // stripAnsi removes ANSI escape sequences from a string.

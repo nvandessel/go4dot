@@ -117,7 +117,7 @@ func overlayConfirmContent(c *Confirm) string {
 		Bold(true)
 
 	normalBtnStyle := lipgloss.NewStyle().
-		Foreground(ui.TextColor).
+		Foreground(ui.SubtleColor).
 		Padding(0, 3)
 
 	var yesBtn, noBtn string
@@ -156,6 +156,11 @@ func overlayOnboardingContent(o *Onboarding) string {
 	subtitleStyle := lipgloss.NewStyle().
 		Foreground(ui.SubtleColor)
 
+	formView := ""
+	if o.form != nil {
+		formView = o.form.View()
+	}
+
 	var content string
 
 	switch o.step {
@@ -188,7 +193,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render("Project Information"),
 			subtitleStyle.Render(fmt.Sprintf("Found %d potential configs", len(o.scannedConfigs))),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepConfigs:
 		content = lipgloss.JoinVertical(
@@ -196,7 +201,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render("Select Configurations"),
 			subtitleStyle.Render("Choose which configs to manage"),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepExternal:
 		title := "External Dependencies"
@@ -208,7 +213,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render(title),
 			subtitleStyle.Render("Git repos for plugins, themes, etc."),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepExternalDetails:
 		content = lipgloss.JoinVertical(
@@ -216,7 +221,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render("Add External Dependency"),
 			subtitleStyle.Render("Enter git repository details"),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepDependencies:
 		title := "System Dependencies"
@@ -228,7 +233,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render(title),
 			subtitleStyle.Render("Required packages (neovim, tmux, etc.)"),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepDependenciesDetails:
 		content = lipgloss.JoinVertical(
@@ -236,7 +241,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render("Add System Dependency"),
 			subtitleStyle.Render("Enter package details"),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepMachine:
 		title := "Machine Configuration"
@@ -248,7 +253,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render(title),
 			subtitleStyle.Render("Machine-specific settings (git signing, etc.)"),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepMachineDetails:
 		content = lipgloss.JoinVertical(
@@ -256,7 +261,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			titleStyle.Render("Configure Machine Setting"),
 			subtitleStyle.Render("Enter configuration details"),
 			"",
-			o.form.View(),
+			formView,
 		)
 	case stepConfirm:
 		content = lipgloss.JoinVertical(
@@ -265,7 +270,7 @@ func overlayOnboardingContent(o *Onboarding) string {
 			"",
 			o.renderSummary(),
 			"",
-			o.form.View(),
+			formView,
 		)
 	}
 
@@ -441,7 +446,7 @@ func overlayConflictContent(v *ConflictView) string {
 		for i := 0; i < showCount; i++ {
 			displayPath := files[i].TargetPath
 			if home != "" {
-				if relPath, err := filepath.Rel(home, files[i].TargetPath); err == nil {
+				if relPath, err := filepath.Rel(home, files[i].TargetPath); err == nil && !strings.HasPrefix(relPath, "..") {
 					displayPath = "~/" + relPath
 				}
 			}

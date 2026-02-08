@@ -158,6 +158,15 @@ func (r *CheckResult) DetailedReport() string {
 				sb.WriteString(fmt.Sprintf("• %s\n", dep.Item.Name))
 			}
 		}
+
+		manualMissing := r.DepsResult.GetManualMissing()
+		if len(manualMissing) > 0 {
+			sb.WriteString("\n── Manual Dependencies (not installed) ──\n\n")
+			sb.WriteString("These must be installed manually (e.g., proprietary software, AUR, built from source):\n\n")
+			for _, dep := range manualMissing {
+				sb.WriteString(fmt.Sprintf("• %s (manual)\n", dep.Item.Name))
+			}
+		}
 	}
 
 	return sb.String()

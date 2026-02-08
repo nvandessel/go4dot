@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,12 @@ import (
 const (
 	ConfigFileName = ".go4dot.yaml"
 )
+
+var ErrConfigNotFound = errors.New("config not found")
+
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrConfigNotFound)
+}
 
 // Load reads and parses a .go4dot.yaml file
 func Load(path string) (*Config, error) {
@@ -51,7 +58,7 @@ func FindConfig() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("could not find %s in any standard location", ConfigFileName)
+	return "", fmt.Errorf("%w: could not find %s in any standard location", ErrConfigNotFound, ConfigFileName)
 }
 
 // LoadFromDiscovery finds and loads the config file

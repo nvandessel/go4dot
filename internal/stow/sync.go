@@ -135,18 +135,16 @@ func SyncSingle(dotfilesPath string, configName string, cfg *config.Config, st *
 			opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: drift check failed: %v", err))
 		}
 	} else {
-		for _, res := range summary.Results {
-			if res.ConfigName == configName && len(res.MissingFiles) > 0 {
-				for _, relPath := range res.MissingFiles {
-					if opts.ProgressFunc != nil {
-						opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
-					}
-					if !opts.DryRun {
-						targetPath := filepath.Join(home, relPath)
-						if err := os.Remove(targetPath); err != nil {
-							if opts.ProgressFunc != nil {
-								opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to remove orphaned symlink %s: %v", relPath, err))
-							}
+		if res := summary.ResultByName(configName); res != nil && len(res.MissingFiles) > 0 {
+			for _, relPath := range res.MissingFiles {
+				if opts.ProgressFunc != nil {
+					opts.ProgressFunc(0, 0, fmt.Sprintf("Removing orphaned symlink %s...", relPath))
+				}
+				if !opts.DryRun {
+					targetPath := filepath.Join(home, relPath)
+					if err := os.Remove(targetPath); err != nil {
+						if opts.ProgressFunc != nil {
+							opts.ProgressFunc(0, 0, fmt.Sprintf("Warning: failed to remove orphaned symlink %s: %v", relPath, err))
 						}
 					}
 				}

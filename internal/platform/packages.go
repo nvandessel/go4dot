@@ -61,37 +61,12 @@ func commandExists(name string) bool {
 	return err == nil
 }
 
-// MapPackageName maps a generic package name to a manager-specific name
-// For example: "neovim" might be "nvim" on some systems
+// MapPackageName maps a generic/canonical package name to a manager-specific
+// name. For example, "fd" becomes "fd-find" on apt and dnf, while remaining
+// "fd" on brew and pacman.
+//
+// Unknown packages are returned unchanged, making this safe to call with any
+// package name.
 func MapPackageName(genericName string, manager string) string {
-	// Package name mappings for different managers
-	mappings := map[string]map[string]string{
-		"neovim": {
-			"dnf":    "neovim",
-			"apt":    "neovim",
-			"brew":   "neovim",
-			"pacman": "neovim",
-		},
-		"fd": {
-			"dnf":    "fd-find",
-			"apt":    "fd-find",
-			"brew":   "fd",
-			"pacman": "fd",
-		},
-		"ripgrep": {
-			"dnf":    "ripgrep",
-			"apt":    "ripgrep",
-			"brew":   "ripgrep",
-			"pacman": "ripgrep",
-		},
-	}
-
-	if pkgMap, ok := mappings[genericName]; ok {
-		if specificName, ok := pkgMap[manager]; ok {
-			return specificName
-		}
-	}
-
-	// If no mapping exists, return the generic name
-	return genericName
+	return ResolvePackageName(genericName, manager)
 }
