@@ -36,7 +36,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
-          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
           verbose: true
 
   security:
@@ -54,3 +54,4 @@ jobs:
         with:
           go-version-input: '1.24.13'
           go-package: ./...
+          repo-checkout: false
