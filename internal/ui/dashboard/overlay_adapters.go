@@ -117,7 +117,7 @@ func overlayConfirmContent(c *Confirm) string {
 		Bold(true)
 
 	normalBtnStyle := lipgloss.NewStyle().
-		Foreground(ui.SubtleColor).
+		Foreground(ui.TextColor).
 		Padding(0, 3)
 
 	var yesBtn, noBtn string

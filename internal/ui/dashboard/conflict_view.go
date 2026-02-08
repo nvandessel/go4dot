@@ -150,7 +150,7 @@ func (v *ConflictView) View() string {
 		Bold(true)
 
 	normalBtnStyle := lipgloss.NewStyle().
-		Foreground(ui.SubtleColor).
+		Foreground(ui.TextColor).
 		Padding(0, 2)
 
 	hintStyle := lipgloss.NewStyle().
