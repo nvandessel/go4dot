@@ -17,7 +17,7 @@ Env XDG_CONFIG_HOME "/tmp/g4d-e2e-test/.config"
 
 # Run g4d in the test fixtures directory
 # Note: In container, fixtures are at /home/testuser/fixtures
-Type "cd ~/fixtures && g4d"
+Type "cd /home/testuser/fixtures && g4d"
 Enter
 Sleep 2s
 

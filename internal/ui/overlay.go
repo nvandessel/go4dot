@@ -224,8 +224,8 @@ func sliceByCells(s string, start, length int) string {
 	var b strings.Builder
 	for _, r := range s {
 		w := runewidth.RuneWidth(r)
-		if w < 1 {
-			w = 1
+		if w < 0 {
+			w = 0
 		}
 		runeStart := col
 		runeEnd := col + w
