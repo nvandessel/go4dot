@@ -33,7 +33,7 @@ func DefaultOverlayStyle() OverlayStyle {
 		BorderColor: PrimaryColor,
 		PaddingH:    2,
 		PaddingV:    1,
-		Background:  lipgloss.Color("#313244"), // Catppuccin Mocha Surface0
+		Background:  lipgloss.Color("#1e1e2e"), // Catppuccin Mocha Base
 		DimChar:     " ",
 		DimColor:    lipgloss.Color("#45475a"), // Catppuccin Mocha Surface1
 	}
