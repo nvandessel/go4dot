@@ -19,7 +19,7 @@ func newTestGatherer(p *platform.Platform, cfg *config.Config, configPath string
 		},
 		ConfigLoader: func() (*config.Config, string, error) {
 			if cfg == nil {
-				return nil, "", fmt.Errorf("config not found")
+				return nil, "", config.ErrConfigNotFound
 			}
 			return cfg, configPath, nil
 		},
@@ -70,6 +70,30 @@ func TestGather_PlatformError(t *testing.T) {
 	_, err := g.Gather(GatherOptions{})
 	if err == nil {
 		t.Fatal("expected error for platform detection failure")
+	}
+}
+
+func TestGather_ConfigError(t *testing.T) {
+	p := &platform.Platform{
+		OS:             "linux",
+		Distro:         "fedora",
+		DistroVersion:  "41",
+		PackageManager: "dnf",
+		Architecture:   "amd64",
+	}
+
+	g := &Gatherer{
+		PlatformDetector: func() (*platform.Platform, error) {
+			return p, nil
+		},
+		ConfigLoader: func() (*config.Config, string, error) {
+			return nil, "", fmt.Errorf("invalid config")
+		},
+	}
+
+	_, err := g.Gather(GatherOptions{})
+	if err == nil {
+		t.Fatal("expected error for config load failure")
 	}
 }
 

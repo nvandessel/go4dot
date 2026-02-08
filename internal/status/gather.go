@@ -111,8 +111,11 @@ func (g *Gatherer) Gather(opts GatherOptions) (*Overview, error) {
 	// Load config (non-fatal if missing)
 	cfg, configPath, err := g.ConfigLoader()
 	if err != nil {
-		// No config found - return minimal overview
-		return overview, nil
+		if config.IsNotFound(err) {
+			// No config found - return minimal overview
+			return overview, nil
+		}
+		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
 	dotfilesPath := filepath.Dir(configPath)
