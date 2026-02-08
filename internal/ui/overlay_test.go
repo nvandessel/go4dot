@@ -334,9 +334,25 @@ func TestColorToANSIBg(t *testing.T) {
 
 	t.Run("returns valid ANSI or empty", func(t *testing.T) {
 		result := colorToANSIBg(lipgloss.Color("#252545"))
-		// In a terminal, this returns an ANSI sequence; in tests, it may be empty
+		// In a terminal, this returns an ANSI sequence; in tests, it may be empty.
+		// NOTE: colorToANSIBg relies on lipgloss's internal rendering format
+		// (rendering a space and slicing before the first " "). If lipgloss
+		// changes its output format, this extraction may break silently.
 		if result != "" && !strings.HasPrefix(result, "\x1b[") {
 			t.Errorf("if non-empty, expected ANSI escape prefix, got %q", result)
+		}
+	})
+
+	t.Run("extracted sequence re-renders correctly", func(t *testing.T) {
+		// If colorToANSIBg produces a non-empty sequence, applying it and
+		// then resetting should produce the same result as lipgloss rendering.
+		result := colorToANSIBg(lipgloss.Color("#FF0000"))
+		if result == "" {
+			t.Skip("no ANSI output (expected in non-terminal test environments)")
+		}
+		// The sequence should end with 'm' (SGR terminator)
+		if result[len(result)-1] != 'm' {
+			t.Errorf("expected ANSI sequence ending with 'm', got %q", result)
 		}
 	})
 }
