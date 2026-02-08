@@ -3,10 +3,12 @@ package deps
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 func TestExpandPath(t *testing.T) {
@@ -677,5 +679,114 @@ func TestEmptyExternalConfig(t *testing.T) {
 
 	if len(result.Cloned) != 0 || len(result.Failed) != 0 || len(result.Skipped) != 0 {
 		t.Error("Expected empty result for empty config")
+	}
+}
+
+// TestGitClone_URLInjection verifies that malicious URLs are rejected by the
+// validation layer before they can reach exec.Command. Tests both through the
+// validation function directly and through the unexported gitClone function.
+func TestGitClone_URLInjection(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		// Flag injection attacks — these must be rejected
+		{name: "upload-pack flag injection", url: "--upload-pack=malicious", wantErr: true},
+		{name: "config flag injection", url: "--config=core.sshCommand=evil", wantErr: true},
+		{name: "single hyphen flag", url: "-c", wantErr: true},
+		{name: "template flag injection", url: "--template=/tmp/evil", wantErr: true},
+		{name: "recurse-submodules injection", url: "--recurse-submodules=evil", wantErr: true},
+
+		// file:// scheme attacks — local file access must be blocked
+		{name: "file scheme", url: "file:///etc/passwd", wantErr: true},
+		{name: "file scheme uppercase", url: "FILE:///etc/passwd", wantErr: true},
+
+		// Shell metacharacter injection
+		{name: "semicolon injection", url: "https://evil.com/repo;rm -rf /", wantErr: true},
+		{name: "pipe injection", url: "https://evil.com/repo|cat /etc/passwd", wantErr: true},
+		{name: "backtick injection", url: "https://evil.com/`whoami`/repo", wantErr: true},
+		{name: "newline injection", url: "https://github.com/user/repo\n--upload-pack=evil", wantErr: true},
+
+		// Valid URLs that must be accepted
+		{name: "valid https url", url: "https://github.com/user/repo.git", wantErr: false},
+		{name: "valid ssh url", url: "git@github.com:user/repo.git", wantErr: false},
+		{name: "valid https without .git", url: "https://github.com/user/repo", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validation.ValidateGitURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateGitURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestGitClone_Validation verifies that gitClone rejects invalid URLs
+// before attempting to run git. Since gitClone is unexported, we call
+// it directly from a test in the same package.
+func TestGitClone_Validation(t *testing.T) {
+	tests := []struct {
+		name   string
+		url    string
+		errMsg string
+	}{
+		{
+			name:   "flag injection rejected",
+			url:    "--upload-pack=malicious",
+			errMsg: "invalid git URL",
+		},
+		{
+			name:   "file scheme rejected",
+			url:    "file:///etc/passwd",
+			errMsg: "invalid git URL",
+		},
+		{
+			name:   "empty url rejected",
+			url:    "",
+			errMsg: "invalid git URL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use a dummy destination; validation should fail before git runs
+			err := gitClone(tt.url, "/tmp/go4dot-test-should-not-exist")
+			if err == nil {
+				t.Errorf("gitClone(%q, ...) expected error but got nil", tt.url)
+				return
+			}
+			if !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("gitClone(%q, ...) error = %q, want it to contain %q", tt.url, err.Error(), tt.errMsg)
+			}
+		})
+	}
+}
+
+// TestGitPull_PathValidation verifies that gitPull rejects relative paths.
+// gitPull is unexported, so we call it directly from within the package.
+func TestGitPull_PathValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "relative path with dots", path: "../evil/repo"},
+		{name: "relative path no dots", path: "some/path"},
+		{name: "dot path", path: "."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := gitPull(tt.path)
+			if err == nil {
+				t.Errorf("gitPull(%q) expected error for relative path but got nil", tt.path)
+				return
+			}
+			if !strings.Contains(err.Error(), "must be absolute") {
+				t.Errorf("gitPull(%q) error = %q, want it to contain 'must be absolute'", tt.path, err.Error())
+			}
+		})
 	}
 }
