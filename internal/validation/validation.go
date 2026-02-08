@@ -35,11 +35,11 @@ var packageNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._\-+@/]+$`)
 // Forward slash and backslash are explicitly excluded.
 var configNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._\-+@]+$`)
 
-// gitHTTPSRegexp matches HTTPS git URLs.
-var gitHTTPSRegexp = regexp.MustCompile(`^https://[a-zA-Z0-9]`)
+// gitHTTPSRegexp matches HTTPS git URLs with a fully anchored pattern.
+var gitHTTPSRegexp = regexp.MustCompile(`^https://[a-zA-Z0-9][a-zA-Z0-9.\-@:/_~%+]*$`)
 
-// gitSSHRegexp matches SSH git URLs in the git@host:user/repo.git format.
-var gitSSHRegexp = regexp.MustCompile(`^git@[a-zA-Z0-9][a-zA-Z0-9.\-]*:[a-zA-Z0-9]`)
+// gitSSHRegexp matches SSH git URLs in the git@host:user/repo.git format with a fully anchored pattern.
+var gitSSHRegexp = regexp.MustCompile(`^git@[a-zA-Z0-9][a-zA-Z0-9.\-]*:[a-zA-Z0-9][a-zA-Z0-9.\-_/]*$`)
 
 // ValidateBinaryName checks that a binary name contains only safe characters.
 // It rejects empty strings, names starting with a hyphen (flag injection),
@@ -92,10 +92,10 @@ func ValidateGitURL(url string) error {
 		return fmt.Errorf("git URL must not start with a hyphen: %q", url)
 	}
 
-	// Reject control characters (newlines, tabs, etc.) which can be used
-	// for argument injection by splitting a single URL into multiple arguments.
-	if strings.ContainsAny(url, "\n\r\t\x00") {
-		return fmt.Errorf("git URL must not contain control characters: %q", url)
+	// Reject control characters, whitespace, and shell metacharacters which can be
+	// used for argument injection or command injection attacks.
+	if strings.ContainsAny(url, "\n\r\t\x00 ;|&$`<>") {
+		return fmt.Errorf("git URL must not contain whitespace or shell metacharacters: %q", url)
 	}
 
 	if strings.HasPrefix(strings.ToLower(url), "file://") {
@@ -170,6 +170,14 @@ func ValidateDestinationPath(expanded string, baseDir string) error {
 
 	if baseDir == "" {
 		return fmt.Errorf("base directory must not be empty")
+	}
+
+	if !filepath.IsAbs(expanded) {
+		return fmt.Errorf("destination path must be absolute: %q", expanded)
+	}
+
+	if !filepath.IsAbs(baseDir) {
+		return fmt.Errorf("base directory must be absolute: %q", baseDir)
 	}
 
 	cleaned := filepath.Clean(expanded)

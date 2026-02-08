@@ -151,6 +151,12 @@ func TestValidateGitURL(t *testing.T) {
 		// Security-focused
 		{name: "injection in ssh", input: "git@$(whoami):user/repo.git", wantErr: true},
 		{name: "newline injection", input: "https://github.com/user/repo\n--upload-pack=evil", wantErr: true},
+
+		// Shell metacharacters in URL body
+		{name: "space in https url", input: "https://evil.com/repo --upload-pack=evil", wantErr: true},
+		{name: "semicolon in https url", input: "https://evil.com/repo;rm -rf /", wantErr: true},
+		{name: "pipe in https url", input: "https://evil.com/repo|cat /etc/passwd", wantErr: true},
+		{name: "backtick in https url", input: "https://evil.com/`whoami`/repo", wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -285,6 +291,10 @@ func TestValidateDestinationPath(t *testing.T) {
 		{name: "empty expanded", expanded: "", baseDir: "/home/user", wantErr: true},
 		{name: "empty base dir", expanded: "/home/user/.config", baseDir: "", wantErr: true},
 		{name: "both empty", expanded: "", baseDir: "", wantErr: true},
+
+		// Relative path inputs (must be absolute)
+		{name: "relative expanded path", expanded: "config/vim", baseDir: "/home/user", wantErr: true},
+		{name: "relative base dir", expanded: "/home/user/config", baseDir: "home/user", wantErr: true},
 
 		// Path traversal attacks
 		{name: "parent traversal", expanded: "/home/user/../../etc/shadow", baseDir: "/home/user", wantErr: true},
