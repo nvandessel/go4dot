@@ -36,6 +36,7 @@ type DependencyItem struct {
 	Package    map[string]string `yaml:"package"`     // Package name per manager
 	Version    string            `yaml:"version"`     // Required version (e.g. "0.11+")
 	VersionCmd string            `yaml:"version_cmd"` // Command to check version (defaults to --version)
+	Manual     bool              `yaml:"manual"`      // If true, skip automated install (user must install manually)
 }
 
 // UnmarshalYAML allows DependencyItem to accept both string and object formats

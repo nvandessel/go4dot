@@ -19,6 +19,7 @@ const (
 	StatusMissing         DepStatus = "missing"
 	StatusCheckFailed     DepStatus = "check_failed"
 	StatusVersionMismatch DepStatus = "version_mismatch"
+	StatusManualMissing   DepStatus = "manual_missing" // Manual dep not found; user must install
 )
 
 // DependencyCheck represents the check result for a single dependency
@@ -79,7 +80,11 @@ func checkDependency(dep config.DependencyItem) DependencyCheck {
 	// Check if binary exists in PATH
 	path, err := exec.LookPath(binaryName)
 	if err != nil {
-		check.Status = StatusMissing
+		if dep.Manual {
+			check.Status = StatusManualMissing
+		} else {
+			check.Status = StatusMissing
+		}
 		return check
 	}
 
@@ -186,12 +191,16 @@ func versionEqual(v1, v2 []int) bool {
 	return true
 }
 
-// GetMissing returns all missing dependencies or those with version mismatch
+// GetMissing returns all missing dependencies or those with version mismatch.
+// Manual dependencies are excluded; use GetManualMissing for manual missing deps.
 func (r *CheckResult) GetMissing() []DependencyCheck {
 	var missing []DependencyCheck
 
 	for _, checks := range [][]DependencyCheck{r.Critical, r.Core, r.Optional} {
 		for _, check := range checks {
+			if check.Item.Manual {
+				continue
+			}
 			if check.Status == StatusMissing || check.Status == StatusVersionMismatch {
 				missing = append(missing, check)
 			}
@@ -201,11 +210,15 @@ func (r *CheckResult) GetMissing() []DependencyCheck {
 	return missing
 }
 
-// GetMissingCritical returns only missing critical dependencies or those with version mismatch
+// GetMissingCritical returns only missing critical dependencies or those with version mismatch.
+// Manual dependencies are excluded.
 func (r *CheckResult) GetMissingCritical() []DependencyCheck {
 	var missing []DependencyCheck
 
 	for _, dep := range r.Critical {
+		if dep.Item.Manual {
+			continue
+		}
 		if dep.Status == StatusMissing || dep.Status == StatusVersionMismatch {
 			missing = append(missing, dep)
 		}
@@ -214,7 +227,23 @@ func (r *CheckResult) GetMissingCritical() []DependencyCheck {
 	return missing
 }
 
-// AllInstalled returns true if all dependencies are installed
+// GetManualMissing returns all manual dependencies that are not installed.
+func (r *CheckResult) GetManualMissing() []DependencyCheck {
+	var missing []DependencyCheck
+
+	for _, checks := range [][]DependencyCheck{r.Critical, r.Core, r.Optional} {
+		for _, check := range checks {
+			if check.Status == StatusManualMissing {
+				missing = append(missing, check)
+			}
+		}
+	}
+
+	return missing
+}
+
+// AllInstalled returns true if all non-manual dependencies are installed.
+// Manual dependencies are not considered by this check.
 func (r *CheckResult) AllInstalled() bool {
 	return len(r.GetMissing()) == 0
 }
@@ -223,6 +252,7 @@ func (r *CheckResult) AllInstalled() bool {
 func (r *CheckResult) Summary() string {
 	totalInstalled := 0
 	totalMissing := 0
+	totalManualMissing := 0
 
 	for _, checks := range [][]DependencyCheck{r.Critical, r.Core, r.Optional} {
 		for _, check := range checks {
@@ -231,9 +261,15 @@ func (r *CheckResult) Summary() string {
 				totalInstalled++
 			case StatusMissing:
 				totalMissing++
+			case StatusManualMissing:
+				totalManualMissing++
 			}
 		}
 	}
 
-	return fmt.Sprintf("%d installed, %d missing", totalInstalled, totalMissing)
+	summary := fmt.Sprintf("%d installed, %d missing", totalInstalled, totalMissing)
+	if totalManualMissing > 0 {
+		summary += fmt.Sprintf(", %d manual (not installed)", totalManualMissing)
+	}
+	return summary
 }
