@@ -258,6 +258,10 @@ func TestValidateConfigName(t *testing.T) {
 		{name: "backtick", input: "cfg`id`", wantErr: true},
 		{name: "space", input: "my config", wantErr: true},
 
+		// Max length
+		{name: "at max length", input: strings.Repeat("a", 255), wantErr: false},
+		{name: "over max length", input: strings.Repeat("a", 256), wantErr: true},
+
 		// Security-focused: stow flag injection
 		{name: "stow target flag", input: "--target=/etc", wantErr: true},
 		{name: "stow dir flag", input: "--dir=/tmp/evil", wantErr: true},
