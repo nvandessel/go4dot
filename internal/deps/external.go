@@ -9,6 +9,7 @@ import (
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // ExternalResult represents the result of cloning external dependencies
@@ -338,15 +339,24 @@ func checkDestination(path string) (exists bool, isGit bool) {
 	return true, false
 }
 
-// gitClone clones a repository to the destination
+// gitClone clones a repository to the destination.
+// It validates the URL to prevent flag injection and uses "--" to separate
+// git options from the URL operand as defense-in-depth.
 func gitClone(url, dest string) error {
+	// Validate URL to reject flag injection, file:// scheme, and shell metacharacters
+	if err := validation.ValidateGitURL(url); err != nil {
+		return fmt.Errorf("invalid git URL: %w", err)
+	}
+
 	// Create parent directory if it doesn't exist
 	parentDir := filepath.Dir(dest)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	cmd := exec.Command("git", "clone", "--depth", "1", url, dest)
+	// Use "--" to separate options from operands, preventing URL from being
+	// interpreted as a git flag (e.g., --upload-pack=malicious).
+	cmd := exec.Command("git", "clone", "--depth", "1", "--", url, dest)
 	cmd.Stdout = nil // Suppress output
 	cmd.Stderr = nil
 
@@ -357,8 +367,13 @@ func gitClone(url, dest string) error {
 	return nil
 }
 
-// gitPull pulls updates for an existing repository
+// gitPull pulls updates for an existing repository.
+// It validates that path is absolute to prevent path traversal attacks.
 func gitPull(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("git pull path must be absolute: %q", path)
+	}
+
 	cmd := exec.Command("git", "-C", path, "pull", "--ff-only")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
