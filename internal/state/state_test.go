@@ -237,6 +237,44 @@ func TestLoadNonExistent(t *testing.T) {
 	}
 }
 
+func TestStateSavePermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	origHome := os.Getenv("HOME")
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
+
+	s := New()
+	s.DotfilesPath = "/home/user/dotfiles"
+
+	err := s.Save()
+	if err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	// Check state directory permissions (should be 0700)
+	stateDir := filepath.Join(tmpDir, ".config", "go4dot")
+	dirInfo, err := os.Stat(stateDir)
+	if err != nil {
+		t.Fatalf("Failed to stat state directory: %v", err)
+	}
+	dirPerm := dirInfo.Mode().Perm()
+	if dirPerm != 0700 {
+		t.Errorf("State directory permissions = %04o, want 0700", dirPerm)
+	}
+
+	// Check state file permissions (should be 0600)
+	statePath := filepath.Join(stateDir, "state.json")
+	fileInfo, err := os.Stat(statePath)
+	if err != nil {
+		t.Fatalf("Failed to stat state file: %v", err)
+	}
+	filePerm := fileInfo.Mode().Perm()
+	if filePerm != 0600 {
+		t.Errorf("State file permissions = %04o, want 0600", filePerm)
+	}
+}
+
 func TestExists(t *testing.T) {
 	tmpDir := t.TempDir()
 

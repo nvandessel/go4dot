@@ -3,6 +3,7 @@ package stow
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
@@ -194,4 +195,148 @@ func TestStowOptionsProgressCallback(t *testing.T) {
 	}
 
 	t.Logf("Received %d progress messages", len(progressMessages))
+}
+
+func TestStow_RejectsInjection(t *testing.T) {
+	tests := []struct {
+		name       string
+		configName string
+		wantErr    bool
+	}{
+		{name: "valid name", configName: "vim", wantErr: false},
+		{name: "flag injection --target", configName: "--target=/etc", wantErr: true},
+		{name: "flag injection -D", configName: "-D", wantErr: true},
+		{name: "shell metachar", configName: "vim;rm -rf /", wantErr: true},
+		{name: "path traversal", configName: "../etc/passwd", wantErr: true},
+		{name: "double dash only", configName: "--", wantErr: true},
+	}
+
+	// Save and restore the original commander
+	origCommander := CurrentCommander
+	defer func() { CurrentCommander = origCommander }()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockCommander{}
+			CurrentCommander = mock
+
+			tmpDir := t.TempDir()
+
+			// Create config directory for valid case
+			if !tt.wantErr {
+				err := os.MkdirAll(filepath.Join(tmpDir, tt.configName, ".config"), 0755)
+				if err != nil {
+					t.Fatalf("Failed to create test directory: %v", err)
+				}
+			}
+
+			opts := StowOptions{DryRun: true}
+
+			// Test StowWithCount
+			err := StowWithCount(tmpDir, tt.configName, 1, 1, opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("StowWithCount(%q) error = %v, wantErr %v", tt.configName, err, tt.wantErr)
+			}
+
+			// Test UnstowWithCount
+			err = UnstowWithCount(tmpDir, tt.configName, 1, 1, opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("UnstowWithCount(%q) error = %v, wantErr %v", tt.configName, err, tt.wantErr)
+			}
+
+			// Test RestowWithCount
+			err = RestowWithCount(tmpDir, tt.configName, 1, 1, opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RestowWithCount(%q) error = %v, wantErr %v", tt.configName, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestStow_UsesDoubleDashSeparator(t *testing.T) {
+	// Verify that the -- separator appears before the config name in args
+	origCommander := CurrentCommander
+	defer func() { CurrentCommander = origCommander }()
+
+	mock := &MockCommander{}
+	CurrentCommander = mock
+
+	tmpDir := t.TempDir()
+	configName := "vim"
+
+	// Create config directory
+	err := os.MkdirAll(filepath.Join(tmpDir, configName, ".config"), 0755)
+	if err != nil {
+		t.Fatalf("Failed to create test directory: %v", err)
+	}
+
+	opts := StowOptions{DryRun: true}
+
+	_ = StowWithCount(tmpDir, configName, 1, 1, opts)
+
+	// Verify -- is the second-to-last arg and configName is the last arg
+	args := mock.LastArgs
+	if len(args) < 2 {
+		t.Fatalf("Expected at least 2 args, got %d: %v", len(args), args)
+	}
+
+	lastArg := args[len(args)-1]
+	secondToLast := args[len(args)-2]
+
+	if secondToLast != "--" {
+		t.Errorf("Expected second-to-last arg to be '--', got %q (args: %v)", secondToLast, args)
+	}
+	if lastArg != configName {
+		t.Errorf("Expected last arg to be %q, got %q (args: %v)", configName, lastArg, args)
+	}
+
+	// Also verify no os.Getenv("HOME") leak: -t should have a real path, not empty
+	for i, arg := range args {
+		if arg == "-t" && i+1 < len(args) {
+			if args[i+1] == "" {
+				t.Error("Target directory (-t) should not be empty; os.UserHomeDir() should provide a value")
+			}
+			break
+		}
+	}
+}
+
+func TestUnstow_RejectsInjection(t *testing.T) {
+	origCommander := CurrentCommander
+	defer func() { CurrentCommander = origCommander }()
+
+	mock := &MockCommander{}
+	CurrentCommander = mock
+
+	tmpDir := t.TempDir()
+	opts := StowOptions{DryRun: true}
+
+	// Flag injection should be rejected
+	err := UnstowWithCount(tmpDir, "--target=/etc", 1, 1, opts)
+	if err == nil {
+		t.Error("UnstowWithCount should reject --target=/etc")
+	}
+	if err != nil && !strings.Contains(err.Error(), "invalid config name") {
+		t.Errorf("Expected 'invalid config name' error, got: %v", err)
+	}
+}
+
+func TestRestow_RejectsInjection(t *testing.T) {
+	origCommander := CurrentCommander
+	defer func() { CurrentCommander = origCommander }()
+
+	mock := &MockCommander{}
+	CurrentCommander = mock
+
+	tmpDir := t.TempDir()
+	opts := StowOptions{DryRun: true}
+
+	// Flag injection should be rejected
+	err := RestowWithCount(tmpDir, "-D", 1, 1, opts)
+	if err == nil {
+		t.Error("RestowWithCount should reject -D")
+	}
+	if err != nil && !strings.Contains(err.Error(), "invalid config name") {
+		t.Errorf("Expected 'invalid config name' error, got: %v", err)
+	}
 }
