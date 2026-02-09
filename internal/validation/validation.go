@@ -191,7 +191,7 @@ func ValidateDestinationPath(expanded string, baseDir string) error {
 		return fmt.Errorf("cannot determine relative path from %q to %q: %w", baseDir, cleaned, err)
 	}
 
-	if strings.HasPrefix(rel, "..") {
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("destination path %q escapes base directory %q", expanded, baseDir)
 	}
 

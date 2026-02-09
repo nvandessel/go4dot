@@ -307,6 +307,9 @@ func TestValidateDestinationPath(t *testing.T) {
 		{name: "sibling directory", expanded: "/home/other/config", baseDir: "/home/user", wantErr: true},
 		{name: "escape to system dir", expanded: "/usr/bin/evil", baseDir: "/home/user", wantErr: true},
 
+		// Dotdot-prefixed directory name (should not false-positive)
+		{name: "dotdot-prefixed dir name is allowed", expanded: "/base/..foo", baseDir: "/base", wantErr: false},
+
 		// Security-focused: real attack patterns
 		{name: "shadow file attack", expanded: "/home/user/../../etc/shadow", baseDir: "/home/user", wantErr: true},
 		{name: "crontab injection", expanded: "/var/spool/cron/root", baseDir: "/home/user", wantErr: true},
