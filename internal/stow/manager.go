@@ -91,6 +91,11 @@ func (m *MockCommander) Run(name string, args ...string) ([]byte, error) {
 			dryRun = true
 		case "-v":
 			// ignore
+		case "--":
+			// Everything after -- is a package name, not a flag
+			packages = append(packages, args[i+1:]...)
+			// Skip to end since we've consumed all remaining args
+			i = len(args) - 1
 		default:
 			if !strings.HasPrefix(arg, "-") {
 				packages = append(packages, arg)
