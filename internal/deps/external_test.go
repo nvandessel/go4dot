@@ -3,10 +3,12 @@ package deps
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 func TestExpandPath(t *testing.T) {
@@ -22,6 +24,7 @@ func TestExpandPath(t *testing.T) {
 		input    string
 		repoRoot string
 		expected string
+		wantErr  bool
 	}{
 		{
 			name:     "Home directory expansion",
@@ -30,16 +33,14 @@ func TestExpandPath(t *testing.T) {
 			expected: filepath.Join(home, ".config/test"),
 		},
 		{
-			name:     "Absolute path unchanged",
-			input:    "/usr/local/bin",
-			repoRoot: "",
-			expected: "/usr/local/bin",
+			name:    "Absolute path rejected",
+			input:   "/usr/local/bin",
+			wantErr: true,
 		},
 		{
-			name:     "Relative path cleaned",
-			input:    "./foo/../bar",
-			repoRoot: "",
-			expected: "bar",
+			name:    "Relative path rejected",
+			input:   "./foo/../bar",
+			wantErr: true,
 		},
 		{
 			name:     "Home only",
@@ -58,11 +59,63 @@ func TestExpandPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := expandPath(tt.input, tt.repoRoot)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expandPath(%q) expected error, got result %q", tt.input, result)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("expandPath() error = %v", err)
 			}
 			if result != tt.expected {
 				t.Errorf("expandPath(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExpandPath_PathTraversal(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		repoRoot string
+		wantErr  bool
+	}{
+		{
+			name:    "valid home path",
+			path:    "~/.config/nvim",
+			wantErr: false,
+		},
+		{
+			name:     "valid repoRoot path",
+			path:     "@repoRoot/plugins",
+			repoRoot: "/tmp/dotfiles",
+			wantErr:  false,
+		},
+		{
+			name:    "home traversal",
+			path:    "~/../../etc/shadow",
+			wantErr: true,
+		},
+		{
+			name:     "repoRoot traversal",
+			path:     "@repoRoot/../../etc/shadow",
+			repoRoot: "/tmp/dotfiles",
+			wantErr:  true,
+		},
+		{
+			name:    "bare absolute path",
+			path:    "/etc/shadow",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := expandPath(tt.path, tt.repoRoot)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expandPath(%q, %q) error = %v, wantErr %v", tt.path, tt.repoRoot, err, tt.wantErr)
 			}
 		})
 	}
@@ -293,19 +346,19 @@ func TestCheckExternalStatus(t *testing.T) {
 				ID:          "installed",
 				Name:        "Installed Dep",
 				URL:         "https://github.com/example/repo.git",
-				Destination: installedPath,
+				Destination: "@repoRoot/installed",
 			},
 			{
 				ID:          "missing",
 				Name:        "Missing Dep",
 				URL:         "https://github.com/example/missing.git",
-				Destination: filepath.Join(tmpDir, "nonexistent"),
+				Destination: "@repoRoot/nonexistent",
 			},
 			{
 				ID:          "skipped",
 				Name:        "Skipped Dep",
 				URL:         "https://github.com/example/skipped.git",
-				Destination: filepath.Join(tmpDir, "skipped"),
+				Destination: "@repoRoot/skipped",
 				Condition:   map[string]string{"os": "windows"}, // Will not match
 			},
 		},
@@ -317,7 +370,7 @@ func TestCheckExternalStatus(t *testing.T) {
 		PackageManager: "dnf",
 	}
 
-	statuses := CheckExternalStatus(cfg, p, "")
+	statuses := CheckExternalStatus(cfg, p, tmpDir)
 
 	if len(statuses) != 3 {
 		t.Fatalf("len(statuses) = %d, want 3", len(statuses))
@@ -358,13 +411,13 @@ func TestCloneExternalDryRun(t *testing.T) {
 				ID:          "test1",
 				Name:        "Test Repo 1",
 				URL:         "https://github.com/example/repo1.git",
-				Destination: filepath.Join(tmpDir, "repo1"),
+				Destination: "@repoRoot/repo1",
 			},
 			{
 				ID:          "test2",
 				Name:        "Test Repo 2",
 				URL:         "https://github.com/example/repo2.git",
-				Destination: filepath.Join(tmpDir, "repo2"),
+				Destination: "@repoRoot/repo2",
 				Condition:   map[string]string{"os": "windows"}, // Will be skipped
 			},
 		},
@@ -378,7 +431,8 @@ func TestCloneExternalDryRun(t *testing.T) {
 
 	var progressMessages []string
 	opts := ExternalOptions{
-		DryRun: true,
+		DryRun:   true,
+		RepoRoot: tmpDir,
 		ProgressFunc: func(current, total int, msg string) {
 			progressMessages = append(progressMessages, msg)
 		},
@@ -424,7 +478,7 @@ func TestCloneExternalSkipsExisting(t *testing.T) {
 				ID:          "existing",
 				Name:        "Existing Repo",
 				URL:         "https://github.com/example/existing.git",
-				Destination: existingPath,
+				Destination: "@repoRoot/existing",
 			},
 		},
 	}
@@ -435,7 +489,7 @@ func TestCloneExternalSkipsExisting(t *testing.T) {
 		PackageManager: "dnf",
 	}
 
-	result, err := CloneExternal(cfg, p, ExternalOptions{})
+	result, err := CloneExternal(cfg, p, ExternalOptions{RepoRoot: tmpDir})
 	if err != nil {
 		t.Fatalf("CloneExternal() error = %v", err)
 	}
@@ -460,7 +514,7 @@ func TestCloneSingleNotFound(t *testing.T) {
 				ID:          "test",
 				Name:        "Test Repo",
 				URL:         "https://github.com/example/test.git",
-				Destination: "/tmp/test",
+				Destination: "@repoRoot/test",
 			},
 		},
 	}
@@ -469,7 +523,7 @@ func TestCloneSingleNotFound(t *testing.T) {
 		OS: "linux",
 	}
 
-	err := CloneSingle(cfg, p, "nonexistent", ExternalOptions{})
+	err := CloneSingle(cfg, p, "nonexistent", ExternalOptions{RepoRoot: "/tmp"})
 	if err == nil {
 		t.Error("Expected error for nonexistent ID")
 	}
@@ -486,12 +540,12 @@ func TestRemoveExternalNotFound(t *testing.T) {
 				ID:          "test",
 				Name:        "Test Repo",
 				URL:         "https://github.com/example/test.git",
-				Destination: "/tmp/test",
+				Destination: "@repoRoot/test",
 			},
 		},
 	}
 
-	err := RemoveExternal(cfg, "nonexistent", ExternalOptions{})
+	err := RemoveExternal(cfg, "nonexistent", ExternalOptions{RepoRoot: "/tmp"})
 	if err == nil {
 		t.Error("Expected error for nonexistent ID")
 	}
@@ -512,14 +566,15 @@ func TestRemoveExternalDryRun(t *testing.T) {
 				ID:          "toremove",
 				Name:        "To Remove",
 				URL:         "https://github.com/example/toremove.git",
-				Destination: toRemove,
+				Destination: "@repoRoot/toremove",
 			},
 		},
 	}
 
 	var progressMessages []string
 	opts := ExternalOptions{
-		DryRun: true,
+		DryRun:   true,
+		RepoRoot: tmpDir,
 		ProgressFunc: func(current, total int, msg string) {
 			progressMessages = append(progressMessages, msg)
 		},
@@ -555,12 +610,12 @@ func TestRemoveExternal(t *testing.T) {
 				ID:          "toremove",
 				Name:        "To Remove",
 				URL:         "https://github.com/example/toremove.git",
-				Destination: toRemove,
+				Destination: "@repoRoot/toremove",
 			},
 		},
 	}
 
-	err := RemoveExternal(cfg, "toremove", ExternalOptions{})
+	err := RemoveExternal(cfg, "toremove", ExternalOptions{RepoRoot: tmpDir})
 	if err != nil {
 		t.Fatalf("RemoveExternal() error = %v", err)
 	}
@@ -677,5 +732,114 @@ func TestEmptyExternalConfig(t *testing.T) {
 
 	if len(result.Cloned) != 0 || len(result.Failed) != 0 || len(result.Skipped) != 0 {
 		t.Error("Expected empty result for empty config")
+	}
+}
+
+// TestGitClone_URLInjection verifies that malicious URLs are rejected by the
+// validation layer before they can reach exec.Command. Tests both through the
+// validation function directly and through the unexported gitClone function.
+func TestGitClone_URLInjection(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		// Flag injection attacks — these must be rejected
+		{name: "upload-pack flag injection", url: "--upload-pack=malicious", wantErr: true},
+		{name: "config flag injection", url: "--config=core.sshCommand=evil", wantErr: true},
+		{name: "single hyphen flag", url: "-c", wantErr: true},
+		{name: "template flag injection", url: "--template=/tmp/evil", wantErr: true},
+		{name: "recurse-submodules injection", url: "--recurse-submodules=evil", wantErr: true},
+
+		// file:// scheme attacks — local file access must be blocked
+		{name: "file scheme", url: "file:///etc/passwd", wantErr: true},
+		{name: "file scheme uppercase", url: "FILE:///etc/passwd", wantErr: true},
+
+		// Shell metacharacter injection
+		{name: "semicolon injection", url: "https://evil.com/repo;rm -rf /", wantErr: true},
+		{name: "pipe injection", url: "https://evil.com/repo|cat /etc/passwd", wantErr: true},
+		{name: "backtick injection", url: "https://evil.com/`whoami`/repo", wantErr: true},
+		{name: "newline injection", url: "https://github.com/user/repo\n--upload-pack=evil", wantErr: true},
+
+		// Valid URLs that must be accepted
+		{name: "valid https url", url: "https://github.com/user/repo.git", wantErr: false},
+		{name: "valid ssh url", url: "git@github.com:user/repo.git", wantErr: false},
+		{name: "valid https without .git", url: "https://github.com/user/repo", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validation.ValidateGitURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateGitURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestGitClone_Validation verifies that gitClone rejects invalid URLs
+// before attempting to run git. Since gitClone is unexported, we call
+// it directly from a test in the same package.
+func TestGitClone_Validation(t *testing.T) {
+	tests := []struct {
+		name   string
+		url    string
+		errMsg string
+	}{
+		{
+			name:   "flag injection rejected",
+			url:    "--upload-pack=malicious",
+			errMsg: "invalid git URL",
+		},
+		{
+			name:   "file scheme rejected",
+			url:    "file:///etc/passwd",
+			errMsg: "invalid git URL",
+		},
+		{
+			name:   "empty url rejected",
+			url:    "",
+			errMsg: "invalid git URL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use a dummy destination; validation should fail before git runs
+			err := gitClone(tt.url, "/tmp/go4dot-test-should-not-exist")
+			if err == nil {
+				t.Errorf("gitClone(%q, ...) expected error but got nil", tt.url)
+				return
+			}
+			if !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("gitClone(%q, ...) error = %q, want it to contain %q", tt.url, err.Error(), tt.errMsg)
+			}
+		})
+	}
+}
+
+// TestGitPull_PathValidation verifies that gitPull rejects relative paths.
+// gitPull is unexported, so we call it directly from within the package.
+func TestGitPull_PathValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "relative path with dots", path: "../evil/repo"},
+		{name: "relative path no dots", path: "some/path"},
+		{name: "dot path", path: "."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := gitPull(tt.path)
+			if err == nil {
+				t.Errorf("gitPull(%q) expected error for relative path but got nil", tt.path)
+				return
+			}
+			if !strings.Contains(err.Error(), "must be absolute") {
+				t.Errorf("gitPull(%q) error = %q, want it to contain 'must be absolute'", tt.path, err.Error())
+			}
+		})
 	}
 }

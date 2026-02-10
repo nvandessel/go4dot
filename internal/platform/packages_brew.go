@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // BrewManager implements PackageManager for Homebrew (macOS, Linux)
@@ -26,6 +28,13 @@ func (b *BrewManager) Install(packages ...string) error {
 	mapped := make([]string, len(packages))
 	for i, pkg := range packages {
 		mapped[i] = MapPackageName(pkg, "brew")
+	}
+
+	// Validate package names after mapping to prevent flag injection
+	for _, m := range mapped {
+		if err := validation.ValidatePackageName(m); err != nil {
+			return fmt.Errorf("invalid package name %q: %w", m, err)
+		}
 	}
 
 	args := []string{"install"}

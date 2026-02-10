@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // YumManager implements PackageManager for YUM (RHEL 7, CentOS 7)
@@ -26,6 +28,13 @@ func (y *YumManager) Install(packages ...string) error {
 	mapped := make([]string, len(packages))
 	for i, pkg := range packages {
 		mapped[i] = MapPackageName(pkg, "yum")
+	}
+
+	// Validate package names after mapping to prevent flag injection
+	for _, m := range mapped {
+		if err := validation.ValidatePackageName(m); err != nil {
+			return fmt.Errorf("invalid package name %q: %w", m, err)
+		}
 	}
 
 	args := []string{"install", "-y"}

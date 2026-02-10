@@ -9,6 +9,7 @@ import (
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // ExternalResult represents the result of cloning external dependencies
@@ -300,21 +301,33 @@ type ExternalStatus struct {
 	Path   string
 }
 
-// expandPath expands ~ to home directory and resolves @repoRoot
+// expandPath expands ~ to home directory and resolves @repoRoot.
+// It validates that expanded paths stay within their base directory
+// and rejects bare absolute paths that don't use ~/ or @repoRoot/ prefixes.
 func expandPath(path, repoRoot string) (string, error) {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", fmt.Errorf("failed to get home directory: %w", err)
 		}
-		path = filepath.Join(home, path[2:])
+		expanded := filepath.Clean(filepath.Join(home, path[2:]))
+		if err := validation.ValidateDestinationPath(expanded, home); err != nil {
+			return "", fmt.Errorf("path traversal detected: %w", err)
+		}
+		return expanded, nil
 	} else if strings.HasPrefix(path, "@repoRoot/") {
 		if repoRoot == "" {
 			return "", fmt.Errorf("repoRoot is not set, cannot expand @repoRoot")
 		}
-		path = filepath.Join(repoRoot, path[10:]) // 10 is length of "@repoRoot/"
+		expanded := filepath.Clean(filepath.Join(repoRoot, path[10:])) // 10 is length of "@repoRoot/"
+		if err := validation.ValidateDestinationPath(expanded, repoRoot); err != nil {
+			return "", fmt.Errorf("path traversal detected: %w", err)
+		}
+		return expanded, nil
 	}
-	return filepath.Clean(path), nil
+
+	// Reject bare absolute paths and any other paths not using ~/ or @repoRoot/
+	return "", fmt.Errorf("destination path must start with ~/ or @repoRoot/, got: %q", path)
 }
 
 // checkDestination returns whether the path exists and if it's a git repo
@@ -338,15 +351,24 @@ func checkDestination(path string) (exists bool, isGit bool) {
 	return true, false
 }
 
-// gitClone clones a repository to the destination
+// gitClone clones a repository to the destination.
+// It validates the URL to prevent flag injection and uses "--" to separate
+// git options from the URL operand as defense-in-depth.
 func gitClone(url, dest string) error {
+	// Validate URL to reject flag injection, file:// scheme, and shell metacharacters
+	if err := validation.ValidateGitURL(url); err != nil {
+		return fmt.Errorf("invalid git URL: %w", err)
+	}
+
 	// Create parent directory if it doesn't exist
 	parentDir := filepath.Dir(dest)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	cmd := exec.Command("git", "clone", "--depth", "1", url, dest)
+	// Use "--" to separate options from operands, preventing URL from being
+	// interpreted as a git flag (e.g., --upload-pack=malicious).
+	cmd := exec.Command("git", "clone", "--depth", "1", "--", url, dest)
 	cmd.Stdout = nil // Suppress output
 	cmd.Stderr = nil
 
@@ -357,8 +379,13 @@ func gitClone(url, dest string) error {
 	return nil
 }
 
-// gitPull pulls updates for an existing repository
+// gitPull pulls updates for an existing repository.
+// It validates that path is absolute to prevent path traversal attacks.
 func gitPull(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("git pull path must be absolute: %q", path)
+	}
+
 	cmd := exec.Command("git", "-C", path, "pull", "--ff-only")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
