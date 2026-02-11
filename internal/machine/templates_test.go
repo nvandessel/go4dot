@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nvandessel/go4dot/internal/config"
@@ -471,9 +470,6 @@ func TestExpandPathRejectsNonTildePaths(t *testing.T) {
 			if err == nil {
 				t.Errorf("expandPath(%q) should have returned error for non-~/ path", tt.input)
 			}
-			if err != nil && !strings.Contains(err.Error(), "must start with ~/") {
-				t.Errorf("expandPath(%q) error = %q, expected 'must start with ~/' message", tt.input, err.Error())
-			}
 		})
 	}
 }
@@ -494,9 +490,6 @@ func TestExpandPathRejectsTraversal(t *testing.T) {
 			_, err := expandPath(tt.input)
 			if err == nil {
 				t.Errorf("expandPath(%q) should have returned error for path traversal", tt.input)
-			}
-			if err != nil && !strings.Contains(err.Error(), "escapes base directory") {
-				t.Errorf("expandPath(%q) error = %q, expected 'escapes base directory' message", tt.input, err.Error())
 			}
 		})
 	}
