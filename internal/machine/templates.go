@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"github.com/nvandessel/go4dot/internal/config"
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // RenderResult holds the result of rendering a template
@@ -192,16 +193,25 @@ func RemoveMachineConfig(mc *config.MachinePrompt, opts RenderOptions) error {
 	return nil
 }
 
-// expandPath expands ~ to home directory
+// expandPath expands ~ to home directory.
+// Only paths starting with ~/ are accepted for security.
 func expandPath(path string) (string, error) {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		path = filepath.Join(home, path[2:])
+	if !strings.HasPrefix(path, "~/") {
+		return "", fmt.Errorf("destination path must start with ~/: %q", path)
 	}
-	return filepath.Clean(path), nil
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	expanded := filepath.Clean(filepath.Join(home, path[2:]))
+
+	if err := validation.ValidateDestinationPath(expanded, home); err != nil {
+		return "", fmt.Errorf("invalid destination path: %w", err)
+	}
+
+	return expanded, nil
 }
 
 // ValidateTemplate checks if a template is valid

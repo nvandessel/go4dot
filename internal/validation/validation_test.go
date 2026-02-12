@@ -258,6 +258,10 @@ func TestValidateConfigName(t *testing.T) {
 		{name: "backtick", input: "cfg`id`", wantErr: true},
 		{name: "space", input: "my config", wantErr: true},
 
+		// Max length
+		{name: "at max length", input: strings.Repeat("a", 255), wantErr: false},
+		{name: "over max length", input: strings.Repeat("a", 256), wantErr: true},
+
 		// Security-focused: stow flag injection
 		{name: "stow target flag", input: "--target=/etc", wantErr: true},
 		{name: "stow dir flag", input: "--dir=/tmp/evil", wantErr: true},
@@ -302,6 +306,9 @@ func TestValidateDestinationPath(t *testing.T) {
 		{name: "escape with dotdot", expanded: "/home/user/../../../tmp/evil", baseDir: "/home/user", wantErr: true},
 		{name: "sibling directory", expanded: "/home/other/config", baseDir: "/home/user", wantErr: true},
 		{name: "escape to system dir", expanded: "/usr/bin/evil", baseDir: "/home/user", wantErr: true},
+
+		// Dotdot-prefixed directory name (should not false-positive)
+		{name: "dotdot-prefixed dir name is allowed", expanded: "/base/..foo", baseDir: "/base", wantErr: false},
 
 		// Security-focused: real attack patterns
 		{name: "shadow file attack", expanded: "/home/user/../../etc/shadow", baseDir: "/home/user", wantErr: true},

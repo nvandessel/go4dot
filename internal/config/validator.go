@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nvandessel/go4dot/internal/validation"
 )
 
 // ValidationError represents a configuration validation error
@@ -60,6 +62,11 @@ func (c *Config) Validate(configDir string) error {
 				Field:   fmt.Sprintf("configs.core[%d].name", i),
 				Message: "name is required",
 			})
+		} else if err := validation.ValidateConfigName(cfg.Name); err != nil {
+			errors = append(errors, ValidationError{
+				Field:   fmt.Sprintf("configs.core[%d].name", i),
+				Message: err.Error(),
+			})
 		}
 		if cfg.Path == "" {
 			errors = append(errors, ValidationError{
@@ -95,6 +102,11 @@ func (c *Config) Validate(configDir string) error {
 				Field:   fmt.Sprintf("configs.optional[%d].name", i),
 				Message: "name is required",
 			})
+		} else if err := validation.ValidateConfigName(cfg.Name); err != nil {
+			errors = append(errors, ValidationError{
+				Field:   fmt.Sprintf("configs.optional[%d].name", i),
+				Message: err.Error(),
+			})
 		}
 		if cfg.Path == "" {
 			errors = append(errors, ValidationError{
@@ -129,6 +141,20 @@ func (c *Config) Validate(configDir string) error {
 		errors = append(errors, extErrors...)
 	}
 
+	// Validate dependency items for security
+	for i, dep := range c.Dependencies.Critical {
+		depErrors := validateDependencyItem(dep, fmt.Sprintf("dependencies.critical[%d]", i))
+		errors = append(errors, depErrors...)
+	}
+	for i, dep := range c.Dependencies.Core {
+		depErrors := validateDependencyItem(dep, fmt.Sprintf("dependencies.core[%d]", i))
+		errors = append(errors, depErrors...)
+	}
+	for i, dep := range c.Dependencies.Optional {
+		depErrors := validateDependencyItem(dep, fmt.Sprintf("dependencies.optional[%d]", i))
+		errors = append(errors, depErrors...)
+	}
+
 	// Validate machine config
 	for i, mc := range c.MachineConfig {
 		if mc.ID == "" {
@@ -149,42 +175,14 @@ func (c *Config) Validate(configDir string) error {
 				Message: "template is required",
 			})
 		}
+
+		// Security: validate machine config destination prefix
+		mcErrors := validateMachineConfig(mc, fmt.Sprintf("machine_config[%d]", i))
+		errors = append(errors, mcErrors...)
 	}
 
-	// Validate post_install script
-	if c.PostInstall != "" {
-		scriptPath := c.PostInstall
-		if !filepath.IsAbs(scriptPath) {
-			scriptPath = filepath.Join(configDir, scriptPath)
-		}
-		info, err := os.Stat(scriptPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				errors = append(errors, ValidationError{
-					Field:   "post_install",
-					Message: fmt.Sprintf("script does not exist: %s", scriptPath),
-				})
-			} else {
-				errors = append(errors, ValidationError{
-					Field:   "post_install",
-					Message: fmt.Sprintf("invalid path for script: %s (%v)", scriptPath, err),
-				})
-			}
-		} else {
-			// Check if it's a file and executable
-			if info.IsDir() {
-				errors = append(errors, ValidationError{
-					Field:   "post_install",
-					Message: fmt.Sprintf("path is a directory, not a file: %s", scriptPath),
-				})
-			} else if info.Mode()&0111 == 0 {
-				errors = append(errors, ValidationError{
-					Field:   "post_install",
-					Message: fmt.Sprintf("script is not executable: %s", scriptPath),
-				})
-			}
-		}
-	}
+	// PostInstall is a display-only string shown to the user after installation.
+	// It is not executed by go4dot, so no executable-bit validation is needed.
 
 	// After all other validation, check for circular dependencies
 	if err := c.validateCircularDependencies(); err != nil {
@@ -278,11 +276,21 @@ func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 			Field:   prefix + ".url",
 			Message: "url is required",
 		})
+	} else if err := validation.ValidateGitURL(ext.URL); err != nil {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".url",
+			Message: err.Error(),
+		})
 	}
 	if ext.Destination == "" {
 		errors = append(errors, ValidationError{
 			Field:   prefix + ".destination",
 			Message: "destination is required",
+		})
+	} else if !strings.HasPrefix(ext.Destination, "~/") && !strings.HasPrefix(ext.Destination, "@repoRoot/") {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".destination",
+			Message: "destination must start with ~/ or @repoRoot/",
 		})
 	}
 	method := strings.ToLower(strings.TrimSpace(ext.Method))
@@ -300,6 +308,58 @@ func validateExternalDep(ext ExternalDep, prefix string) []ValidationError {
 			Message: "merge_strategy must be \"overwrite\" or \"keep_existing\"",
 		})
 	}
+	return errors
+}
+
+// validateDependencyItem validates a single dependency item's fields for security.
+func validateDependencyItem(dep DependencyItem, prefix string) []ValidationError {
+	var errors []ValidationError
+
+	// Validate Binary field if set
+	if dep.Binary != "" {
+		if err := validation.ValidateBinaryName(dep.Binary); err != nil {
+			errors = append(errors, ValidationError{
+				Field:   prefix + ".binary",
+				Message: err.Error(),
+			})
+		}
+	}
+
+	// Validate VersionCmd field if set
+	if dep.VersionCmd != "" {
+		if err := validation.ValidateVersionCmd(dep.VersionCmd); err != nil {
+			errors = append(errors, ValidationError{
+				Field:   prefix + ".version_cmd",
+				Message: err.Error(),
+			})
+		}
+	}
+
+	// Validate Package map values
+	for mgr, pkgName := range dep.Package {
+		if err := validation.ValidatePackageName(pkgName); err != nil {
+			errors = append(errors, ValidationError{
+				Field:   fmt.Sprintf("%s.package[%s]", prefix, mgr),
+				Message: err.Error(),
+			})
+		}
+	}
+
+	return errors
+}
+
+// validateMachineConfig validates machine config fields for security.
+func validateMachineConfig(mc MachinePrompt, prefix string) []ValidationError {
+	var errors []ValidationError
+
+	// Validate destination prefix (must start with ~/)
+	if mc.Destination != "" && !strings.HasPrefix(mc.Destination, "~/") {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".destination",
+			Message: "machine config destination must start with ~/",
+		})
+	}
+
 	return errors
 }
 

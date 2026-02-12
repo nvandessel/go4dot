@@ -140,11 +140,16 @@ func ValidatePackageName(name string) error {
 
 // ValidateConfigName checks that a config name contains only safe characters.
 // It allows alphanumeric characters, hyphens, underscores, dots, plus signs,
-// and at-signs. It rejects empty strings, names starting with hyphens
-// (flag injection via stow), path separators, and shell metacharacters.
+// and at-signs. It rejects empty strings, names exceeding 255 characters,
+// names starting with hyphens (flag injection via stow), path separators,
+// and shell metacharacters.
 func ValidateConfigName(name string) error {
 	if name == "" {
 		return fmt.Errorf("config name must not be empty")
+	}
+
+	if len(name) > maxNameLength {
+		return fmt.Errorf("config name exceeds maximum length of %d characters", maxNameLength)
 	}
 
 	if strings.HasPrefix(name, "-") {
@@ -186,7 +191,7 @@ func ValidateDestinationPath(expanded string, baseDir string) error {
 		return fmt.Errorf("cannot determine relative path from %q to %q: %w", baseDir, cleaned, err)
 	}
 
-	if strings.HasPrefix(rel, "..") {
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("destination path %q escapes base directory %q", expanded, baseDir)
 	}
 
