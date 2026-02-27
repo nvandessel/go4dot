@@ -79,12 +79,12 @@ func RenderAndWrite(mc *config.MachinePrompt, values map[string]string, opts Ren
 
 	// Create parent directory if needed
 	parentDir := filepath.Dir(result.Destination)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create directory %s: %w", parentDir, err)
 	}
 
 	// Write the file
-	if err := os.WriteFile(result.Destination, []byte(result.Content), 0644); err != nil {
+	if err := os.WriteFile(result.Destination, []byte(result.Content), 0600); err != nil {
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -193,8 +193,8 @@ func RemoveMachineConfig(mc *config.MachinePrompt, opts RenderOptions) error {
 	return nil
 }
 
-// expandPath expands ~ to home directory.
-// Only paths starting with ~/ are accepted for security.
+// expandPath expands ~ to home directory and validates the path stays within it.
+// Paths must start with "~/" to ensure they are relative to the home directory.
 func expandPath(path string) (string, error) {
 	if !strings.HasPrefix(path, "~/") {
 		return "", fmt.Errorf("destination path must start with ~/: %q", path)
