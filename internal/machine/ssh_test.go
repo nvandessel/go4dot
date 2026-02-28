@@ -271,7 +271,8 @@ func TestGetSSHPublicKeyNotPub(t *testing.T) {
 
 func TestGetSSHPublicKeyTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
-	outsidePath := "/tmp/outside_key.pub"
+	outsideDir := t.TempDir()
+	outsidePath := filepath.Join(outsideDir, "outside_key.pub")
 
 	_, err := GetSSHPublicKey(outsidePath, tmpDir)
 	if err == nil {
@@ -283,7 +284,8 @@ func TestAddKeyToAgentBadPath(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Path with traversal should fail validation
-	err := AddKeyToAgent("/tmp/../etc/shadow", tmpDir)
+	outsideDir := t.TempDir()
+	err := AddKeyToAgent(filepath.Join(outsideDir, "..", "etc", "shadow"), tmpDir)
 	if err == nil {
 		t.Fatal("expected error for bad path, got nil")
 	}

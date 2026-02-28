@@ -49,9 +49,11 @@ var dangerousSSHFilenames = map[string]bool{
 	"authorized_keys":     true,
 	"authorized_keys.pub": true,
 	"config":              true,
+	"config.pub":          true,
 	"known_hosts":         true,
 	"known_hosts.pub":     true,
 	"environment":         true,
+	"environment.pub":     true,
 }
 
 // gitHTTPSRegexp matches HTTPS git URLs with a fully anchored pattern.

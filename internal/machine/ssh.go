@@ -131,10 +131,15 @@ func getKeyFingerprint(pubPath string) string {
 // DetectAllSSHKeys merges agent keys (from DetectSSHKeys in git.go) with file keys.
 // Deduplicates by Path; agent keys win (set Loaded: true, Source: "both").
 func DetectAllSSHKeys(sshDir string) ([]SSHKey, error) {
-	agentKeys, _ := DetectSSHKeys() // from git.go
-	fileKeys, err := DetectSSHKeyFiles(sshDir)
-	if err != nil {
-		return agentKeys, err
+	agentKeys, agentErr := DetectSSHKeys() // from git.go
+	fileKeys, fileErr := DetectSSHKeyFiles(sshDir)
+
+	// Combine errors if both fail
+	if agentErr != nil && fileErr != nil {
+		return nil, fmt.Errorf("agent keys: %w; file keys: %v", agentErr, fileErr)
+	}
+	if fileErr != nil {
+		return agentKeys, fileErr
 	}
 
 	// Index agent keys by path for dedup lookup
