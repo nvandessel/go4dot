@@ -168,6 +168,8 @@ type SSHKey struct {
 	Type        string // "rsa", "ed25519", etc.
 	Fingerprint string
 	Comment     string
+	Loaded      bool   // true if key is in ssh-agent
+	Source      string // "agent", "file", or "both"
 }
 
 // DetectSSHKeys returns a list of available SSH keys
@@ -206,6 +208,8 @@ func parseSSHOutput(output string) []SSHKey {
 		if len(parts) >= 4 {
 			key := SSHKey{
 				Fingerprint: parts[1],
+				Loaded:      true,
+				Source:      "agent",
 			}
 
 			// Path is second to last, type is in parentheses at end

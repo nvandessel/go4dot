@@ -66,6 +66,16 @@ func TestParseSSHOutput(t *testing.T) {
 	if keys[1].Type != "ed25519" {
 		t.Errorf("Second key type mismatch: got %q", keys[1].Type)
 	}
+
+	// Verify Loaded and Source fields for all parsed keys
+	for i, key := range keys {
+		if !key.Loaded {
+			t.Errorf("Key %d: expected Loaded=true, got false", i)
+		}
+		if key.Source != "agent" {
+			t.Errorf("Key %d: expected Source=\"agent\", got %q", i, key.Source)
+		}
+	}
 }
 
 func TestParseSSHOutputNoIdentities(t *testing.T) {
@@ -99,8 +109,10 @@ func TestFormatGPGKeyChoice(t *testing.T) {
 
 func TestFormatSSHKeyChoice(t *testing.T) {
 	key := SSHKey{
-		Path: "/home/user/.ssh/id_ed25519",
-		Type: "ed25519",
+		Path:   "/home/user/.ssh/id_ed25519",
+		Type:   "ed25519",
+		Loaded: true,
+		Source: "agent",
 	}
 
 	result := FormatSSHKeyChoice(key)
