@@ -83,44 +83,29 @@ func (c *GitHubClient) AddSSHKey(pubkeyPath, title, sshDir string) error {
 	return nil
 }
 
-// AddGPGKey registers a GPG key with GitHub using pipe: gpg --export | gh gpg-key add.
-// This method uses exec.Command directly for pipe orchestration and cannot be mocked
-// via the Commander interface. Use integration tests with real gpg/gh for testing.
+// AddGPGKey registers a GPG key with GitHub.
+// Exports the key via gpg, validates it's non-empty, then adds via gh.
 func (c *GitHubClient) AddGPGKey(keyID string) error {
 	if err := validation.ValidateGPGKeyID(keyID); err != nil {
 		return fmt.Errorf("invalid GPG key ID: %w", err)
 	}
 
-	// Use exec.Command directly for pipe orchestration (cannot use Commander for pipes)
-	gpgCmd := exec.Command("gpg", "--armor", "--export", keyID)
-	ghCmd := exec.Command("gh", "gpg-key", "add")
-
-	var gpgStderr, ghStderr bytes.Buffer
-
-	gpgOut, err := gpgCmd.StdoutPipe()
+	// Export GPG key first to detect missing-key case
+	gpgOut, err := exec.Command("gpg", "--armor", "--export", keyID).Output()
 	if err != nil {
-		return fmt.Errorf("failed to create pipe: %w", err)
+		return fmt.Errorf("gpg export failed: %w", err)
 	}
-	ghCmd.Stdin = gpgOut
-	gpgCmd.Stderr = &gpgStderr
+	if len(strings.TrimSpace(string(gpgOut))) == 0 {
+		return fmt.Errorf("gpg key %q not found in local keyring", keyID)
+	}
+
+	// Add to GitHub via gh CLI
+	ghCmd := exec.Command("gh", "gpg-key", "add")
+	ghCmd.Stdin = strings.NewReader(string(gpgOut))
+	var ghStderr bytes.Buffer
 	ghCmd.Stderr = &ghStderr
-
-	if err := gpgCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start gpg: %w", err)
-	}
-	if err := ghCmd.Start(); err != nil {
-		_ = gpgCmd.Wait()
-		return fmt.Errorf("failed to start gh: %w", err)
-	}
-
-	gpgErr := gpgCmd.Wait()
-	ghErr := ghCmd.Wait()
-
-	if gpgErr != nil {
-		return fmt.Errorf("gpg export failed: %w\nStderr: %s", gpgErr, gpgStderr.String())
-	}
-	if ghErr != nil {
-		return fmt.Errorf("gh gpg-key add failed: %w\nStderr: %s", ghErr, ghStderr.String())
+	if err := ghCmd.Run(); err != nil {
+		return fmt.Errorf("gh gpg-key add failed: %w\nStderr: %s", err, ghStderr.String())
 	}
 	return nil
 }
