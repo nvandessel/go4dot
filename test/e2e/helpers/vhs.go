@@ -140,8 +140,8 @@ func generateDiff(expected, actual string) string {
 	actualLines := strings.Split(actual, "\n")
 
 	diff.WriteString("=== DIFF ===\n")
-	diff.WriteString(fmt.Sprintf("Expected lines: %d\n", len(expectedLines)))
-	diff.WriteString(fmt.Sprintf("Actual lines: %d\n\n", len(actualLines)))
+	fmt.Fprintf(&diff, "Expected lines: %d\n", len(expectedLines))
+	fmt.Fprintf(&diff, "Actual lines: %d\n\n", len(actualLines))
 
 	maxLines := len(expectedLines)
 	if len(actualLines) > maxLines {
@@ -158,9 +158,9 @@ func generateDiff(expected, actual string) string {
 		}
 
 		if expectedLine != actualLine {
-			diff.WriteString(fmt.Sprintf("Line %d:\n", i+1))
-			diff.WriteString(fmt.Sprintf("  - Expected: %q\n", expectedLine))
-			diff.WriteString(fmt.Sprintf("  + Actual:   %q\n\n", actualLine))
+			fmt.Fprintf(&diff, "Line %d:\n", i+1)
+			fmt.Fprintf(&diff, "  - Expected: %q\n", expectedLine)
+			fmt.Fprintf(&diff, "  + Actual:   %q\n\n", actualLine)
 		}
 	}
 

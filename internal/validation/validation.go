@@ -14,6 +14,9 @@ import (
 // maxNameLength is the maximum allowed length for names (binary, package, config).
 const maxNameLength = 255
 
+// maxEmailLength is the maximum allowed length for email addresses per RFC 5321.
+const maxEmailLength = 254
+
 // allowedVersionCmds is the whitelist of accepted version command arguments.
 var allowedVersionCmds = map[string]bool{
 	"--version": true,
@@ -34,6 +37,24 @@ var packageNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._\-+@/]+$`)
 // alphanumeric, hyphens, underscores, dots, plus, and at-sign.
 // Forward slash and backslash are explicitly excluded.
 var configNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._\-+@]+$`)
+
+// emailRegexp matches basic email format: local@domain.
+var emailRegexp = regexp.MustCompile(`^[a-zA-Z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$`)
+
+// sshKeyFilenameRegexp matches safe SSH key filenames.
+var sshKeyFilenameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// dangerousSSHFilenames are filenames that should never be written by key generation.
+var dangerousSSHFilenames = map[string]bool{
+	"authorized_keys":     true,
+	"authorized_keys.pub": true,
+	"config":              true,
+	"config.pub":          true,
+	"known_hosts":         true,
+	"known_hosts.pub":     true,
+	"environment":         true,
+	"environment.pub":     true,
+}
 
 // gitHTTPSRegexp matches HTTPS git URLs with a fully anchored pattern.
 var gitHTTPSRegexp = regexp.MustCompile(`^https://[a-zA-Z0-9][a-zA-Z0-9.\-@:/_~%+]*$`)
@@ -195,5 +216,62 @@ func ValidateDestinationPath(expanded string, baseDir string) error {
 		return fmt.Errorf("destination path %q escapes base directory %q", expanded, baseDir)
 	}
 
+	return nil
+}
+
+// ValidateEmail rejects: empty, >254 chars, leading hyphen, missing @, control chars, shell metacharacters.
+func ValidateEmail(email string) error {
+	if email == "" {
+		return fmt.Errorf("email must not be empty")
+	}
+	if len(email) > maxEmailLength {
+		return fmt.Errorf("email exceeds maximum length of %d characters", maxEmailLength)
+	}
+	if strings.HasPrefix(email, "-") {
+		return fmt.Errorf("email must not start with a hyphen: %q", email)
+	}
+	for _, r := range email {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("email must not contain control characters: %q", email)
+		}
+	}
+	if strings.ContainsAny(email, ";|&$`<>") {
+		return fmt.Errorf("email must not contain shell metacharacters: %q", email)
+	}
+	if !emailRegexp.MatchString(email) {
+		return fmt.Errorf("invalid email format: %q", email)
+	}
+	return nil
+}
+
+// ValidateSSHKeyPath rejects: non-absolute paths, traversal outside sshDir, hyphen filenames, dangerous filenames.
+func ValidateSSHKeyPath(path string, sshDir string) error {
+	if path == "" {
+		return fmt.Errorf("SSH key path must not be empty")
+	}
+	if sshDir == "" {
+		return fmt.Errorf("SSH directory must not be empty")
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("SSH key path must be absolute: %q", path)
+	}
+	if !filepath.IsAbs(sshDir) {
+		return fmt.Errorf("SSH directory must be absolute: %q", sshDir)
+	}
+	// Check path stays within sshDir
+	if err := ValidateDestinationPath(path, sshDir); err != nil {
+		return fmt.Errorf("SSH key path escapes SSH directory: %w", err)
+	}
+	// Check filename safety
+	filename := filepath.Base(path)
+	if strings.HasPrefix(filename, "-") {
+		return fmt.Errorf("SSH key filename must not start with a hyphen: %q", filename)
+	}
+	if !sshKeyFilenameRegexp.MatchString(filename) {
+		return fmt.Errorf("SSH key filename contains invalid characters: %q", filename)
+	}
+	if dangerousSSHFilenames[filename] {
+		return fmt.Errorf("SSH key filename is a reserved SSH file: %q", filename)
+	}
 	return nil
 }

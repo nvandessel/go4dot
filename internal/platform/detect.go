@@ -152,20 +152,20 @@ func detectMacOSPackageManager(p *Platform) {
 func (p *Platform) String() string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("OS: %s", p.OS))
+	fmt.Fprintf(&sb, "OS: %s", p.OS)
 
 	if p.OS == "linux" {
-		sb.WriteString(fmt.Sprintf("\nDistro: %s", p.Distro))
+		fmt.Fprintf(&sb, "\nDistro: %s", p.Distro)
 		if p.DistroVersion != "" {
-			sb.WriteString(fmt.Sprintf(" %s", p.DistroVersion))
+			fmt.Fprintf(&sb, " %s", p.DistroVersion)
 		}
 		if p.IsWSL {
 			sb.WriteString(" (WSL)")
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("\nArchitecture: %s", p.Architecture))
-	sb.WriteString(fmt.Sprintf("\nPackage Manager: %s", p.PackageManager))
+	fmt.Fprintf(&sb, "\nArchitecture: %s", p.Architecture)
+	fmt.Fprintf(&sb, "\nPackage Manager: %s", p.PackageManager)
 
 	return sb.String()
 }

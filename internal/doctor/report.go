@@ -16,21 +16,21 @@ func (r *CheckResult) Report() string {
 
 	// Platform info
 	if r.Platform != nil {
-		sb.WriteString(fmt.Sprintf("Platform: %s", r.Platform.OS))
+		fmt.Fprintf(&sb, "Platform: %s", r.Platform.OS)
 		if r.Platform.Distro != "" {
-			sb.WriteString(fmt.Sprintf(" (%s)", r.Platform.Distro))
+			fmt.Fprintf(&sb, " (%s)", r.Platform.Distro)
 		}
-		sb.WriteString(fmt.Sprintf(" [%s]\n\n", r.Platform.PackageManager))
+		fmt.Fprintf(&sb, " [%s]\n\n", r.Platform.PackageManager)
 	}
 
 	// Main checks
 	sb.WriteString("── Health Checks ──\n\n")
 	for _, check := range r.Checks {
 		icon := statusIcon(check.Status)
-		sb.WriteString(fmt.Sprintf("%s %s\n", icon, check.Name))
-		sb.WriteString(fmt.Sprintf("  %s\n", check.Message))
+		fmt.Fprintf(&sb, "%s %s\n", icon, check.Name)
+		fmt.Fprintf(&sb, "  %s\n", check.Message)
 		if check.Fix != "" && check.Status != StatusOK {
-			sb.WriteString(fmt.Sprintf("  → %s\n", check.Fix))
+			fmt.Fprintf(&sb, "  → %s\n", check.Fix)
 		}
 		sb.WriteString("\n")
 	}
@@ -40,16 +40,16 @@ func (r *CheckResult) Report() string {
 	sb.WriteString("── Summary ──\n\n")
 
 	if errors > 0 {
-		sb.WriteString(fmt.Sprintf("✗ %d errors found\n", errors))
+		fmt.Fprintf(&sb, "✗ %d errors found\n", errors)
 	}
 	if warnings > 0 {
-		sb.WriteString(fmt.Sprintf("⚠ %d warnings\n", warnings))
+		fmt.Fprintf(&sb, "⚠ %d warnings\n", warnings)
 	}
 	if ok > 0 {
-		sb.WriteString(fmt.Sprintf("✓ %d checks passed\n", ok))
+		fmt.Fprintf(&sb, "✓ %d checks passed\n", ok)
 	}
 	if skipped > 0 {
-		sb.WriteString(fmt.Sprintf("⊘ %d skipped\n", skipped))
+		fmt.Fprintf(&sb, "⊘ %d skipped\n", skipped)
 	}
 
 	sb.WriteString("\n")
@@ -88,8 +88,8 @@ func (r *CheckResult) DetailedReport() string {
 			for _, s := range r.SymlinkStatus {
 				if s.Status != StatusOK {
 					icon := statusIcon(s.Status)
-					sb.WriteString(fmt.Sprintf("%s [%s] %s\n", icon, s.Config, s.TargetPath))
-					sb.WriteString(fmt.Sprintf("  %s\n", s.Message))
+					fmt.Fprintf(&sb, "%s [%s] %s\n", icon, s.Config, s.TargetPath)
+					fmt.Fprintf(&sb, "  %s\n", s.Message)
 				}
 			}
 		}
@@ -109,9 +109,9 @@ func (r *CheckResult) DetailedReport() string {
 			sb.WriteString("\n── Missing External Dependencies ──\n\n")
 			for _, s := range r.ExternalStatus {
 				if s.Status == "missing" {
-					sb.WriteString(fmt.Sprintf("• %s\n", s.Dep.Name))
-					sb.WriteString(fmt.Sprintf("  URL: %s\n", s.Dep.URL))
-					sb.WriteString(fmt.Sprintf("  Path: %s\n", s.Dep.Destination))
+					fmt.Fprintf(&sb, "• %s\n", s.Dep.Name)
+					fmt.Fprintf(&sb, "  URL: %s\n", s.Dep.URL)
+					fmt.Fprintf(&sb, "  Path: %s\n", s.Dep.Destination)
 				}
 			}
 		}
@@ -131,9 +131,9 @@ func (r *CheckResult) DetailedReport() string {
 			sb.WriteString("\n── Missing Machine Configurations ──\n\n")
 			for _, s := range r.MachineStatus {
 				if s.Status == "missing" {
-					sb.WriteString(fmt.Sprintf("• %s\n", s.ID))
-					sb.WriteString(fmt.Sprintf("  %s\n", s.Description))
-					sb.WriteString(fmt.Sprintf("  Destination: %s\n", s.Destination))
+					fmt.Fprintf(&sb, "• %s\n", s.ID)
+					fmt.Fprintf(&sb, "  %s\n", s.Description)
+					fmt.Fprintf(&sb, "  Destination: %s\n", s.Destination)
 				}
 			}
 		}
@@ -144,8 +144,8 @@ func (r *CheckResult) DetailedReport() string {
 		sb.WriteString("\n── Unmanaged Symlinks ──\n\n")
 		sb.WriteString("The following symlinks point to your dotfiles but are not in your config:\n\n")
 		for _, l := range r.UnmanagedLinks {
-			sb.WriteString(fmt.Sprintf("• %s\n", l.TargetPath))
-			sb.WriteString(fmt.Sprintf("  Points to: %s\n", l.SourcePath))
+			fmt.Fprintf(&sb, "• %s\n", l.TargetPath)
+			fmt.Fprintf(&sb, "  Points to: %s\n", l.SourcePath)
 		}
 	}
 
@@ -155,7 +155,7 @@ func (r *CheckResult) DetailedReport() string {
 		if len(missing) > 0 {
 			sb.WriteString("\n── Missing Dependencies ──\n\n")
 			for _, dep := range missing {
-				sb.WriteString(fmt.Sprintf("• %s\n", dep.Item.Name))
+				fmt.Fprintf(&sb, "• %s\n", dep.Item.Name)
 			}
 		}
 
@@ -164,7 +164,7 @@ func (r *CheckResult) DetailedReport() string {
 			sb.WriteString("\n── Manual Dependencies (not installed) ──\n\n")
 			sb.WriteString("These must be installed manually (e.g., proprietary software, AUR, built from source):\n\n")
 			for _, dep := range manualMissing {
-				sb.WriteString(fmt.Sprintf("• %s (manual)\n", dep.Item.Name))
+				fmt.Fprintf(&sb, "• %s (manual)\n", dep.Item.Name)
 			}
 		}
 	}
@@ -226,7 +226,7 @@ func (r *CheckResult) FixReport() string {
 	var sb strings.Builder
 	sb.WriteString("Suggested fixes:\n\n")
 	for i, fix := range fixes {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, fix))
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, fix)
 	}
 	return sb.String()
 }

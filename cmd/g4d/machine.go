@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/machine"
+	"github.com/nvandessel/go4dot/internal/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -257,6 +259,149 @@ var machineInfoCmd = &cobra.Command{
 	},
 }
 
+var machineKeysCmd = &cobra.Command{
+	Use:   "keys",
+	Short: "Manage SSH and GPG keys",
+	Long:  "Commands for listing, generating, and registering SSH and GPG keys.",
+}
+
+var machineKeysListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all detected SSH and GPG keys",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("-- SSH Keys --")
+
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		sshDir := filepath.Join(home, ".ssh")
+
+		keys, err := machine.DetectAllSSHKeys(sshDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		}
+
+		if len(keys) == 0 {
+			fmt.Println("  No SSH keys found")
+		} else {
+			for _, key := range keys {
+				status := ""
+				if key.Loaded {
+					status = " [loaded in agent]"
+				}
+				fmt.Printf("  %s (%s)%s\n", key.Path, strings.ToUpper(key.Type), status)
+				if key.Fingerprint != "" {
+					fmt.Printf("    Fingerprint: %s\n", key.Fingerprint)
+				}
+				if key.Comment != "" {
+					fmt.Printf("    Comment: %s\n", key.Comment)
+				}
+			}
+		}
+
+		fmt.Println("\n-- GPG Keys --")
+		gpgKeys, err := machine.DetectGPGKeys()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		}
+
+		if len(gpgKeys) == 0 {
+			fmt.Println("  No GPG keys found")
+		} else {
+			for _, key := range gpgKeys {
+				fmt.Printf("  %s <%s> (%s)\n", key.UserID, key.Email, key.KeyID)
+			}
+		}
+	},
+}
+
+var machineKeysGenerateSSHCmd = &cobra.Command{
+	Use:   "generate-ssh",
+	Short: "Generate a new ed25519 SSH key",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		sshDir := filepath.Join(home, ".ssh")
+
+		// Show existing keys
+		keys, err := machine.DetectAllSSHKeys(sshDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not detect existing keys: %v\n", err)
+		}
+		if len(keys) > 0 {
+			fmt.Println("Existing SSH keys:")
+			for _, key := range keys {
+				fmt.Printf("  %s (%s)\n", key.Path, strings.ToUpper(key.Type))
+			}
+			fmt.Println()
+		}
+
+		// Get email
+		email, _ := cmd.Flags().GetString("email")
+		if email == "" {
+			// Try git config
+			gitEmail, _ := machine.GetGitUserEmail()
+			if gitEmail != "" {
+				email = gitEmail
+			}
+		}
+
+		if email == "" {
+			fmt.Fprintf(os.Stderr, "Error: email is required (use --email flag or configure git user.email)\n")
+			os.Exit(1)
+		}
+
+		if err := validation.ValidateEmail(email); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		name, _ := cmd.Flags().GetString("name")
+		if strings.ContainsAny(name, "/\\") {
+			fmt.Fprintf(os.Stderr, "Error: key name must not contain path separators\n")
+			os.Exit(1)
+		}
+
+		keyPath, err := machine.GenerateSSHKey(machine.SSHKeygenOpts{
+			Email:  email,
+			Name:   name,
+			SSHDir: sshDir,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("\nGenerated SSH key: %s\n", keyPath)
+
+		// Try to add to agent
+		if machine.IsAgentRunning() {
+			fmt.Println("Adding key to SSH agent...")
+			if err := machine.AddKeyToAgent(keyPath, sshDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not add key to agent: %v\n", err)
+			} else {
+				fmt.Println("Key added to SSH agent")
+			}
+		}
+
+		// Print public key
+		pubKey, err := machine.GetSSHPublicKey(keyPath+".pub", sshDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not read public key: %v\n", err)
+		} else {
+			fmt.Printf("\nPublic key:\n%s\n", pubKey)
+			fmt.Println("\nCopy the key above to add it to your Git hosting service")
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(machineCmd)
 	machineCmd.AddCommand(machineStatusCmd)
@@ -265,7 +410,15 @@ func init() {
 	machineCmd.AddCommand(machineRemoveCmd)
 	machineCmd.AddCommand(machineInfoCmd)
 
+	machineCmd.AddCommand(machineKeysCmd)
+	machineKeysCmd.AddCommand(machineKeysListCmd)
+	machineKeysCmd.AddCommand(machineKeysGenerateSSHCmd)
+
 	// Flags for machine configure
 	machineConfigureCmd.Flags().Bool("defaults", false, "Use default values without prompting")
 	machineConfigureCmd.Flags().Bool("overwrite", false, "Overwrite existing configuration files")
+
+	// Flags for generate-ssh
+	machineKeysGenerateSSHCmd.Flags().String("email", "", "Email for key comment")
+	machineKeysGenerateSSHCmd.Flags().String("name", "id_ed25519", "Key filename")
 }

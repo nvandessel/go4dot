@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -322,6 +323,119 @@ func TestValidateDestinationPath(t *testing.T) {
 			err := ValidateDestinationPath(tt.expanded, tt.baseDir)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateDestinationPath(%q, %q) error = %v, wantErr %v", tt.expanded, tt.baseDir, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateEmail(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// Valid inputs
+		{name: "simple email", input: "user@example.com", wantErr: false},
+		{name: "email with dots", input: "first.last@example.com", wantErr: false},
+		{name: "email with plus", input: "user+tag@example.com", wantErr: false},
+		{name: "email with subdomain", input: "user@mail.example.com", wantErr: false},
+		{name: "short email", input: "a@b.c", wantErr: false},
+
+		// Empty string
+		{name: "empty string", input: "", wantErr: true},
+
+		// Length
+		{name: "at max length", input: strings.Repeat("a", 242) + "@example.com", wantErr: false},
+		{name: "over max length", input: strings.Repeat("a", 243) + "@example.com", wantErr: true},
+
+		// Leading hyphen (flag injection)
+		{name: "leading hyphen", input: "-evil@example.com", wantErr: true},
+		{name: "leading double hyphen", input: "--flag@example.com", wantErr: true},
+
+		// Missing @
+		{name: "no at sign", input: "userexample.com", wantErr: true},
+		{name: "just a word", input: "hello", wantErr: true},
+
+		// Control characters
+		{name: "newline", input: "user\n@example.com", wantErr: true},
+		{name: "carriage return", input: "user\r@example.com", wantErr: true},
+		{name: "tab", input: "user\t@example.com", wantErr: true},
+		{name: "null byte", input: "user\x00@example.com", wantErr: true},
+
+		// Shell metacharacters
+		{name: "semicolon", input: "user;rm@example.com", wantErr: true},
+		{name: "pipe", input: "user|cat@example.com", wantErr: true},
+		{name: "ampersand", input: "user&@example.com", wantErr: true},
+		{name: "dollar sign", input: "user$HOME@example.com", wantErr: true},
+		{name: "backtick", input: "user`id`@example.com", wantErr: true},
+		{name: "angle brackets", input: "user<script>@example.com", wantErr: true},
+
+		// Unicode (not matching ASCII email regexp)
+		{name: "unicode local part", input: "\u00FC\u00F6\u00E4@example.com", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateEmail(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateEmail(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateSSHKeyPath(t *testing.T) {
+	sshDir := "/home/user/.ssh"
+
+	tests := []struct {
+		name    string
+		path    string
+		sshDir  string
+		wantErr bool
+	}{
+		// Valid paths
+		{name: "valid key path", path: filepath.Join(sshDir, "id_ed25519"), sshDir: sshDir, wantErr: false},
+		{name: "valid rsa key", path: filepath.Join(sshDir, "id_rsa"), sshDir: sshDir, wantErr: false},
+		{name: "valid custom name", path: filepath.Join(sshDir, "github_key"), sshDir: sshDir, wantErr: false},
+		{name: "valid pub key", path: filepath.Join(sshDir, "id_ed25519.pub"), sshDir: sshDir, wantErr: false},
+
+		// Empty inputs
+		{name: "empty path", path: "", sshDir: sshDir, wantErr: true},
+		{name: "empty sshDir", path: filepath.Join(sshDir, "id_ed25519"), sshDir: "", wantErr: true},
+
+		// Relative path
+		{name: "relative path", path: ".ssh/id_ed25519", sshDir: sshDir, wantErr: true},
+		{name: "relative sshDir", path: filepath.Join(sshDir, "id_ed25519"), sshDir: ".ssh", wantErr: true},
+
+		// Path traversal
+		{name: "traversal with dotdot", path: "/home/user/.ssh/../../../etc/shadow", sshDir: sshDir, wantErr: true},
+		{name: "outside sshDir", path: "/tmp/evil_key", sshDir: sshDir, wantErr: true},
+		{name: "sibling dir", path: "/home/user/.config/key", sshDir: sshDir, wantErr: true},
+
+		// Hyphen filename (flag injection)
+		{name: "hyphen filename", path: filepath.Join(sshDir, "-evil"), sshDir: sshDir, wantErr: true},
+		{name: "double hyphen filename", path: filepath.Join(sshDir, "--flag"), sshDir: sshDir, wantErr: true},
+
+		// Dangerous filenames
+		{name: "authorized_keys", path: filepath.Join(sshDir, "authorized_keys"), sshDir: sshDir, wantErr: true},
+		{name: "authorized_keys.pub", path: filepath.Join(sshDir, "authorized_keys.pub"), sshDir: sshDir, wantErr: true},
+		{name: "config", path: filepath.Join(sshDir, "config"), sshDir: sshDir, wantErr: true},
+		{name: "config.pub", path: filepath.Join(sshDir, "config.pub"), sshDir: sshDir, wantErr: true},
+		{name: "known_hosts", path: filepath.Join(sshDir, "known_hosts"), sshDir: sshDir, wantErr: true},
+		{name: "known_hosts.pub", path: filepath.Join(sshDir, "known_hosts.pub"), sshDir: sshDir, wantErr: true},
+		{name: "environment", path: filepath.Join(sshDir, "environment"), sshDir: sshDir, wantErr: true},
+		{name: "environment.pub", path: filepath.Join(sshDir, "environment.pub"), sshDir: sshDir, wantErr: true},
+
+		// Invalid characters in filename
+		{name: "space in filename", path: filepath.Join(sshDir, "my key"), sshDir: sshDir, wantErr: true},
+		{name: "semicolon in filename", path: filepath.Join(sshDir, "key;rm"), sshDir: sshDir, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSSHKeyPath(tt.path, tt.sshDir)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateSSHKeyPath(%q, %q) error = %v, wantErr %v", tt.path, tt.sshDir, err, tt.wantErr)
 			}
 		})
 	}
