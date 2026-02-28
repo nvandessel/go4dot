@@ -402,6 +402,110 @@ var machineKeysGenerateSSHCmd = &cobra.Command{
 	},
 }
 
+var machineKeysRegisterCmd = &cobra.Command{
+	Use:   "register",
+	Short: "Register SSH/GPG keys with GitHub",
+	Long:  "Register local SSH and GPG keys with GitHub using the gh CLI.",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Check gh CLI
+		if !machine.HasGHCLI() {
+			fmt.Fprintln(os.Stderr, "Error: gh CLI not installed. Install from https://cli.github.com")
+			os.Exit(1)
+		}
+
+		client := machine.NewGitHubClient()
+
+		// Check authentication
+		auth, err := client.IsAuthenticated()
+		if err != nil || !auth {
+			fmt.Fprintln(os.Stderr, "Error: Not authenticated with GitHub. Run `gh auth login` first.")
+			os.Exit(1)
+		}
+
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		sshDir := filepath.Join(home, ".ssh")
+		hostname, err := os.Hostname()
+		if err != nil || hostname == "" {
+			hostname = "unknown"
+		}
+
+		// Register SSH keys
+		sshRegistered := 0
+		keys, err := machine.DetectAllSSHKeys(sshDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not detect SSH keys: %v\n", err)
+		}
+		for _, key := range keys {
+			pubPath := key.Path + ".pub"
+			if _, err := os.Stat(pubPath); err != nil {
+				continue
+			}
+
+			registered, err := client.IsKeyRegistered(pubPath, sshDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not check if %s is registered: %v\n", key.Path, err)
+				continue
+			}
+			if registered {
+				fmt.Printf("  Already registered on GitHub: %s\n", key.Path)
+				continue
+			}
+
+			// Generate title
+			keyName := filepath.Base(key.Path)
+			title := fmt.Sprintf("%s-%s", hostname, keyName)
+			if err := validation.ValidateKeyTitle(title); err != nil {
+				title = keyName
+				if err := validation.ValidateKeyTitle(title); err != nil {
+					fmt.Fprintf(os.Stderr, "  Warning: skipping %s, could not form a valid title: %v\n", key.Path, err)
+					continue
+				}
+			}
+
+			fmt.Printf("  Registering %s as %q...\n", key.Path, title)
+			if err := client.AddSSHKey(pubPath, title, sshDir); err != nil {
+				fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
+				continue
+			}
+			fmt.Printf("  Registered %s\n", key.Path)
+			sshRegistered++
+		}
+
+		// Register GPG keys
+		gpgRegistered := 0
+		gpgKeys, err := machine.DetectGPGKeys()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not detect GPG keys: %v\n", err)
+		}
+		for _, key := range gpgKeys {
+			registered, err := client.IsGPGKeyRegistered(key.KeyID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not check if GPG key %s is registered: %v\n", key.KeyID, err)
+				continue
+			}
+			if registered {
+				fmt.Printf("  Already registered on GitHub: GPG key %s\n", key.KeyID)
+				continue
+			}
+
+			fmt.Printf("  Registering GPG key %s...\n", key.KeyID)
+			if err := client.AddGPGKey(key.KeyID); err != nil {
+				fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
+				continue
+			}
+			fmt.Printf("  Registered GPG key %s\n", key.KeyID)
+			gpgRegistered++
+		}
+
+		fmt.Printf("\nRegistered %d SSH keys, %d GPG keys\n", sshRegistered, gpgRegistered)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(machineCmd)
 	machineCmd.AddCommand(machineStatusCmd)
@@ -413,6 +517,7 @@ func init() {
 	machineCmd.AddCommand(machineKeysCmd)
 	machineKeysCmd.AddCommand(machineKeysListCmd)
 	machineKeysCmd.AddCommand(machineKeysGenerateSSHCmd)
+	machineKeysCmd.AddCommand(machineKeysRegisterCmd)
 
 	// Flags for machine configure
 	machineConfigureCmd.Flags().Bool("defaults", false, "Use default values without prompting")
