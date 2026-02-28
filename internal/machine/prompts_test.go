@@ -237,11 +237,18 @@ func TestResolveDefaults_NoCopy(t *testing.T) {
 	original := config.MachinePrompt{
 		ID: "test",
 		Prompts: []config.PromptField{
-			{ID: "user_name", Default: ""},
+			{ID: "user_name", Default: "", Options: []string{"a", "b"}},
 		},
 	}
-	_ = resolveDefaults(original)
+	result := resolveDefaults(original)
 	if original.Prompts[0].Default != "" {
-		t.Error("original prompts were mutated")
+		t.Error("original Default was mutated")
+	}
+	if len(original.Prompts[0].Options) != 2 {
+		t.Error("original Options slice was modified")
+	}
+	// Verify the result is independent
+	if &result.Prompts[0] == &original.Prompts[0] {
+		t.Error("result prompts share memory with original")
 	}
 }

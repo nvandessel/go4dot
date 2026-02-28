@@ -108,7 +108,7 @@ func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
 				p.Type = "select"
 				p.Options = []string{"None"}
 				for _, k := range keys {
-					p.Options = append(p.Options, fmt.Sprintf("%s — %s", k.KeyID, k.Email))
+					p.Options = append(p.Options, FormatGPGKeyChoice(k))
 				}
 				p.Options = append(p.Options, "Enter manually...")
 			}
@@ -225,8 +225,10 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 					val = ""
 				} else if val == "Enter manually..." {
 					val = ManualEntryValue
-				} else if idx := strings.Index(val, " — "); idx > 0 {
-					val = val[:idx] // Extract just the key ID
+				} else if start := strings.LastIndex(val, "("); start >= 0 {
+					if end := strings.LastIndex(val, ")"); end > start {
+						val = val[start+1 : end] // Extract key ID from "UserID <email> (KEYID)"
+					}
 				}
 			}
 			result.Values[id] = val
