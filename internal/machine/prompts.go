@@ -11,9 +11,6 @@ import (
 	"github.com/nvandessel/go4dot/internal/config"
 )
 
-// ManualEntryValue is a sentinel value indicating the user wants to type a value manually.
-const ManualEntryValue = "__manual__"
-
 // Signing key select option labels (used in resolveDefaults and post-processing).
 const (
 	signingKeyNone   = "None"
@@ -230,7 +227,7 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 				if val == signingKeyNone {
 					val = ""
 				} else if val == signingKeyManual {
-					val = ManualEntryValue
+					val = "" // User chose manual entry; leave empty for manual configuration
 				} else if start := strings.LastIndex(val, "("); start >= 0 {
 					if end := strings.LastIndex(val, ")"); end > start {
 						val = val[start+1 : end] // Extract key ID from "UserID <email> (KEYID)"
