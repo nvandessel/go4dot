@@ -142,17 +142,11 @@ func (c *GitHubClient) IsGPGKeyRegistered(keyID string) (bool, error) {
 		return false, err
 	}
 
-	// Normalize to uppercase for comparison (GPG key IDs are hex)
+	// Normalize to uppercase for comparison (GPG key IDs are hex).
+	// Only exact match — suffix matching risks false positives (Evil32 attack).
 	normalizedKeyID := strings.ToUpper(keyID)
 	for _, ghKey := range ghKeys {
 		if strings.ToUpper(ghKey.KeyID) == normalizedKeyID {
-			return true, nil
-		}
-		// Also check if the local key ID is a suffix (short vs long form)
-		if len(normalizedKeyID) < len(ghKey.KeyID) && strings.HasSuffix(strings.ToUpper(ghKey.KeyID), normalizedKeyID) {
-			return true, nil
-		}
-		if len(ghKey.KeyID) < len(normalizedKeyID) && strings.HasSuffix(normalizedKeyID, strings.ToUpper(ghKey.KeyID)) {
 			return true, nil
 		}
 	}

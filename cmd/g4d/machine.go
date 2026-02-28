@@ -460,7 +460,11 @@ var machineKeysRegisterCmd = &cobra.Command{
 			keyName := filepath.Base(key.Path)
 			title := fmt.Sprintf("%s-%s", hostname, keyName)
 			if err := validation.ValidateKeyTitle(title); err != nil {
-				title = keyName // fallback to just key filename
+				title = keyName
+				if err := validation.ValidateKeyTitle(title); err != nil {
+					fmt.Fprintf(os.Stderr, "  Warning: skipping %s, could not form a valid title: %v\n", key.Path, err)
+					continue
+				}
 			}
 
 			fmt.Printf("  Registering %s as %q...\n", key.Path, title)
@@ -482,6 +486,7 @@ var machineKeysRegisterCmd = &cobra.Command{
 			registered, err := client.IsGPGKeyRegistered(key.KeyID)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not check if GPG key %s is registered: %v\n", key.KeyID, err)
+				continue
 			}
 			if registered {
 				fmt.Printf("  Already registered on GitHub: GPG key %s\n", key.KeyID)

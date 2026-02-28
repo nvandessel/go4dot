@@ -346,8 +346,8 @@ func TestGitHubClient_IsGPGKeyRegistered_CaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestGitHubClient_IsGPGKeyRegistered_ShortIDMatch(t *testing.T) {
-	// Short form of key ID should match long form on GitHub
+func TestGitHubClient_IsGPGKeyRegistered_ShortIDNoMatch(t *testing.T) {
+	// Short form key IDs should NOT match long form (risk of Evil32 false positives)
 	jsonData := `[{"id": 1, "key_id": "ABCDEF1234567890", "email": "test@example.com"}]`
 	client := &GitHubClient{Commander: &mockCommander{output: []byte(jsonData)}}
 
@@ -355,8 +355,8 @@ func TestGitHubClient_IsGPGKeyRegistered_ShortIDMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !registered {
-		t.Error("expected short key ID to match long form")
+	if registered {
+		t.Error("short key IDs should not match via suffix (Evil32 risk)")
 	}
 }
 
