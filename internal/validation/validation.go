@@ -41,6 +41,16 @@ var configNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._\-+@]+$`)
 // emailRegexp matches basic email format: local@domain.
 var emailRegexp = regexp.MustCompile(`^[a-zA-Z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$`)
 
+// gpgKeyIDRegexp matches valid GPG key IDs: 8-40 hex characters.
+var gpgKeyIDRegexp = regexp.MustCompile(`^[A-Fa-f0-9]{8,40}$`)
+
+// keyTitleRegexp matches safe key titles: starts with alphanumeric,
+// then allows alphanumeric, space, dot, underscore, hyphen, parentheses, at-sign.
+var keyTitleRegexp = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 ._\-()@]*$`)
+
+// maxKeyTitleLength is the maximum allowed length for key titles.
+const maxKeyTitleLength = 100
+
 // sshKeyFilenameRegexp matches safe SSH key filenames.
 var sshKeyFilenameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
@@ -272,6 +282,37 @@ func ValidateSSHKeyPath(path string, sshDir string) error {
 	}
 	if dangerousSSHFilenames[filename] {
 		return fmt.Errorf("SSH key filename is a reserved SSH file: %q", filename)
+	}
+	return nil
+}
+
+// ValidateGPGKeyID rejects: empty, non-hex, <8 or >40 chars.
+func ValidateGPGKeyID(keyID string) error {
+	if keyID == "" {
+		return fmt.Errorf("GPG key ID must not be empty")
+	}
+	if !gpgKeyIDRegexp.MatchString(keyID) {
+		return fmt.Errorf("GPG key ID must be 8-40 hex characters: %q", keyID)
+	}
+	return nil
+}
+
+// ValidateKeyTitle rejects: empty, >100 chars, leading hyphen, control chars, unsafe chars.
+func ValidateKeyTitle(title string) error {
+	if title == "" {
+		return fmt.Errorf("key title must not be empty")
+	}
+	if len(title) > maxKeyTitleLength {
+		return fmt.Errorf("key title exceeds maximum length of %d characters", maxKeyTitleLength)
+	}
+	if strings.HasPrefix(title, "-") {
+		return fmt.Errorf("key title must not start with a hyphen: %q", title)
+	}
+	if strings.ContainsAny(title, "\n\r\t\x00") {
+		return fmt.Errorf("key title must not contain control characters: %q", title)
+	}
+	if !keyTitleRegexp.MatchString(title) {
+		return fmt.Errorf("key title contains invalid characters: %q (allowed: alphanumeric, space, dot, underscore, hyphen, parentheses, at-sign)", title)
 	}
 	return nil
 }

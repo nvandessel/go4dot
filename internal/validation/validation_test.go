@@ -384,6 +384,101 @@ func TestValidateEmail(t *testing.T) {
 	}
 }
 
+func TestValidateGPGKeyID(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// Valid inputs
+		{name: "valid 8-char hex", input: "ABCD1234", wantErr: false},
+		{name: "valid 16-char hex", input: "ABCDEF0123456789", wantErr: false},
+		{name: "valid 40-char hex", input: "ABCDEF0123456789ABCDEF0123456789ABCDEF01", wantErr: false},
+		{name: "mixed case hex", input: "aBcDeF01", wantErr: false},
+		{name: "all lowercase hex", input: "abcdef01", wantErr: false},
+		{name: "all digits", input: "12345678", wantErr: false},
+
+		// Empty string
+		{name: "empty string", input: "", wantErr: true},
+
+		// Too short
+		{name: "too short 7 chars", input: "ABCDEF0", wantErr: true},
+		{name: "single char", input: "A", wantErr: true},
+
+		// Too long
+		{name: "too long 41 chars", input: "ABCDEF0123456789ABCDEF0123456789ABCDEF012", wantErr: true},
+
+		// Non-hex characters
+		{name: "non-hex chars", input: "GHIJKLMN", wantErr: true},
+		{name: "special chars", input: "ABCD!@#$", wantErr: true},
+		{name: "spaces", input: "ABCD 1234", wantErr: true},
+
+		// Leading hyphen
+		{name: "leading hyphen", input: "-ABCDEF0", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGPGKeyID(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateGPGKeyID(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateKeyTitle(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// Valid inputs
+		{name: "simple title", input: "my-key", wantErr: false},
+		{name: "with spaces", input: "my laptop key", wantErr: false},
+		{name: "with parens", input: "key (work)", wantErr: false},
+		{name: "with at-sign", input: "user@host", wantErr: false},
+		{name: "with underscore", input: "my_key", wantErr: false},
+		{name: "with dot", input: "my.key", wantErr: false},
+		{name: "at max length", input: strings.Repeat("a", 100), wantErr: false},
+		{name: "mixed valid chars", input: "hostname-id_ed25519 (work)", wantErr: false},
+		{name: "single char", input: "k", wantErr: false},
+		{name: "starts with digit", input: "1password-key", wantErr: false},
+
+		// Empty string
+		{name: "empty string", input: "", wantErr: true},
+
+		// Over max length
+		{name: "over max length", input: strings.Repeat("a", 101), wantErr: true},
+
+		// Leading hyphen
+		{name: "leading hyphen", input: "-evil", wantErr: true},
+		{name: "leading double hyphen", input: "--flag", wantErr: true},
+
+		// Control characters
+		{name: "newline", input: "key\ntitle", wantErr: true},
+		{name: "tab", input: "key\ttitle", wantErr: true},
+		{name: "carriage return", input: "key\rtitle", wantErr: true},
+		{name: "null byte", input: "key\x00title", wantErr: true},
+
+		// Shell metacharacters
+		{name: "semicolon", input: "key;rm -rf /", wantErr: true},
+		{name: "pipe", input: "key|cat", wantErr: true},
+		{name: "ampersand", input: "key&bg", wantErr: true},
+		{name: "dollar sign", input: "key$HOME", wantErr: true},
+		{name: "backtick", input: "key`id`", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateKeyTitle(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateKeyTitle(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateSSHKeyPath(t *testing.T) {
 	sshDir := "/home/user/.ssh"
 
