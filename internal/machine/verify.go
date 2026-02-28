@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -49,7 +50,11 @@ func VerifySSHGitHub(ctx context.Context) VerifyResult {
 
 	if cmdCtx.Err() != nil {
 		result.Status = VerifySkip
-		result.Message = "SSH verification timed out"
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			result.Message = "SSH verification timed out"
+		} else {
+			result.Message = "SSH verification cancelled"
+		}
 		return result
 	}
 
@@ -74,7 +79,7 @@ func VerifyGPGSign(keyID string) VerifyResult {
 		return result
 	}
 
-	cmd := exec.Command("gpg", "--batch", "--no-tty", "--yes", "--sign", "--default-key", keyID, "--output", "/dev/null", "/dev/null")
+	cmd := exec.Command("gpg", "--batch", "--no-tty", "--yes", "--sign", "--default-key", keyID, "--output", os.DevNull, os.DevNull)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
