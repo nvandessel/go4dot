@@ -2,6 +2,8 @@ package setup
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/deps"
@@ -19,6 +21,7 @@ type InstallOptions struct {
 	SkipExternal bool                                 // Skip external dependency cloning
 	SkipMachine  bool                                 // Skip machine-specific configuration
 	SkipStow     bool                                 // Skip stowing configs
+	SkipKeys     bool                                 // Skip SSH key setup
 	Overwrite    bool                                 // Overwrite existing files
 	ProgressFunc func(current, total int, msg string) // Called for progress updates with item counts
 }
@@ -34,6 +37,8 @@ type InstallResult struct {
 	ExternalCloned []config.ExternalDep
 	ExternalFailed []deps.ExternalError
 	MachineConfigs []machine.RenderResult
+	KeysGenerated  []string // paths of generated SSH keys
+	KeysRegistered []string // descriptions of registered keys
 	Errors         []error
 }
 
@@ -84,7 +89,19 @@ func Install(cfg *config.Config, dotfilesPath string, opts InstallOptions) (*Ins
 		progress(opts, "⊘ Skipping external dependencies")
 	}
 
-	// Step 5: Configure machine-specific settings
+	// Step 5: Key setup — before machine config so newly created keys
+	// are detected by smart prompt defaults
+	if !opts.SkipKeys && !opts.Auto {
+		if err := setupKeys(opts, result); err != nil {
+			result.Errors = append(result.Errors, err)
+		}
+	} else if opts.Auto {
+		progress(opts, "⊘ Skipping key setup (non-interactive mode)")
+	} else {
+		progress(opts, "⊘ Skipping key setup")
+	}
+
+	// Step 6: Configure machine-specific settings
 	if !opts.SkipMachine {
 		if err := configureMachine(cfg, opts, result); err != nil {
 			result.Errors = append(result.Errors, err)
@@ -242,6 +259,48 @@ func cloneExternal(cfg *config.Config, dotfilesPath string, p *platform.Platform
 	}
 	if len(extResult.Skipped) > 0 {
 		progress(opts, fmt.Sprintf("⊘ Skipped %d external deps", len(extResult.Skipped)))
+	}
+
+	return nil
+}
+
+// setupKeys detects and optionally generates SSH keys
+func setupKeys(opts InstallOptions, result *InstallResult) error {
+	progress(opts, "\n── Key Setup ──")
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	sshDir := filepath.Join(home, ".ssh")
+
+	keys, err := machine.DetectAllSSHKeys(sshDir)
+	if err != nil {
+		progress(opts, fmt.Sprintf("Warning: could not detect SSH keys: %v", err))
+	}
+
+	if len(keys) > 0 {
+		progress(opts, fmt.Sprintf("✓ Found %d SSH key(s)", len(keys)))
+		for _, key := range keys {
+			status := ""
+			if key.Loaded {
+				status = " [loaded]"
+			}
+			progress(opts, fmt.Sprintf("  %s (%s)%s", key.Path, key.Type, status))
+		}
+	} else {
+		progress(opts, "No SSH keys found")
+		progress(opts, "Run `g4d machine keys generate-ssh` to create one")
+	}
+
+	// Check GitHub registration if gh is available
+	if machine.HasGHCLI() {
+		client := machine.NewGitHubClient()
+		if auth, _ := client.IsAuthenticated(); auth {
+			progress(opts, "✓ GitHub CLI authenticated")
+		} else {
+			progress(opts, "⊘ GitHub CLI not authenticated (run `gh auth login`)")
+		}
 	}
 
 	return nil

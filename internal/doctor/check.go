@@ -1,11 +1,13 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/deps"
@@ -199,7 +201,94 @@ func RunChecks(cfg *config.Config, opts CheckOptions) (*CheckResult, error) {
 		}
 	}
 
+	// Step 10: Check SSH keys
+	progress(opts, "Checking SSH keys...")
+	sshKeyCheck := checkSSHKeys()
+	result.Checks = append(result.Checks, sshKeyCheck)
+
+	// Step 11: Check GitHub SSH
+	progress(opts, "Checking GitHub SSH access...")
+	githubSSHCheck := checkGitHubSSH()
+	result.Checks = append(result.Checks, githubSSHCheck)
+
 	return result, nil
+}
+
+// checkSSHKeys verifies SSH keys are available
+func checkSSHKeys() Check {
+	check := Check{
+		Name:        "SSH Keys",
+		Description: "Available SSH keys",
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("Cannot determine home directory: %v", err)
+		return check
+	}
+	sshDir := filepath.Join(home, ".ssh")
+
+	keys, err := machine.DetectAllSSHKeys(sshDir)
+	if err != nil {
+		check.Status = StatusWarning
+		check.Message = fmt.Sprintf("Error detecting keys: %v", err)
+		check.Fix = "Run `g4d machine keys generate-ssh`"
+		return check
+	}
+
+	if len(keys) == 0 {
+		check.Status = StatusWarning
+		check.Message = "No SSH keys found"
+		check.Fix = "Run `g4d machine keys generate-ssh`"
+		return check
+	}
+
+	loaded := 0
+	for _, k := range keys {
+		if k.Loaded {
+			loaded++
+		}
+	}
+
+	if loaded > 0 {
+		check.Status = StatusOK
+		check.Message = fmt.Sprintf("%d key(s) found, %d loaded in agent", len(keys), loaded)
+	} else {
+		check.Status = StatusWarning
+		check.Message = fmt.Sprintf("%d key(s) found, none loaded in agent", len(keys))
+		check.Fix = "Run `ssh-add <key-path>` to load a key"
+	}
+
+	return check
+}
+
+// checkGitHubSSH tests SSH connectivity to GitHub
+func checkGitHubSSH() Check {
+	check := Check{
+		Name:        "GitHub SSH",
+		Description: "SSH authentication to GitHub",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	verifyResult := machine.VerifySSHGitHub(ctx)
+
+	switch verifyResult.Status {
+	case machine.VerifyPass:
+		check.Status = StatusOK
+		check.Message = verifyResult.Message
+	case machine.VerifySkip:
+		check.Status = StatusSkipped
+		check.Message = verifyResult.Message
+	default:
+		check.Status = StatusError
+		check.Message = verifyResult.Message
+		check.Fix = "Run `g4d machine keys register` to add your SSH key to GitHub"
+	}
+
+	return check
 }
 
 // checkStow verifies GNU stow is installed
