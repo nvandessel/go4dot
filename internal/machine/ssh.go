@@ -283,7 +283,13 @@ func IsAgentRunning() bool {
 
 // expandSSHDir expands ~ prefix and ensures the directory path is valid.
 func expandSSHDir(sshDir string) (string, error) {
-	if strings.HasPrefix(sshDir, "~/") {
+	if sshDir == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		sshDir = home
+	} else if strings.HasPrefix(sshDir, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", fmt.Errorf("failed to get home directory: %w", err)

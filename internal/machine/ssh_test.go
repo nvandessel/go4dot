@@ -130,7 +130,7 @@ func TestDetectAllSSHKeys(t *testing.T) {
 	t.Logf("Detected %d total SSH keys", len(keys))
 }
 
-func TestGenerateSSHKey(t *testing.T) {
+func TestSSHKeygenDirectInvocation(t *testing.T) {
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
 		t.Skip("ssh-keygen not available")
 	}
@@ -278,6 +278,7 @@ func TestExpandSSHDir(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "tilde expansion", input: "~/.ssh", wantAbs: true, wantErr: false},
+		{name: "bare tilde", input: "~", wantAbs: true, wantErr: false},
 		{name: "absolute path", input: "/home/user/.ssh", wantAbs: true, wantErr: false},
 		{name: "relative path", input: ".ssh", wantAbs: false, wantErr: true},
 		{name: "relative with dots", input: "../.ssh", wantAbs: false, wantErr: true},

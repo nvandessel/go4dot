@@ -8,6 +8,7 @@ import (
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/machine"
+	"github.com/nvandessel/go4dot/internal/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -352,12 +353,21 @@ var machineKeysGenerateSSHCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		if err := validation.ValidateEmail(email); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		name, _ := cmd.Flags().GetString("name")
+		if strings.ContainsAny(name, "/\\") {
+			fmt.Fprintf(os.Stderr, "Error: key name must not contain path separators\n")
+			os.Exit(1)
+		}
 
 		keyPath, err := machine.GenerateSSHKey(machine.SSHKeygenOpts{
 			Email:  email,
 			Name:   name,
-			SSHDir: "~/.ssh",
+			SSHDir: sshDir,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
