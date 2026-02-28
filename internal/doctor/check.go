@@ -276,10 +276,10 @@ func checkGitHubSSH() Check {
 	verifyResult := machine.VerifySSHGitHub(ctx)
 
 	switch verifyResult.Status {
-	case "pass":
+	case machine.VerifyPass:
 		check.Status = StatusOK
 		check.Message = verifyResult.Message
-	case "skip":
+	case machine.VerifySkip:
 		check.Status = StatusSkipped
 		check.Message = verifyResult.Message
 	default:

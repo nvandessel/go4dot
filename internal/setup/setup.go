@@ -274,7 +274,10 @@ func setupKeys(opts InstallOptions, result *InstallResult) error {
 	}
 	sshDir := filepath.Join(home, ".ssh")
 
-	keys, _ := machine.DetectAllSSHKeys(sshDir)
+	keys, err := machine.DetectAllSSHKeys(sshDir)
+	if err != nil {
+		progress(opts, fmt.Sprintf("Warning: could not detect SSH keys: %v", err))
+	}
 
 	if len(keys) > 0 {
 		progress(opts, fmt.Sprintf("✓ Found %d SSH key(s)", len(keys)))

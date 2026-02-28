@@ -19,7 +19,7 @@ func TestVerifyGitConfig_Smoke(t *testing.T) {
 
 func TestVerifyGPGSign_InvalidKeyID(t *testing.T) {
 	result := VerifyGPGSign("not-hex!")
-	if result.Status != "fail" {
+	if result.Status != VerifyFail {
 		t.Errorf("expected fail for invalid key ID, got %q", result.Status)
 	}
 	if result.Name != "gpg-sign" {
@@ -29,7 +29,7 @@ func TestVerifyGPGSign_InvalidKeyID(t *testing.T) {
 
 func TestVerifyGPGSign_EmptyKeyID(t *testing.T) {
 	result := VerifyGPGSign("")
-	if result.Status != "fail" {
+	if result.Status != VerifyFail {
 		t.Errorf("expected fail for empty key ID, got %q", result.Status)
 	}
 }
@@ -40,7 +40,7 @@ func TestVerifySSHGitHub_CancelledContext(t *testing.T) {
 
 	result := VerifySSHGitHub(ctx)
 	// Should be skip or fail (not pass since context is cancelled)
-	if result.Status == "pass" {
+	if result.Status == VerifyPass {
 		t.Errorf("expected skip or fail for cancelled context, got pass")
 	}
 	if result.Name != "ssh-github" {
@@ -55,7 +55,7 @@ func TestVerifySSHGitHub_Timeout(t *testing.T) {
 	time.Sleep(5 * time.Millisecond) // Let timeout expire
 
 	result := VerifySSHGitHub(ctx)
-	if result.Status == "pass" {
+	if result.Status == VerifyPass {
 		t.Logf("Surprisingly passed (SSH might be configured) — %s", result.Message)
 	} else {
 		t.Logf("Result: %s — %s", result.Status, result.Message)

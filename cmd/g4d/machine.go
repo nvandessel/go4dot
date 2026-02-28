@@ -512,6 +512,7 @@ var machineKeysVerifyCmd = &cobra.Command{
 	Use:   "verify",
 	Short: "Run SSH/GPG/git verification checks",
 	Long:  "Verify that SSH keys, GPG keys, and git configuration are properly set up.",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -526,10 +527,10 @@ var machineKeysVerifyCmd = &cobra.Command{
 		for _, r := range results {
 			icon := "✓"
 			switch r.Status {
-			case "fail":
+			case machine.VerifyFail:
 				icon = "✗"
 				allPass = false
-			case "skip":
+			case machine.VerifySkip:
 				icon = "⊘"
 			}
 			fmt.Printf("  %s %s: %s\n", icon, r.Name, r.Message)
