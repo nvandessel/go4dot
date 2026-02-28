@@ -406,6 +406,7 @@ var machineKeysRegisterCmd = &cobra.Command{
 	Use:   "register",
 	Short: "Register SSH/GPG keys with GitHub",
 	Long:  "Register local SSH and GPG keys with GitHub using the gh CLI.",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Check gh CLI
 		if !machine.HasGHCLI() {
@@ -428,11 +429,17 @@ var machineKeysRegisterCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		sshDir := filepath.Join(home, ".ssh")
-		hostname, _ := os.Hostname()
+		hostname, err := os.Hostname()
+		if err != nil {
+			hostname = "unknown"
+		}
 
 		// Register SSH keys
 		sshRegistered := 0
-		keys, _ := machine.DetectAllSSHKeys(sshDir)
+		keys, err := machine.DetectAllSSHKeys(sshDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not detect SSH keys: %v\n", err)
+		}
 		for _, key := range keys {
 			pubPath := key.Path + ".pub"
 			if _, err := os.Stat(pubPath); err != nil {
@@ -452,6 +459,9 @@ var machineKeysRegisterCmd = &cobra.Command{
 			// Generate title
 			keyName := filepath.Base(key.Path)
 			title := fmt.Sprintf("%s-%s", hostname, keyName)
+			if err := validation.ValidateKeyTitle(title); err != nil {
+				title = keyName // fallback to just key filename
+			}
 
 			fmt.Printf("  Registering %s as %q...\n", key.Path, title)
 			if err := client.AddSSHKey(pubPath, title, sshDir); err != nil {
@@ -464,7 +474,10 @@ var machineKeysRegisterCmd = &cobra.Command{
 
 		// Register GPG keys
 		gpgRegistered := 0
-		gpgKeys, _ := machine.DetectGPGKeys()
+		gpgKeys, err := machine.DetectGPGKeys()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not detect GPG keys: %v\n", err)
+		}
 		for _, key := range gpgKeys {
 			fmt.Printf("  Registering GPG key %s...\n", key.KeyID)
 			if err := client.AddGPGKey(key.KeyID); err != nil {
