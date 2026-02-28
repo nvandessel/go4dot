@@ -145,3 +145,103 @@ func TestListMachineConfigs(t *testing.T) {
 		t.Errorf("Unexpected second item: %+v", list[1])
 	}
 }
+
+func TestResolveDefaults_UserName(t *testing.T) {
+	mc := config.MachinePrompt{
+		ID: "test",
+		Prompts: []config.PromptField{
+			{ID: "user_name", Type: "text", Default: ""},
+		},
+	}
+	result := resolveDefaults(mc)
+	if len(result.Prompts) != 1 {
+		t.Fatalf("expected 1 prompt, got %d", len(result.Prompts))
+	}
+	// Can't guarantee git user.name is configured, so just verify no crash
+	// and that the field still exists with the right ID
+	if result.Prompts[0].ID != "user_name" {
+		t.Errorf("expected ID 'user_name', got %q", result.Prompts[0].ID)
+	}
+	t.Logf("user_name default after resolve: %q", result.Prompts[0].Default)
+}
+
+func TestResolveDefaults_UserEmail(t *testing.T) {
+	mc := config.MachinePrompt{
+		ID: "test",
+		Prompts: []config.PromptField{
+			{ID: "user_email", Type: "text", Default: ""},
+		},
+	}
+	result := resolveDefaults(mc)
+	if len(result.Prompts) != 1 {
+		t.Fatalf("expected 1 prompt, got %d", len(result.Prompts))
+	}
+	// Can't guarantee git user.email is configured, so just verify no crash
+	if result.Prompts[0].ID != "user_email" {
+		t.Errorf("expected ID 'user_email', got %q", result.Prompts[0].ID)
+	}
+	t.Logf("user_email default after resolve: %q", result.Prompts[0].Default)
+}
+
+func TestResolveDefaults_PreservesExisting(t *testing.T) {
+	mc := config.MachinePrompt{
+		ID: "test",
+		Prompts: []config.PromptField{
+			{ID: "user_name", Default: "existing-name"},
+			{ID: "user_email", Default: "existing@email.com"},
+		},
+	}
+	result := resolveDefaults(mc)
+	if result.Prompts[0].Default != "existing-name" {
+		t.Errorf("user_name default was overwritten: got %q", result.Prompts[0].Default)
+	}
+	if result.Prompts[1].Default != "existing@email.com" {
+		t.Errorf("user_email default was overwritten: got %q", result.Prompts[1].Default)
+	}
+}
+
+func TestResolveDefaults_SigningKeyGPG(t *testing.T) {
+	// This depends on GPG keys being available on the system
+	mc := config.MachinePrompt{
+		ID: "test",
+		Prompts: []config.PromptField{
+			{ID: "signing_key", Type: "text"},
+		},
+	}
+	result := resolveDefaults(mc)
+	// Just verify no crash and signing_key field exists
+	if len(result.Prompts) != 1 {
+		t.Fatalf("expected 1 prompt, got %d", len(result.Prompts))
+	}
+	t.Logf("signing_key type after resolve: %s, options: %v", result.Prompts[0].Type, result.Prompts[0].Options)
+}
+
+func TestResolveDefaults_UnknownPrompt(t *testing.T) {
+	mc := config.MachinePrompt{
+		ID: "test",
+		Prompts: []config.PromptField{
+			{ID: "unknown_field", Default: "value", Type: "text"},
+		},
+	}
+	result := resolveDefaults(mc)
+	if result.Prompts[0].Default != "value" {
+		t.Errorf("unknown prompt default changed: got %q", result.Prompts[0].Default)
+	}
+	if result.Prompts[0].Type != "text" {
+		t.Errorf("unknown prompt type changed: got %q", result.Prompts[0].Type)
+	}
+}
+
+func TestResolveDefaults_NoCopy(t *testing.T) {
+	// Verify original prompts are not mutated
+	original := config.MachinePrompt{
+		ID: "test",
+		Prompts: []config.PromptField{
+			{ID: "user_name", Default: ""},
+		},
+	}
+	_ = resolveDefaults(original)
+	if original.Prompts[0].Default != "" {
+		t.Error("original prompts were mutated")
+	}
+}

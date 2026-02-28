@@ -5,10 +5,14 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/nvandessel/go4dot/internal/config"
 )
+
+// ManualEntryValue is a sentinel value indicating the user wants to type a value manually.
+const ManualEntryValue = "__manual__"
 
 // PromptResult holds the collected values from prompts
 type PromptResult struct {
@@ -76,8 +80,47 @@ func CollectSingleConfig(cfg *config.Config, id string, opts PromptOptions) (*Pr
 	return &result, nil
 }
 
+// resolveDefaults enriches machine config prompts with auto-detected values.
+// Returns a COPY — never mutates the input.
+func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
+	enriched := mc
+	enriched.Prompts = make([]config.PromptField, len(mc.Prompts))
+	copy(enriched.Prompts, mc.Prompts)
+
+	for i := range enriched.Prompts {
+		p := &enriched.Prompts[i]
+		switch p.ID {
+		case "user_name":
+			if p.Default == "" {
+				if name, _ := GetGitUserName(); name != "" {
+					p.Default = name
+				}
+			}
+		case "user_email":
+			if p.Default == "" {
+				if email, _ := GetGitUserEmail(); email != "" {
+					p.Default = email
+				}
+			}
+		case "signing_key":
+			keys, _ := DetectGPGKeys()
+			if len(keys) > 0 {
+				p.Type = "select"
+				p.Options = []string{"None"}
+				for _, k := range keys {
+					p.Options = append(p.Options, fmt.Sprintf("%s — %s", k.KeyID, k.Email))
+				}
+				p.Options = append(p.Options, "Enter manually...")
+			}
+		}
+	}
+	return enriched
+}
+
 // collectPrompts collects values for a single MachinePrompt using Huh forms
 func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, error) {
+	mc = resolveDefaults(mc) // enrich before building form
+
 	result := PromptResult{
 		ID:     mc.ID,
 		Values: make(map[string]string),
@@ -175,7 +218,18 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 	for id, ptr := range valuePointers {
 		switch v := ptr.(type) {
 		case *string:
-			result.Values[id] = *v
+			val := *v
+			// Post-process signing_key select values
+			if id == "signing_key" {
+				if val == "None" {
+					val = ""
+				} else if val == "Enter manually..." {
+					val = ManualEntryValue
+				} else if idx := strings.Index(val, " — "); idx > 0 {
+					val = val[:idx] // Extract just the key ID
+				}
+			}
+			result.Values[id] = val
 		case *bool:
 			result.Values[id] = strconv.FormatBool(*v)
 		}
