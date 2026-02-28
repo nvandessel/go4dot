@@ -118,8 +118,9 @@ type GitHubGPGKey struct {
 }
 
 // ListGPGKeys returns GPG keys registered on GitHub.
+// Uses gh api because gh gpg-key list does not support --json output.
 func (c *GitHubClient) ListGPGKeys() ([]GitHubGPGKey, error) {
-	output, err := c.getCommander().Run("gh", "gpg-key", "list", "--json", "id,key_id,email")
+	output, err := c.getCommander().Run("gh", "api", "/user/gpg_keys")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list GitHub GPG keys: %w\nOutput: %s", err, string(output))
 	}
@@ -139,7 +140,7 @@ func (c *GitHubClient) IsGPGKeyRegistered(keyID string) (bool, error) {
 
 	ghKeys, err := c.ListGPGKeys()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("list GitHub GPG keys: %w", err)
 	}
 
 	// Normalize to uppercase for comparison (GPG key IDs are hex).
@@ -154,8 +155,9 @@ func (c *GitHubClient) IsGPGKeyRegistered(keyID string) (bool, error) {
 }
 
 // ListSSHKeys returns SSH keys registered on GitHub.
+// Uses gh api because gh ssh-key list does not support --json output.
 func (c *GitHubClient) ListSSHKeys() ([]GitHubSSHKey, error) {
-	output, err := c.getCommander().Run("gh", "ssh-key", "list", "--json", "id,key,title")
+	output, err := c.getCommander().Run("gh", "api", "user/keys")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list GitHub SSH keys: %w\nOutput: %s", err, string(output))
 	}
@@ -172,7 +174,7 @@ func (c *GitHubClient) IsKeyRegistered(pubkeyPath, sshDir string) (bool, error) 
 	// Read local public key
 	localKey, err := GetSSHPublicKey(pubkeyPath, sshDir)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("read local SSH public key: %w", err)
 	}
 
 	// Extract key material (second field: type base64 comment)
@@ -185,7 +187,7 @@ func (c *GitHubClient) IsKeyRegistered(pubkeyPath, sshDir string) (bool, error) 
 	// Get GitHub keys
 	ghKeys, err := c.ListSSHKeys()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("list GitHub SSH keys: %w", err)
 	}
 
 	// Compare key material

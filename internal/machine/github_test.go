@@ -11,9 +11,16 @@ import (
 type mockCommander struct {
 	output []byte
 	err    error
+	calls  []mockCall
+}
+
+type mockCall struct {
+	name string
+	args []string
 }
 
 func (m *mockCommander) Run(name string, args ...string) ([]byte, error) {
+	m.calls = append(m.calls, mockCall{name: name, args: append([]string(nil), args...)})
 	return m.output, m.err
 }
 
