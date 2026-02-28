@@ -14,6 +14,12 @@ import (
 // ManualEntryValue is a sentinel value indicating the user wants to type a value manually.
 const ManualEntryValue = "__manual__"
 
+// Signing key select option labels (used in resolveDefaults and post-processing).
+const (
+	signingKeyNone   = "None"
+	signingKeyManual = "Enter manually..."
+)
+
 // PromptResult holds the collected values from prompts
 type PromptResult struct {
 	ID     string
@@ -106,11 +112,11 @@ func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
 			keys, _ := DetectGPGKeys()
 			if len(keys) > 0 {
 				p.Type = "select"
-				p.Options = []string{"None"}
+				p.Options = []string{signingKeyNone}
 				for _, k := range keys {
 					p.Options = append(p.Options, FormatGPGKeyChoice(k))
 				}
-				p.Options = append(p.Options, "Enter manually...")
+				p.Options = append(p.Options, signingKeyManual)
 			}
 		}
 	}
@@ -221,9 +227,9 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 			val := *v
 			// Post-process signing_key select values
 			if id == "signing_key" {
-				if val == "None" {
+				if val == signingKeyNone {
 					val = ""
-				} else if val == "Enter manually..." {
+				} else if val == signingKeyManual {
 					val = ManualEntryValue
 				} else if start := strings.LastIndex(val, "("); start >= 0 {
 					if end := strings.LastIndex(val, ")"); end > start {

@@ -232,8 +232,8 @@ func TestResolveDefaults_UnknownPrompt(t *testing.T) {
 	}
 }
 
-func TestResolveDefaults_NoCopy(t *testing.T) {
-	// Verify original prompts are not mutated
+func TestResolveDefaults_DoesNotMutateInput(t *testing.T) {
+	// Verify resolveDefaults returns a copy and does not mutate the original
 	original := config.MachinePrompt{
 		ID: "test",
 		Prompts: []config.PromptField{
