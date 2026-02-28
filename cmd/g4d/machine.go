@@ -397,7 +397,7 @@ var machineKeysGenerateSSHCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Warning: could not read public key: %v\n", err)
 		} else {
 			fmt.Printf("\nPublic key:\n%s\n", pubKey)
-			fmt.Println("\nCopy the key above, or run `g4d machine keys register` to add it to GitHub")
+			fmt.Println("\nCopy the key above to add it to GitHub")
 		}
 	},
 }
