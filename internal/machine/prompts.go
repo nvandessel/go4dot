@@ -5,9 +5,16 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/nvandessel/go4dot/internal/config"
+)
+
+// Signing key select option labels (used in resolveDefaults and post-processing).
+const (
+	signingKeyNone   = "None"
+	signingKeyManual = "Enter manually..."
 )
 
 // PromptResult holds the collected values from prompts
@@ -76,8 +83,47 @@ func CollectSingleConfig(cfg *config.Config, id string, opts PromptOptions) (*Pr
 	return &result, nil
 }
 
+// resolveDefaults enriches machine config prompts with auto-detected values.
+// Returns a COPY — never mutates the input.
+func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
+	enriched := mc
+	enriched.Prompts = make([]config.PromptField, len(mc.Prompts))
+	copy(enriched.Prompts, mc.Prompts)
+
+	for i := range enriched.Prompts {
+		p := &enriched.Prompts[i]
+		switch p.ID {
+		case "user_name":
+			if p.Default == "" {
+				if name, _ := GetGitUserName(); name != "" {
+					p.Default = name
+				}
+			}
+		case "user_email":
+			if p.Default == "" {
+				if email, _ := GetGitUserEmail(); email != "" {
+					p.Default = email
+				}
+			}
+		case "signing_key":
+			keys, _ := DetectGPGKeys()
+			if len(keys) > 0 {
+				p.Type = "select"
+				p.Options = []string{signingKeyNone}
+				for _, k := range keys {
+					p.Options = append(p.Options, FormatGPGKeyChoice(k))
+				}
+				p.Options = append(p.Options, signingKeyManual)
+			}
+		}
+	}
+	return enriched
+}
+
 // collectPrompts collects values for a single MachinePrompt using Huh forms
 func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, error) {
+	mc = resolveDefaults(mc) // enrich before building form
+
 	result := PromptResult{
 		ID:     mc.ID,
 		Values: make(map[string]string),
@@ -175,7 +221,20 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 	for id, ptr := range valuePointers {
 		switch v := ptr.(type) {
 		case *string:
-			result.Values[id] = *v
+			val := *v
+			// Post-process signing_key select values
+			if id == "signing_key" {
+				if val == signingKeyNone {
+					val = ""
+				} else if val == signingKeyManual {
+					val = "" // User chose manual entry; leave empty for manual configuration
+				} else if start := strings.LastIndex(val, "("); start >= 0 {
+					if end := strings.LastIndex(val, ")"); end > start {
+						val = val[start+1 : end] // Extract key ID from "UserID <email> (KEYID)"
+					}
+				}
+			}
+			result.Values[id] = val
 		case *bool:
 			result.Values[id] = strconv.FormatBool(*v)
 		}
