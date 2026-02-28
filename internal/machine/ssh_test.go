@@ -309,7 +309,7 @@ func TestExpandSSHDir(t *testing.T) {
 	}{
 		{name: "tilde expansion", input: "~/.ssh", wantAbs: true, wantErr: false},
 		{name: "bare tilde", input: "~", wantAbs: true, wantErr: false},
-		{name: "absolute path", input: "/home/user/.ssh", wantAbs: true, wantErr: false},
+		{name: "absolute path", input: filepath.Join(os.TempDir(), "test-ssh"), wantAbs: true, wantErr: false},
 		{name: "relative path", input: ".ssh", wantAbs: false, wantErr: true},
 		{name: "relative with dots", input: "../.ssh", wantAbs: false, wantErr: true},
 	}

@@ -230,8 +230,10 @@ func ValidateEmail(email string) error {
 	if strings.HasPrefix(email, "-") {
 		return fmt.Errorf("email must not start with a hyphen: %q", email)
 	}
-	if strings.ContainsAny(email, "\n\r\t\x00") {
-		return fmt.Errorf("email must not contain control characters: %q", email)
+	for _, r := range email {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("email must not contain control characters: %q", email)
+		}
 	}
 	if strings.ContainsAny(email, ";|&$`<>") {
 		return fmt.Errorf("email must not contain shell metacharacters: %q", email)
