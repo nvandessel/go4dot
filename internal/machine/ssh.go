@@ -137,23 +137,22 @@ func DetectAllSSHKeys(sshDir string) ([]SSHKey, error) {
 		return agentKeys, err
 	}
 
-	// Index agent keys by path
-	agentMap := make(map[string]*SSHKey)
+	// Index agent keys by path for dedup lookup
+	agentMap := make(map[string]int) // path -> index in agentKeys
 	for i := range agentKeys {
-		agentMap[agentKeys[i].Path] = &agentKeys[i]
+		agentMap[agentKeys[i].Path] = i
 	}
 
-	// Merge file keys
+	// Start with copies of agent keys
 	var merged []SSHKey
 	merged = append(merged, agentKeys...)
 
 	for _, fk := range fileKeys {
-		if ak, exists := agentMap[fk.Path]; exists {
-			// Agent key wins, but mark as "both"
-			ak.Source = "both"
-			// Fill in missing fields from file key
-			if ak.Comment == "" {
-				ak.Comment = fk.Comment
+		if idx, exists := agentMap[fk.Path]; exists {
+			// Agent key wins, but mark as "both" and enrich
+			merged[idx].Source = "both"
+			if merged[idx].Comment == "" {
+				merged[idx].Comment = fk.Comment
 			}
 		} else {
 			merged = append(merged, fk)
@@ -194,11 +193,24 @@ func GenerateSSHKey(opts SSHKeygenOpts) (string, error) {
 	// Check if key already exists
 	if _, err := os.Stat(keyPath); err == nil {
 		return "", fmt.Errorf("key already exists: %s", keyPath)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("cannot check key path %s: %w", keyPath, err)
 	}
 
 	// Ensure sshDir exists with proper permissions
 	if err := os.MkdirAll(expandedSSHDir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create SSH directory: %w", err)
+	}
+
+	// Verify directory permissions are secure
+	dirInfo, err := os.Stat(expandedSSHDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat SSH directory: %w", err)
+	}
+	if dirInfo.Mode().Perm()&0077 != 0 {
+		if err := os.Chmod(expandedSSHDir, 0700); err != nil {
+			return "", fmt.Errorf("failed to set SSH directory permissions: %w", err)
+		}
 	}
 
 	// Generate the key - interactive (ssh-keygen handles passphrase prompt)

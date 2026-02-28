@@ -58,7 +58,9 @@ func TestDetectSSHKeyFilesEmpty(t *testing.T) {
 }
 
 func TestDetectSSHKeyFilesNonExistent(t *testing.T) {
-	keys, err := DetectSSHKeyFiles("/nonexistent/path/that/does/not/exist")
+	tmpDir := t.TempDir()
+	nonExistent := filepath.Join(tmpDir, "does_not_exist")
+	keys, err := DetectSSHKeyFiles(nonExistent)
 	if err != nil {
 		t.Fatalf("expected nil error for nonexistent dir, got: %v", err)
 	}
@@ -119,15 +121,41 @@ func TestDetectSSHKeyFilesSkipsNonPub(t *testing.T) {
 }
 
 func TestDetectAllSSHKeys(t *testing.T) {
-	tmpDir := t.TempDir()
+	t.Run("empty dir returns no error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		keys, err := DetectAllSSHKeys(tmpDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// May include agent keys from the host system
+		t.Logf("Detected %d total SSH keys (agent keys may be included)", len(keys))
+	})
 
-	// Smoke test: should not panic even with empty dir
-	keys, err := DetectAllSSHKeys(tmpDir)
-	if err != nil {
-		t.Logf("Warning (non-fatal): %v", err)
-	}
-
-	t.Logf("Detected %d total SSH keys", len(keys))
+	t.Run("with pub files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		// Create a .pub file
+		pubContent := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey test@example.com\n"
+		if err := os.WriteFile(filepath.Join(tmpDir, "id_test.pub"), []byte(pubContent), 0644); err != nil {
+			t.Fatalf("failed to create pub file: %v", err)
+		}
+		keys, err := DetectAllSSHKeys(tmpDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should have at least the file key we created
+		found := false
+		for _, k := range keys {
+			if filepath.Base(k.Path) == "id_test" {
+				found = true
+				if k.Source != "file" && k.Source != "both" {
+					t.Errorf("expected Source 'file' or 'both', got %q", k.Source)
+				}
+			}
+		}
+		if !found {
+			t.Error("expected to find id_test key in results")
+		}
+	})
 }
 
 func TestSSHKeygenDirectInvocation(t *testing.T) {

@@ -46,10 +46,12 @@ var sshKeyFilenameRegexp = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 // dangerousSSHFilenames are filenames that should never be written by key generation.
 var dangerousSSHFilenames = map[string]bool{
-	"authorized_keys": true,
-	"config":          true,
-	"known_hosts":     true,
-	"environment":     true,
+	"authorized_keys":     true,
+	"authorized_keys.pub": true,
+	"config":              true,
+	"known_hosts":         true,
+	"known_hosts.pub":     true,
+	"environment":         true,
 }
 
 // gitHTTPSRegexp matches HTTPS git URLs with a fully anchored pattern.

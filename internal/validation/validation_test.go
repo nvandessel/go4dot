@@ -418,8 +418,10 @@ func TestValidateSSHKeyPath(t *testing.T) {
 
 		// Dangerous filenames
 		{name: "authorized_keys", path: filepath.Join(sshDir, "authorized_keys"), sshDir: sshDir, wantErr: true},
+		{name: "authorized_keys.pub", path: filepath.Join(sshDir, "authorized_keys.pub"), sshDir: sshDir, wantErr: true},
 		{name: "config", path: filepath.Join(sshDir, "config"), sshDir: sshDir, wantErr: true},
 		{name: "known_hosts", path: filepath.Join(sshDir, "known_hosts"), sshDir: sshDir, wantErr: true},
+		{name: "known_hosts.pub", path: filepath.Join(sshDir, "known_hosts.pub"), sshDir: sshDir, wantErr: true},
 		{name: "environment", path: filepath.Join(sshDir, "environment"), sshDir: sshDir, wantErr: true},
 
 		// Invalid characters in filename

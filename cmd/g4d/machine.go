@@ -268,6 +268,7 @@ var machineKeysCmd = &cobra.Command{
 var machineKeysListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all detected SSH and GPG keys",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("-- SSH Keys --")
 
@@ -320,6 +321,7 @@ var machineKeysListCmd = &cobra.Command{
 var machineKeysGenerateSSHCmd = &cobra.Command{
 	Use:   "generate-ssh",
 	Short: "Generate a new ed25519 SSH key",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -329,7 +331,10 @@ var machineKeysGenerateSSHCmd = &cobra.Command{
 		sshDir := filepath.Join(home, ".ssh")
 
 		// Show existing keys
-		keys, _ := machine.DetectAllSSHKeys(sshDir)
+		keys, err := machine.DetectAllSSHKeys(sshDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not detect existing keys: %v\n", err)
+		}
 		if len(keys) > 0 {
 			fmt.Println("Existing SSH keys:")
 			for _, key := range keys {
@@ -388,7 +393,9 @@ var machineKeysGenerateSSHCmd = &cobra.Command{
 
 		// Print public key
 		pubKey, err := machine.GetSSHPublicKey(keyPath+".pub", sshDir)
-		if err == nil {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not read public key: %v\n", err)
+		} else {
 			fmt.Printf("\nPublic key:\n%s\n", pubKey)
 			fmt.Println("\nCopy the key above, or run `g4d machine keys register` to add it to GitHub")
 		}
