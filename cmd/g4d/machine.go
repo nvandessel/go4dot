@@ -430,7 +430,7 @@ var machineKeysRegisterCmd = &cobra.Command{
 		}
 		sshDir := filepath.Join(home, ".ssh")
 		hostname, err := os.Hostname()
-		if err != nil {
+		if err != nil || hostname == "" {
 			hostname = "unknown"
 		}
 
@@ -479,6 +479,15 @@ var machineKeysRegisterCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Warning: could not detect GPG keys: %v\n", err)
 		}
 		for _, key := range gpgKeys {
+			registered, err := client.IsGPGKeyRegistered(key.KeyID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not check if GPG key %s is registered: %v\n", key.KeyID, err)
+			}
+			if registered {
+				fmt.Printf("  Already registered on GitHub: GPG key %s\n", key.KeyID)
+				continue
+			}
+
 			fmt.Printf("  Registering GPG key %s...\n", key.KeyID)
 			if err := client.AddGPGKey(key.KeyID); err != nil {
 				fmt.Fprintf(os.Stderr, "  Error: %v\n", err)

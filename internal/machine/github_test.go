@@ -233,8 +233,32 @@ func TestGitHubClient_IsKeyRegistered_BadPubKey(t *testing.T) {
 	}
 }
 
-func TestGitHubClient_IsAuthenticated(t *testing.T) {
-	// Smoke test - just verify no panic
+func TestGitHubClient_IsAuthenticated_Success(t *testing.T) {
+	client := &GitHubClient{Commander: &mockCommander{output: []byte("logged in")}}
+	auth, err := client.IsAuthenticated()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !auth {
+		t.Error("expected authenticated to be true")
+	}
+}
+
+func TestGitHubClient_IsAuthenticated_NotAuth(t *testing.T) {
+	client := &GitHubClient{Commander: &mockCommander{err: fmt.Errorf("not logged in")}}
+	auth, err := client.IsAuthenticated()
+	if err != nil {
+		t.Fatalf("unexpected error: %v (should return false, not error)", err)
+	}
+	if auth {
+		t.Error("expected authenticated to be false")
+	}
+}
+
+func TestGitHubClient_IsAuthenticated_Smoke(t *testing.T) {
+	if !HasGHCLI() {
+		t.Skip("gh CLI not available")
+	}
 	client := NewGitHubClient()
 	auth, err := client.IsAuthenticated()
 	if err != nil {
@@ -258,6 +282,102 @@ func TestGitHubClient_getCommander_NilFallback(t *testing.T) {
 	cmd := client.getCommander()
 	if cmd == nil {
 		t.Error("expected non-nil commander from fallback")
+	}
+}
+
+func TestGitHubClient_ListGPGKeys_Parse(t *testing.T) {
+	jsonData := `[{"id": 1, "key_id": "ABCDEF1234567890", "email": "test@example.com"}]`
+	client := &GitHubClient{Commander: &mockCommander{output: []byte(jsonData)}}
+
+	keys, err := client.ListGPGKeys()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 key, got %d", len(keys))
+	}
+	if keys[0].KeyID != "ABCDEF1234567890" {
+		t.Errorf("key_id = %q, want %q", keys[0].KeyID, "ABCDEF1234567890")
+	}
+}
+
+func TestGitHubClient_ListGPGKeys_Empty(t *testing.T) {
+	client := &GitHubClient{Commander: &mockCommander{output: []byte("[]")}}
+	keys, err := client.ListGPGKeys()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("expected 0 keys, got %d", len(keys))
+	}
+}
+
+func TestGitHubClient_ListGPGKeys_CommandError(t *testing.T) {
+	client := &GitHubClient{Commander: &mockCommander{err: fmt.Errorf("gh failed")}}
+	_, err := client.ListGPGKeys()
+	if err == nil {
+		t.Error("expected error for command failure")
+	}
+}
+
+func TestGitHubClient_IsGPGKeyRegistered_Match(t *testing.T) {
+	jsonData := `[{"id": 1, "key_id": "ABCDEF1234567890", "email": "test@example.com"}]`
+	client := &GitHubClient{Commander: &mockCommander{output: []byte(jsonData)}}
+
+	registered, err := client.IsGPGKeyRegistered("ABCDEF1234567890")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !registered {
+		t.Error("expected key to be registered")
+	}
+}
+
+func TestGitHubClient_IsGPGKeyRegistered_CaseInsensitive(t *testing.T) {
+	jsonData := `[{"id": 1, "key_id": "ABCDEF1234567890", "email": "test@example.com"}]`
+	client := &GitHubClient{Commander: &mockCommander{output: []byte(jsonData)}}
+
+	registered, err := client.IsGPGKeyRegistered("abcdef1234567890")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !registered {
+		t.Error("expected case-insensitive match")
+	}
+}
+
+func TestGitHubClient_IsGPGKeyRegistered_ShortIDMatch(t *testing.T) {
+	// Short form of key ID should match long form on GitHub
+	jsonData := `[{"id": 1, "key_id": "ABCDEF1234567890", "email": "test@example.com"}]`
+	client := &GitHubClient{Commander: &mockCommander{output: []byte(jsonData)}}
+
+	registered, err := client.IsGPGKeyRegistered("34567890")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !registered {
+		t.Error("expected short key ID to match long form")
+	}
+}
+
+func TestGitHubClient_IsGPGKeyRegistered_NoMatch(t *testing.T) {
+	jsonData := `[{"id": 1, "key_id": "ABCDEF1234567890", "email": "test@example.com"}]`
+	client := &GitHubClient{Commander: &mockCommander{output: []byte(jsonData)}}
+
+	registered, err := client.IsGPGKeyRegistered("11111111")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if registered {
+		t.Error("expected key to NOT be registered")
+	}
+}
+
+func TestGitHubClient_IsGPGKeyRegistered_BadKeyID(t *testing.T) {
+	client := &GitHubClient{Commander: &mockCommander{output: []byte("[]")}}
+	_, err := client.IsGPGKeyRegistered("not-hex!")
+	if err == nil {
+		t.Error("expected error for invalid key ID")
 	}
 }
 

@@ -1,9 +1,9 @@
 package machine
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -55,12 +55,9 @@ func HasGHCLI() bool {
 }
 
 // IsAuthenticated checks if gh is authenticated with GitHub.
-// Stderr is discarded to prevent token leakage.
+// Output is discarded to prevent token leakage.
 func (c *GitHubClient) IsAuthenticated() (bool, error) {
-	cmd := exec.Command("gh", "auth", "status")
-	cmd.Stdout = nil
-	cmd.Stderr = nil // Discard stderr - may contain token info
-	err := cmd.Run()
+	_, err := c.getCommander().Run("gh", "auth", "status")
 	if err != nil {
 		return false, nil
 	}
@@ -87,22 +84,26 @@ func (c *GitHubClient) AddSSHKey(pubkeyPath, title, sshDir string) error {
 }
 
 // AddGPGKey registers a GPG key with GitHub using pipe: gpg --export | gh gpg-key add.
+// This method uses exec.Command directly for pipe orchestration and cannot be mocked
+// via the Commander interface. Use integration tests with real gpg/gh for testing.
 func (c *GitHubClient) AddGPGKey(keyID string) error {
 	if err := validation.ValidateGPGKeyID(keyID); err != nil {
 		return fmt.Errorf("invalid GPG key ID: %w", err)
 	}
 
-	// Use exec.Command directly for pipe orchestration
+	// Use exec.Command directly for pipe orchestration (cannot use Commander for pipes)
 	gpgCmd := exec.Command("gpg", "--armor", "--export", keyID)
 	ghCmd := exec.Command("gh", "gpg-key", "add")
+
+	var gpgStderr, ghStderr bytes.Buffer
 
 	gpgOut, err := gpgCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create pipe: %w", err)
 	}
 	ghCmd.Stdin = gpgOut
-	gpgCmd.Stderr = os.Stderr
-	ghCmd.Stderr = os.Stderr
+	gpgCmd.Stderr = &gpgStderr
+	ghCmd.Stderr = &ghStderr
 
 	if err := gpgCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start gpg: %w", err)
@@ -116,12 +117,61 @@ func (c *GitHubClient) AddGPGKey(keyID string) error {
 	ghErr := ghCmd.Wait()
 
 	if gpgErr != nil {
-		return fmt.Errorf("gpg export failed: %w", gpgErr)
+		return fmt.Errorf("gpg export failed: %w\nStderr: %s", gpgErr, gpgStderr.String())
 	}
 	if ghErr != nil {
-		return fmt.Errorf("gh gpg-key add failed: %w", ghErr)
+		return fmt.Errorf("gh gpg-key add failed: %w\nStderr: %s", ghErr, ghStderr.String())
 	}
 	return nil
+}
+
+// GitHubGPGKey represents a GPG key registered on GitHub.
+type GitHubGPGKey struct {
+	ID    json.Number `json:"id"`
+	KeyID string      `json:"key_id"`
+	Email string      `json:"email"`
+}
+
+// ListGPGKeys returns GPG keys registered on GitHub.
+func (c *GitHubClient) ListGPGKeys() ([]GitHubGPGKey, error) {
+	output, err := c.getCommander().Run("gh", "gpg-key", "list", "--json", "id,key_id,email")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list GitHub GPG keys: %w\nOutput: %s", err, string(output))
+	}
+
+	var keys []GitHubGPGKey
+	if err := json.Unmarshal(output, &keys); err != nil {
+		return nil, fmt.Errorf("failed to parse GitHub GPG keys: %w", err)
+	}
+	return keys, nil
+}
+
+// IsGPGKeyRegistered checks if a local GPG key is already registered on GitHub.
+func (c *GitHubClient) IsGPGKeyRegistered(keyID string) (bool, error) {
+	if err := validation.ValidateGPGKeyID(keyID); err != nil {
+		return false, fmt.Errorf("invalid GPG key ID: %w", err)
+	}
+
+	ghKeys, err := c.ListGPGKeys()
+	if err != nil {
+		return false, err
+	}
+
+	// Normalize to uppercase for comparison (GPG key IDs are hex)
+	normalizedKeyID := strings.ToUpper(keyID)
+	for _, ghKey := range ghKeys {
+		if strings.ToUpper(ghKey.KeyID) == normalizedKeyID {
+			return true, nil
+		}
+		// Also check if the local key ID is a suffix (short vs long form)
+		if len(normalizedKeyID) < len(ghKey.KeyID) && strings.HasSuffix(strings.ToUpper(ghKey.KeyID), normalizedKeyID) {
+			return true, nil
+		}
+		if len(ghKey.KeyID) < len(normalizedKeyID) && strings.HasSuffix(normalizedKeyID, strings.ToUpper(ghKey.KeyID)) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ListSSHKeys returns SSH keys registered on GitHub.
