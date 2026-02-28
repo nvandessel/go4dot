@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/machine"
@@ -506,6 +508,42 @@ var machineKeysRegisterCmd = &cobra.Command{
 	},
 }
 
+var machineKeysVerifyCmd = &cobra.Command{
+	Use:   "verify",
+	Short: "Run SSH/GPG/git verification checks",
+	Long:  "Verify that SSH keys, GPG keys, and git configuration are properly set up.",
+	Run: func(cmd *cobra.Command, args []string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Get GPG key ID from git config if available
+		gpgKeyID, _ := machine.GetGitSigningKey()
+
+		results := machine.RunAllVerifications(ctx, gpgKeyID)
+
+		fmt.Println("── Verification Results ──")
+		allPass := true
+		for _, r := range results {
+			icon := "✓"
+			switch r.Status {
+			case "fail":
+				icon = "✗"
+				allPass = false
+			case "skip":
+				icon = "⊘"
+			}
+			fmt.Printf("  %s %s: %s\n", icon, r.Name, r.Message)
+		}
+
+		if allPass {
+			fmt.Println("\n✓ All checks passed")
+		} else {
+			fmt.Println("\n⚠ Some checks failed")
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(machineCmd)
 	machineCmd.AddCommand(machineStatusCmd)
@@ -518,6 +556,7 @@ func init() {
 	machineKeysCmd.AddCommand(machineKeysListCmd)
 	machineKeysCmd.AddCommand(machineKeysGenerateSSHCmd)
 	machineKeysCmd.AddCommand(machineKeysRegisterCmd)
+	machineKeysCmd.AddCommand(machineKeysVerifyCmd)
 
 	// Flags for machine configure
 	machineConfigureCmd.Flags().Bool("defaults", false, "Use default values without prompting")
