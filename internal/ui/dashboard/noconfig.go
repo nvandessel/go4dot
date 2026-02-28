@@ -60,7 +60,7 @@ func (m NoConfig) View() string {
 			prefix = "> "
 			style = selectedStyle
 		}
-		b.WriteString(fmt.Sprintf("%s%s\n", prefix, style.Render(opt.label)))
+		fmt.Fprintf(&b, "%s%s\n", prefix, style.Render(opt.label))
 		if i == m.selectedIdx {
 			b.WriteString(subtitleStyle.Render(fmt.Sprintf("    %s", opt.desc)))
 			b.WriteString("\n")

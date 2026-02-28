@@ -105,14 +105,14 @@ func renderText(o *Overview) string {
 		)
 		sb.WriteString(depLine)
 		if ds.Missing > 0 {
-			sb.WriteString(fmt.Sprintf(", %s",
+			fmt.Fprintf(&sb, ", %s",
 				ui.ErrorStyle.Render(fmt.Sprintf("%d missing", ds.Missing)),
-			))
+			)
 		}
 		if ds.VersionMissing > 0 {
-			sb.WriteString(fmt.Sprintf(", %s",
+			fmt.Fprintf(&sb, ", %s",
 				ui.WarningStyle.Render(fmt.Sprintf("%d version mismatch", ds.VersionMissing)),
-			))
+			)
 		}
 		sb.WriteString("\n")
 	}
