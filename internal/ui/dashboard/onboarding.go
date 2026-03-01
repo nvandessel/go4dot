@@ -30,6 +30,7 @@ const (
 	stepDependenciesDetails
 	stepMachine
 	stepMachineDetails
+	stepMachineCustom
 	stepConfirm
 	stepWriting
 	stepComplete
@@ -83,6 +84,11 @@ type Onboarding struct {
 
 	// Machine config preset selection
 	machinePreset string
+
+	// Custom machine config fields
+	customMachineID          string
+	customMachineDescription string
+	customMachineDestination string
 
 	// Confirm step choice
 	confirmWrite bool
@@ -281,8 +287,44 @@ func (o *Onboarding) handleFormComplete() (tea.Model, tea.Cmd) {
 		return o, o.form.Init()
 
 	case stepMachineDetails:
-		// Machine details are handled differently (preset-based)
-		// For now, just reset and return to prompt
+		switch o.machinePreset {
+		case "git-signing":
+			o.machineConfigs = append(o.machineConfigs, createGitSigningPreset())
+			o.addMoreMachine = false
+			o.step = stepMachine
+			o.form = o.createMachinePromptForm()
+			return o, o.form.Init()
+		case "custom":
+			o.step = stepMachineCustom
+			o.form = o.createMachineCustomForm()
+			return o, o.form.Init()
+		default:
+			o.addMoreMachine = false
+			o.step = stepMachine
+			o.form = o.createMachinePromptForm()
+			return o, o.form.Init()
+		}
+
+	case stepMachineCustom:
+		if o.customMachineID != "" {
+			mc := config.MachinePrompt{
+				ID:          slugify(o.customMachineID),
+				Description: o.customMachineDescription,
+				Destination: o.customMachineDestination,
+				Prompts: []config.PromptField{
+					{ID: "value", Prompt: "Value", Type: "text", Required: true},
+				},
+				Template: "{{ .value }}",
+			}
+			if mc.Description == "" {
+				mc.Description = mc.ID
+			}
+			o.machineConfigs = append(o.machineConfigs, mc)
+		}
+		// Reset custom fields
+		o.customMachineID = ""
+		o.customMachineDescription = ""
+		o.customMachineDestination = ""
 		o.addMoreMachine = false
 		o.step = stepMachine
 		o.form = o.createMachinePromptForm()
@@ -425,7 +467,16 @@ func (o Onboarding) View() string {
 		content = lipgloss.JoinVertical(
 			lipgloss.Left,
 			titleStyle.Render("🖥️ Configure Machine Setting"),
-			subtitleStyle.Render("Enter configuration details"),
+			subtitleStyle.Render("Select a preset or create custom"),
+			"",
+			o.form.View(),
+		)
+
+	case stepMachineCustom:
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			titleStyle.Render("🖥️ Custom Machine Config"),
+			subtitleStyle.Render("Define a custom machine-specific configuration"),
 			"",
 			o.form.View(),
 		)
@@ -617,6 +668,78 @@ func (o *Onboarding) createMachineDetailsForm() *huh.Form {
 				Value(&o.machinePreset),
 		),
 	).WithWidth(60).WithShowHelp(false)
+}
+
+func (o *Onboarding) createMachineCustomForm() *huh.Form {
+	o.customMachineID = ""
+	o.customMachineDescription = ""
+	o.customMachineDestination = ""
+
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Config ID").
+				Placeholder("my-config").
+				Value(&o.customMachineID).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("ID is required")
+					}
+					return nil
+				}),
+			huh.NewInput().
+				Title("Description").
+				Placeholder("My custom configuration").
+				Value(&o.customMachineDescription),
+			huh.NewInput().
+				Title("Destination File").
+				Description("Where the rendered config will be written").
+				Placeholder("~/.config/my-app/config").
+				Value(&o.customMachineDestination).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("destination is required")
+					}
+					return nil
+				}),
+		),
+	).WithWidth(60).WithShowHelp(false)
+}
+
+// createGitSigningPreset returns a MachinePrompt for git signing configuration
+func createGitSigningPreset() config.MachinePrompt {
+	return config.MachinePrompt{
+		ID:          "git-signing",
+		Description: "Git Signing Configuration",
+		Destination: "~/.gitconfig.local",
+		Prompts: []config.PromptField{
+			{
+				ID:       "user_name",
+				Prompt:   "Git User Name",
+				Type:     "text",
+				Required: true,
+			},
+			{
+				ID:       "user_email",
+				Prompt:   "Git Email Address",
+				Type:     "text",
+				Required: true,
+			},
+			{
+				ID:     "signing_key",
+				Prompt: "GPG Signing Key",
+				Type:   "text",
+			},
+		},
+		Template: `[user]
+    name = {{ .user_name }}
+    email = {{ .user_email }}
+{{ if and .signing_key (ne .signing_key "None") }}    signingkey = {{ .signing_key }}
+
+[commit]
+    gpgsign = true
+{{ end }}`,
+	}
 }
 
 func (o *Onboarding) createConfirmForm() *huh.Form {
