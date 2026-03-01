@@ -6,6 +6,16 @@ import (
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
+const (
+	// menuMaxWidth is the maximum width of the compact menu panel.
+	menuMaxWidth = 46
+	// menuCompactHeight is the height allocated to the list widget inside the
+	// compact menu panel. The default delegate uses 2 lines per item (title +
+	// description) plus 1 line spacing between items, plus the title header
+	// area. We give a small amount of extra room so the list renders cleanly.
+	menuCompactHeight = 14
+)
+
 type menuItem struct {
 	title, desc string
 	action      Action
@@ -32,6 +42,7 @@ func NewMenu() Menu {
 	l.Title = "More Commands"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
+	l.SetShowHelp(false)
 
 	return Menu{list: l}
 }
@@ -50,9 +61,37 @@ func (m Menu) View() string {
 	return ui.BoxStyle.Render(m.list.View())
 }
 
-// SetSize sets the menu dimensions
+// CompactWidth returns the constrained width for the compact menu panel.
+// It caps at menuMaxWidth but respects smaller terminal widths.
+func CompactWidth(termWidth int) int {
+	w := menuMaxWidth
+	if termWidth > 0 && termWidth < w+10 {
+		w = termWidth - 10
+		if w < 20 {
+			w = 20
+		}
+	}
+	return w
+}
+
+// CompactHeight returns the constrained height for the compact menu panel.
+// It caps at menuCompactHeight but respects smaller terminal heights.
+func CompactHeight(termHeight int) int {
+	h := menuCompactHeight
+	if termHeight > 0 && termHeight < h+10 {
+		h = termHeight - 10
+		if h < 6 {
+			h = 6
+		}
+	}
+	return h
+}
+
+// SetSize sets the menu dimensions, clamping to compact panel bounds.
 func (m *Menu) SetSize(width, height int) {
-	m.width = width
-	m.height = height
-	m.list.SetSize(width, height)
+	w := CompactWidth(width)
+	h := CompactHeight(height)
+	m.width = w
+	m.height = h
+	m.list.SetSize(w, h)
 }

@@ -85,8 +85,23 @@ func overlayHelpContent(h Help) string {
 }
 
 // overlayMenuContent returns the menu content for overlay compositing (without box frame).
+// The content is constrained to a compact size so the menu feels like a small
+// dropdown/popup rather than a full-screen takeover.
 func overlayMenuContent(m *Menu) string {
-	return m.list.View()
+	w := CompactWidth(m.width)
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(ui.SubtleColor).
+		Italic(true)
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		m.list.View(),
+		"",
+		hintStyle.Render("ESC to close"),
+	)
+
+	return lipgloss.NewStyle().Width(w).Render(content)
 }
 
 // overlayConfirmContent returns the confirm dialog content for overlay compositing (without border/placement).
