@@ -6,9 +6,32 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nvandessel/go4dot/internal/config"
 	"github.com/nvandessel/go4dot/internal/machine"
 	"github.com/nvandessel/go4dot/internal/ui"
 )
+
+// machineConfigsUnconfiguredMsg is sent when unconfigured machine configs are detected
+type machineConfigsUnconfiguredMsg struct {
+	missing []machine.MachineConfigStatus
+}
+
+// checkMachineConfigsCmd checks for unconfigured machine configs
+func checkMachineConfigsCmd(cfg *config.Config) tea.Cmd {
+	return func() tea.Msg {
+		statuses := machine.CheckMachineConfigStatus(cfg)
+		var missing []machine.MachineConfigStatus
+		for _, s := range statuses {
+			if s.Status == "missing" {
+				missing = append(missing, s)
+			}
+		}
+		if len(missing) == 0 {
+			return nil
+		}
+		return machineConfigsUnconfiguredMsg{missing: missing}
+	}
+}
 
 // updateNoConfig handles messages when no config file is found
 func (m *Model) updateNoConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -112,6 +135,21 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ID == "uninstall" && msg.Confirmed {
 			m.setResult(ActionUninstall)
 			return m, tea.Quit
+		}
+
+		if msg.ID == "machine-setup-prompt" {
+			m.popView()
+			m.confirm = nil
+
+			if msg.Confirmed && m.state.Config != nil {
+				// Open MachineView overlay
+				m.machineView = NewMachineView(m.state.Config)
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+				m.machineView.SetSize(contentWidth, contentHeight)
+				m.pushView(viewMachine)
+				return m, m.machineView.Init()
+			}
+			return m, nil
 		}
 
 		if msg.ID == "post-onboarding-install" {
