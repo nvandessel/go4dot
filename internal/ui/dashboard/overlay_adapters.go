@@ -88,7 +88,7 @@ func overlayHelpContent(h Help) string {
 // The content is constrained to a compact size so the menu feels like a small
 // dropdown/popup rather than a full-screen takeover.
 func overlayMenuContent(m *Menu) string {
-	w := CompactWidth(m.width)
+	w := m.width
 
 	hintStyle := lipgloss.NewStyle().
 		Foreground(ui.SubtleColor).
