@@ -177,6 +177,11 @@ func (m Model) Init() tea.Cmd {
 	if m.currentView == viewDashboard {
 		cmds = append(cmds, m.healthPanel.Init())
 		cmds = append(cmds, m.externalPanel.Init())
+
+		// Check for unconfigured machine configs and prompt the user
+		if m.state.Config != nil && len(m.state.Config.MachineConfig) > 0 {
+			cmds = append(cmds, checkMachineConfigsCmd(m.state.Config))
+		}
 	}
 
 	return tea.Batch(cmds...)

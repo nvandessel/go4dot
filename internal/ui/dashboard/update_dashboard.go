@@ -99,6 +99,20 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
+	// Handle unconfigured machine configs detection
+	case machineConfigsUnconfiguredMsg:
+		desc := fmt.Sprintf("%d machine config(s) need setup. Configure now?", len(msg.missing))
+		m.confirm = NewConfirm(
+			"machine-setup-prompt",
+			"Machine Settings Detected",
+			desc,
+		).WithLabels("Yes, set up", "Skip for now")
+		m.confirm.selected = 0
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		m.confirm.SetSize(contentWidth, contentHeight)
+		m.pushView(viewConfirm)
+		return m, nil
+
 	// Handle operation messages for inline operations
 	case OperationProgressMsg, OperationStepCompleteMsg, OperationLogMsg, OperationDoneMsg:
 		handled, cmd := m.handleOperationMsg(msg)
