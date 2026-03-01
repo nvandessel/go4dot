@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -131,7 +133,59 @@ func colorToANSIBg(c lipgloss.Color) string {
 	return ""
 }
 
-// dimContent creates a dimmed version of the background.
+// dimColorMap maps Catppuccin Mocha foreground colors to their dimmed
+// counterparts. Each bright color is halved in intensity so the dashboard
+// structure remains recognizable while clearly receding behind the modal.
+var dimColorMap = map[string]string{
+	// Primary (Lavender)
+	"#b4befe": "#585b7f",
+	// Secondary (Green)
+	"#a6e3a1": "#536f50",
+	// Warning (Yellow)
+	"#f9e2af": "#7c7157",
+	// Error (Red)
+	"#f38ba8": "#794554",
+	// Text
+	"#cdd6f4": "#666b7a",
+	// Subtle (Overlay2)
+	"#9399b2": "#494c59",
+	// Subtext1
+	"#bac2de": "#5d616f",
+	// Subtext0
+	"#a6adc8": "#535664",
+	// Overlay1
+	"#7f849c": "#3f424e",
+	// Overlay0
+	"#6c7086": "#363843",
+	// Surface2
+	"#585b70": "#2c2d38",
+	// Rosewater
+	"#f5e0dc": "#7a706e",
+	// Flamingo
+	"#f2cdcd": "#796666",
+	// Pink
+	"#f5c2e7": "#7a6173",
+	// Mauve
+	"#cba6f7": "#65537b",
+	// Maroon
+	"#eba0a1": "#755050",
+	// Peach
+	"#fab387": "#7d5943",
+	// Teal
+	"#94e2d5": "#4a716a",
+	// Sky
+	"#89dceb": "#446e75",
+	// Sapphire
+	"#74c7ec": "#3a6376",
+	// Blue
+	"#89b4fa": "#445a7d",
+}
+
+// dimContent creates a dimmed version of the background that preserves the
+// visual structure of the dashboard. Rather than stripping all ANSI color
+// codes and applying a flat dim color, it replaces foreground colors with
+// dimmer versions from dimColorMap. This keeps borders, titles, and status
+// indicators distinguishable behind the modal overlay.
 func dimContent(content string, width, height int, dimChar string, dimColor lipgloss.Color) string {
 	lines := strings.Split(content, "\n")
 	dimStyle := lipgloss.NewStyle().Foreground(dimColor)
@@ -139,7 +193,7 @@ func dimContent(content string, width, height int, dimChar string, dimColor lipg
 	var result []string
 	for i := 0; i < height; i++ {
 		if i < len(lines) {
-			dimmedLine := dimStyle.Render(stripAnsi(lines[i]))
+			dimmedLine := dimAnsiColors(lines[i], dimColor)
 			lineWidth := lipgloss.Width(dimmedLine)
 			if lineWidth < width {
 				padding := width - lineWidth
@@ -154,6 +208,221 @@ func dimContent(content string, width, height int, dimChar string, dimColor lipg
 	}
 
 	return strings.Join(result, "\n")
+}
+
+// dimAnsiColors replaces foreground color codes in an ANSI-styled string with
+// their dimmed counterparts. It walks through the string character by character,
+// identifies SGR (Select Graphic Rendition) escape sequences, and rewrites
+// foreground color parameters while leaving other parameters (bold, background,
+// etc.) intact. Text segments without any foreground color are rendered in the
+// fallback dimColor.
+func dimAnsiColors(s string, fallback lipgloss.Color) string {
+	var result strings.Builder
+	fallbackStyle := lipgloss.NewStyle().Foreground(fallback)
+	var plainBuf strings.Builder
+
+	i := 0
+	runes := []rune(s)
+	for i < len(runes) {
+		if runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+			// Flush any accumulated plain text with fallback dim color
+			if plainBuf.Len() > 0 {
+				result.WriteString(fallbackStyle.Render(plainBuf.String()))
+				plainBuf.Reset()
+			}
+
+			// Parse the full SGR escape sequence
+			seq, end := parseEscapeSeq(runes, i)
+			if end > i {
+				dimmed := dimSGRSequence(seq, fallback)
+				result.WriteString(dimmed)
+				i = end
+				continue
+			}
+		}
+
+		// Check for ESC without [ (other escape types) -- skip them
+		if runes[i] == '\x1b' {
+			// Consume until we find a letter terminator
+			j := i + 1
+			for j < len(runes) {
+				r := runes[j]
+				j++
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '~' {
+					break
+				}
+			}
+			i = j
+			continue
+		}
+
+		plainBuf.WriteRune(runes[i])
+		i++
+	}
+
+	// Flush remaining plain text
+	if plainBuf.Len() > 0 {
+		result.WriteString(fallbackStyle.Render(plainBuf.String()))
+	}
+
+	return result.String()
+}
+
+// parseEscapeSeq extracts an SGR escape sequence starting at position pos.
+// It returns the full sequence string (e.g., "\x1b[38;2;180;190;254m") and
+// the index just past the end of the sequence. If the sequence cannot be
+// parsed, it returns ("", pos) to signal that the caller should skip it.
+func parseEscapeSeq(runes []rune, pos int) (string, int) {
+	if pos+1 >= len(runes) || runes[pos] != '\x1b' || runes[pos+1] != '[' {
+		return "", pos
+	}
+
+	var seq strings.Builder
+	seq.WriteRune('\x1b')
+	seq.WriteRune('[')
+
+	j := pos + 2
+	for j < len(runes) {
+		r := runes[j]
+		seq.WriteRune(r)
+		j++
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '~' {
+			// Only process SGR sequences (terminated with 'm')
+			if r == 'm' {
+				return seq.String(), j
+			}
+			// Non-SGR escape (cursor movement, etc.) -- return as-is
+			return seq.String(), j
+		}
+	}
+
+	return seq.String(), j
+}
+
+// dimSGRSequence takes an SGR escape sequence and rewrites any foreground
+// color parameters to their dimmed equivalents. It handles:
+//   - 24-bit true color: ESC[38;2;R;G;Bm
+//   - 256-color:         ESC[38;5;Nm
+//   - Basic 8/16 colors: ESC[30-37m, ESC[90-97m
+//   - Reset:             ESC[0m or ESC[m
+//
+// Background colors and non-color attributes (bold, underline, etc.) are
+// preserved unchanged. If a foreground color is not found in dimColorMap,
+// the fallback color is used.
+func dimSGRSequence(seq string, fallback lipgloss.Color) string {
+	// Strip ESC[ prefix and m suffix
+	if len(seq) < 3 || !strings.HasSuffix(seq, "m") {
+		return seq
+	}
+	inner := seq[2 : len(seq)-1] // content between "[" and "m"
+
+	// Handle reset sequences - return as-is since dimAnsiColors handles plain text
+	if inner == "" || inner == "0" {
+		return seq
+	}
+
+	params := strings.Split(inner, ";")
+	var newParams []string
+	i := 0
+	for i < len(params) {
+		p := params[i]
+
+		// 24-bit true color foreground: 38;2;R;G;B
+		if p == "38" && i+1 < len(params) && params[i+1] == "2" && i+4 < len(params) {
+			r, _ := strconv.Atoi(params[i+2])
+			g, _ := strconv.Atoi(params[i+3])
+			b, _ := strconv.Atoi(params[i+4])
+
+			hexColor := fmt.Sprintf("#%02x%02x%02x", r, g, b)
+			dimHex := lookupDimColor(hexColor, fallback)
+			dr, dg, db := hexToRGB(dimHex)
+
+			newParams = append(newParams, "38", "2",
+				strconv.Itoa(dr), strconv.Itoa(dg), strconv.Itoa(db))
+			i += 5
+			continue
+		}
+
+		// 256-color foreground: 38;5;N
+		if p == "38" && i+1 < len(params) && params[i+1] == "5" && i+2 < len(params) {
+			// Replace with fallback as a 24-bit color since we cannot map
+			// 256-color indices reliably
+			dimHex := string(fallback)
+			dr, dg, db := hexToRGB(dimHex)
+			newParams = append(newParams, "38", "2",
+				strconv.Itoa(dr), strconv.Itoa(dg), strconv.Itoa(db))
+			i += 3
+			continue
+		}
+
+		// Basic foreground colors (30-37, 90-97)
+		if n, err := strconv.Atoi(p); err == nil && ((n >= 30 && n <= 37) || (n >= 90 && n <= 97)) {
+			dimHex := string(fallback)
+			dr, dg, db := hexToRGB(dimHex)
+			newParams = append(newParams, "38", "2",
+				strconv.Itoa(dr), strconv.Itoa(dg), strconv.Itoa(db))
+			i++
+			continue
+		}
+
+		// 24-bit true color background: 48;2;R;G;B -- drop background colors
+		// to avoid them interfering with the dimmed background
+		if p == "48" && i+1 < len(params) && params[i+1] == "2" && i+4 < len(params) {
+			i += 5
+			continue
+		}
+
+		// 256-color background: 48;5;N -- also drop
+		if p == "48" && i+1 < len(params) && params[i+1] == "5" && i+2 < len(params) {
+			i += 3
+			continue
+		}
+
+		// Basic background colors (40-47, 100-107) -- drop
+		if n, err := strconv.Atoi(p); err == nil && ((n >= 40 && n <= 47) || (n >= 100 && n <= 107)) {
+			i++
+			continue
+		}
+
+		// Preserve other attributes (bold, underline, etc.)
+		newParams = append(newParams, p)
+		i++
+	}
+
+	if len(newParams) == 0 {
+		// All params were backgrounds that got dropped - suppress the sequence
+		return ""
+	}
+
+	return "\x1b[" + strings.Join(newParams, ";") + "m"
+}
+
+// lookupDimColor finds the dimmed version of a hex color. It performs a
+// case-insensitive lookup against dimColorMap. If no mapping is found,
+// the fallback color string is returned.
+func lookupDimColor(hexColor string, fallback lipgloss.Color) string {
+	lower := strings.ToLower(hexColor)
+	if dim, ok := dimColorMap[lower]; ok {
+		return dim
+	}
+	return string(fallback)
+}
+
+// hexToRGB parses a hex color string (#RRGGBB) into its RGB components.
+// If the string cannot be parsed, it returns (69, 71, 90) which is the
+// Catppuccin Mocha Surface1 color as a safe fallback.
+func hexToRGB(hex string) (int, int, int) {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return 69, 71, 90 // Surface1 fallback
+	}
+	r, err1 := strconv.ParseInt(hex[0:2], 16, 32)
+	g, err2 := strconv.ParseInt(hex[2:4], 16, 32)
+	b, err3 := strconv.ParseInt(hex[4:6], 16, 32)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return 69, 71, 90
+	}
+	return int(r), int(g), int(b)
 }
 
 // placeOverlay places the modal content centered over the background.
