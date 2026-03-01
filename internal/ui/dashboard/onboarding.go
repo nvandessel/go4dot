@@ -306,9 +306,10 @@ func (o *Onboarding) handleFormComplete() (tea.Model, tea.Cmd) {
 		}
 
 	case stepMachineCustom:
-		if o.customMachineID != "" {
+		slugifiedID := slugify(o.customMachineID)
+		if slugifiedID != "" {
 			mc := config.MachinePrompt{
-				ID:          slugify(o.customMachineID),
+				ID:          slugifiedID,
 				Description: o.customMachineDescription,
 				Destination: o.customMachineDestination,
 				Prompts: []config.PromptField{
@@ -734,7 +735,7 @@ func createGitSigningPreset() config.MachinePrompt {
 		Template: `[user]
     name = {{ .user_name }}
     email = {{ .user_email }}
-{{ if and .signing_key (ne .signing_key "None") }}    signingkey = {{ .signing_key }}
+{{ if .signing_key }}    signingkey = {{ .signing_key }}
 
 [commit]
     gpgsign = true
