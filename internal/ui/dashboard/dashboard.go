@@ -61,9 +61,9 @@ type Model struct {
 	selectedConfigs map[string]bool
 	showHelp        bool
 	currentView     view
-	viewStack       []view        // Stack for navigation history
-	operationActive bool          // true when an operation is running in the output pane
-	program         *tea.Program  // reference for inline operations
+	viewStack       []view       // Stack for navigation history
+	operationActive bool         // true when an operation is running in the output pane
+	program         *tea.Program // reference for inline operations
 
 	// Multi-panel layout
 	focusManager *FocusManager
@@ -409,7 +409,7 @@ func (m Model) View() string {
 
 	// If help is shown, overlay it on top of the dashboard
 	if m.showHelp {
-		return ui.RenderOverlay(dashboardBg, overlayHelpContent(m.help), m.width, m.height, ui.DefaultOverlayStyle())
+		return ui.RenderOverlay(dashboardBg, overlayHelpContent(m.help), m.width, m.height, ui.HelpOverlayStyle())
 	}
 
 	// Handle overlay-based modal views
@@ -423,7 +423,7 @@ func (m Model) View() string {
 		return ""
 	case viewConfirm:
 		if m.confirm != nil {
-			return ui.RenderOverlay(dashboardBg, overlayConfirmContent(m.confirm), m.width, m.height, ui.DefaultOverlayStyle())
+			return ui.RenderOverlay(dashboardBg, overlayConfirmContent(m.confirm), m.width, m.height, ui.ConfirmOverlayStyle())
 		}
 		return ""
 	case viewConfigList:
@@ -443,7 +443,7 @@ func (m Model) View() string {
 		return ""
 	case viewConflict:
 		if m.conflictView != nil {
-			return ui.RenderOverlay(dashboardBg, overlayConflictContent(m.conflictView), m.width, m.height, ui.WarningOverlayStyle())
+			return ui.RenderOverlay(dashboardBg, overlayConflictContent(m.conflictView), m.width, m.height, ui.ConflictOverlayStyle())
 		}
 		return ""
 	default:

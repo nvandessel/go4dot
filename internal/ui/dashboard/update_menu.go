@@ -60,7 +60,7 @@ func (m *Model) handleMenuAction(action Action) (tea.Model, tea.Cmd) {
 			"Uninstall go4dot?",
 			"This will remove all symlinks and state. This action cannot be undone.",
 		).WithLabels("Yes, uninstall", "Cancel")
-		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConfirmOverlayStyle())
 		m.confirm.SetSize(contentWidth, contentHeight)
 		m.pushView(viewConfirm)
 		return m, nil
