@@ -614,7 +614,7 @@ func TestDimSGRSequence(t *testing.T) {
 		{
 			name:     "background color dropped",
 			seq:      "\x1b[48;2;30;30;46m",
-			expected: "\x1b[48;2;30;30;46m", // empty params -> returns original
+			expected: "", // all params were backgrounds -> suppressed
 		},
 		{
 			name:     "non-SGR sequence returned as-is",
@@ -784,9 +784,9 @@ func TestDimSGRSequence_BasicBackground(t *testing.T) {
 	// Basic background color (42 = green bg) should be dropped
 	seq := "\x1b[42m"
 	result := dimSGRSequence(seq, fallback)
-	// With only a background param dropped, newParams is empty, so original is returned
-	if result != seq {
-		t.Errorf("dimSGRSequence(%q) = %q, want original %q", seq, result, seq)
+	// With only a background param dropped, newParams is empty, so sequence is suppressed
+	if result != "" {
+		t.Errorf("dimSGRSequence(%q) = %q, want empty string", seq, result)
 	}
 }
 
@@ -796,9 +796,9 @@ func TestDimSGRSequence_256Background(t *testing.T) {
 	// 256-color background: ESC[48;5;21m should be dropped
 	seq := "\x1b[48;5;21m"
 	result := dimSGRSequence(seq, fallback)
-	// With only background param dropped, newParams is empty, so original is returned
-	if result != seq {
-		t.Errorf("dimSGRSequence(%q) = %q, want original %q", seq, result, seq)
+	// With only background param dropped, newParams is empty, so sequence is suppressed
+	if result != "" {
+		t.Errorf("dimSGRSequence(%q) = %q, want empty string", seq, result)
 	}
 }
 
@@ -823,7 +823,7 @@ func TestDimSGRSequence_HighIntensityBackground(t *testing.T) {
 	// High-intensity background (100-107) should be dropped
 	seq := "\x1b[104m"
 	result := dimSGRSequence(seq, fallback)
-	if result != seq {
-		t.Errorf("dimSGRSequence(%q) = %q, want original", seq, result)
+	if result != "" {
+		t.Errorf("dimSGRSequence(%q) = %q, want empty string", seq, result)
 	}
 }

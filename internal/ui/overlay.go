@@ -316,9 +316,8 @@ func dimSGRSequence(seq string, fallback lipgloss.Color) string {
 	}
 	inner := seq[2 : len(seq)-1] // content between "[" and "m"
 
-	// Handle reset sequences
+	// Handle reset sequences - return as-is since dimAnsiColors handles plain text
 	if inner == "" || inner == "0" {
-		// Return a reset followed by re-applying the fallback foreground
 		return seq
 	}
 
@@ -391,7 +390,8 @@ func dimSGRSequence(seq string, fallback lipgloss.Color) string {
 	}
 
 	if len(newParams) == 0 {
-		return seq
+		// All params were backgrounds that got dropped - suppress the sequence
+		return ""
 	}
 
 	return "\x1b[" + strings.Join(newParams, ";") + "m"
