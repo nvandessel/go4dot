@@ -180,6 +180,49 @@ func TestOverlayMachineContent(t *testing.T) {
 	}
 }
 
+func TestOverlayOperationContent(t *testing.T) {
+	tests := []struct {
+		name       string
+		opType     OperationType
+		configName string
+		expectText string
+	}{
+		{name: "install", opType: OpInstall, expectText: "Installing"},
+		{name: "sync all", opType: OpSync, expectText: "Syncing All"},
+		{name: "sync single", opType: OpSyncSingle, configName: "vim", expectText: "vim"},
+		{name: "doctor", opType: OpDoctor, expectText: "Running Doctor"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ops := NewOperations(tt.opType, tt.configName, nil)
+			ops.width = 80
+			ops.height = 24
+			content := overlayOperationContent(&ops)
+			if !strings.Contains(content, tt.expectText) {
+				t.Fatalf("expected operation content to include %q, got %q", tt.expectText, content)
+			}
+		})
+	}
+}
+
+func TestOverlayOperationContent_DoneState(t *testing.T) {
+	ops := NewOperations(OpSync, "", nil)
+	ops.width = 80
+	ops.height = 24
+	ops.done = true
+	ops.success = true
+	ops.summary = "All configs synced"
+
+	content := overlayOperationContent(&ops)
+	if !strings.Contains(content, "All configs synced") {
+		t.Fatalf("expected done operation content to include summary, got %q", content)
+	}
+	if !strings.Contains(content, "Press Enter to continue") {
+		t.Fatalf("expected done operation content to include continuation hint, got %q", content)
+	}
+}
+
 func TestOverlayConflictContent_DisplayPath(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)

@@ -376,6 +376,12 @@ func overlayMachineContent(m *MachineView) string {
 	)
 }
 
+// overlayOperationContent returns the operation view content for overlay compositing (without border/placement).
+// The raw Operations.View() output is returned directly; the overlay system provides the border and centering.
+func overlayOperationContent(o *Operations) string {
+	return o.View()
+}
+
 // overlayConflictContent returns the conflict view content for overlay compositing (without border/placement).
 // This extracts the inner content from ConflictView without the border frame and lipgloss.Place wrapping.
 func overlayConflictContent(v *ConflictView) string {

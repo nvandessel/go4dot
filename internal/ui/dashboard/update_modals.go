@@ -474,8 +474,10 @@ func (m *Model) updateOperation(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.operations.width = msg.Width
-		m.operations.height = msg.Height
+		contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+		m.operations.width = contentWidth
+		m.operations.height = contentHeight
+		return m, nil
 
 	case OperationProgressMsg, OperationStepCompleteMsg, OperationLogMsg, OperationDoneMsg:
 		handled, cmd := m.handleOperationMsg(msg)
