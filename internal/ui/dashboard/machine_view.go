@@ -138,7 +138,11 @@ func (m *MachineView) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.currentForm.State == huh.StateCompleted {
 		// Collect values from persistent pointers
 		for id, ptr := range m.formStringPtrs {
-			m.formValues[id] = *ptr
+			val := *ptr
+			if id == "signing_key" {
+				val = machine.PostProcessSigningKey(val)
+			}
+			m.formValues[id] = val
 		}
 		for id, ptr := range m.formBoolPtrs {
 			if *ptr {

@@ -17,6 +17,21 @@ const (
 	signingKeyManual = "Enter manually..."
 )
 
+// PostProcessSigningKey extracts a raw GPG key ID from the formatted select
+// value "UserID <email> (KEYID)". Returns empty string for "None" or
+// "Enter manually..." selections.
+func PostProcessSigningKey(val string) string {
+	if val == signingKeyNone || val == signingKeyManual {
+		return ""
+	}
+	if start := strings.LastIndex(val, "("); start >= 0 {
+		if end := strings.LastIndex(val, ")"); end > start {
+			return val[start+1 : end]
+		}
+	}
+	return val
+}
+
 // PromptResult holds the collected values from prompts
 type PromptResult struct {
 	ID     string
@@ -222,17 +237,8 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 		switch v := ptr.(type) {
 		case *string:
 			val := *v
-			// Post-process signing_key select values
 			if id == "signing_key" {
-				if val == signingKeyNone {
-					val = ""
-				} else if val == signingKeyManual {
-					val = "" // User chose manual entry; leave empty for manual configuration
-				} else if start := strings.LastIndex(val, "("); start >= 0 {
-					if end := strings.LastIndex(val, ")"); end > start {
-						val = val[start+1 : end] // Extract key ID from "UserID <email> (KEYID)"
-					}
-				}
+				val = PostProcessSigningKey(val)
 			}
 			result.Values[id] = val
 		case *bool:
