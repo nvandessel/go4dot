@@ -83,9 +83,9 @@ func CollectSingleConfig(cfg *config.Config, id string, opts PromptOptions) (*Pr
 	return &result, nil
 }
 
-// resolveDefaults enriches machine config prompts with auto-detected values.
+// ResolveDefaults enriches machine config prompts with auto-detected values.
 // Returns a COPY — never mutates the input.
-func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
+func ResolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
 	enriched := mc
 	enriched.Prompts = make([]config.PromptField, len(mc.Prompts))
 	copy(enriched.Prompts, mc.Prompts)
@@ -122,7 +122,7 @@ func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
 
 // collectPrompts collects values for a single MachinePrompt using Huh forms
 func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, error) {
-	mc = resolveDefaults(mc) // enrich before building form
+	mc = ResolveDefaults(mc) // enrich before building form
 
 	result := PromptResult{
 		ID:     mc.ID,

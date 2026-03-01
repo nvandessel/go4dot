@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nvandessel/go4dot/internal/machine"
 	"github.com/nvandessel/go4dot/internal/ui"
 )
 
@@ -296,6 +297,22 @@ func (m *Model) updateMachine(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MachineConfigCompleteMsg:
 		m.popView()
 		m.machineView = nil
+
+		// Find the machine config and render/write the config file
+		mc := machine.GetMachineConfigByID(m.state.Config, msg.ID)
+		if mc == nil {
+			m.outputPanel.AddLog("error", fmt.Sprintf("Machine config '%s' not found", msg.ID))
+			return m, nil
+		}
+
+		opts := machine.RenderOptions{Overwrite: true}
+		result, err := machine.RenderAndWrite(mc, msg.Values, opts)
+		if err != nil {
+			m.outputPanel.AddLog("error", fmt.Sprintf("Failed to write config: %v", err))
+		} else {
+			m.outputPanel.AddLog("success", fmt.Sprintf("Wrote %s to %s", result.ID, result.Destination))
+		}
+
 		m.overridesPanel.RefreshStatus()
 		return m, nil
 	}

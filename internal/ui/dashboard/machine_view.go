@@ -180,7 +180,9 @@ func (m *MachineView) startConfigForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	mc := &m.cfg.MachineConfig[m.selectedIdx]
+	// Resolve smart defaults (auto-detect git user, GPG keys) before building form
+	enriched := machine.ResolveDefaults(m.cfg.MachineConfig[m.selectedIdx])
+	mc := &enriched
 	m.currentConfig = mc
 	m.formValues = make(map[string]string)
 	m.formStringPtrs = make(map[string]*string)
