@@ -31,8 +31,8 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterMode = true
 			return m, nil
 		case key.Matches(msg, keys.Menu):
-			contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
-			m.menu.SetSize(contentWidth, contentHeight)
+			// SetSize internally constrains to compact menu panel bounds
+			m.menu.SetSize(m.width, m.height)
 			m.pushView(viewMenu)
 			return m, nil
 		}
