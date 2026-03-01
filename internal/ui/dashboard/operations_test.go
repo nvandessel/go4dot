@@ -6,6 +6,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nvandessel/go4dot/internal/config"
+	"github.com/nvandessel/go4dot/internal/platform"
+	"github.com/nvandessel/go4dot/internal/ui"
 )
 
 func TestNewOperations(t *testing.T) {
@@ -569,5 +572,74 @@ func TestModel_View_Operation(t *testing.T) {
 	}
 	if !strings.Contains(view, "Installing") {
 		t.Error("expected view to contain 'Installing' in operation mode")
+	}
+}
+
+func TestModel_View_OperationUsesOverlay(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		HasConfig: true,
+	}
+	m := New(s)
+	m.width = 100
+	m.height = 40
+	m.currentView = viewOperation
+	m.operations = NewOperations(OpSync, "", nil)
+	m.operations.width = 80
+	m.operations.height = 30
+
+	view := m.View()
+
+	// Should contain the operation content (from the overlay)
+	if !strings.Contains(view, "Syncing All") {
+		t.Error("expected overlay view to contain 'Syncing All'")
+	}
+
+	// The view should NOT be the same as what viewDashboard() would return,
+	// confirming that the overlay compositing is happening
+	dashboardOnly := m.viewDashboard()
+	if view == dashboardOnly {
+		t.Error("expected operation overlay view to differ from plain dashboard view")
+	}
+}
+
+func TestModel_UpdateOperation_WindowSizeUsesOverlayContentSize(t *testing.T) {
+	s := State{
+		Platform: &platform.Platform{OS: "linux"},
+		Configs: []config.ConfigItem{
+			{Name: "vim"},
+		},
+		HasConfig: true,
+	}
+	m := New(s)
+	m.currentView = viewOperation
+	m.operations = NewOperations(OpInstall, "", nil)
+
+	// Send a WindowSizeMsg
+	msg := tea.WindowSizeMsg{Width: 120, Height: 50}
+	updatedModel, _ := m.Update(msg)
+	model := updatedModel.(*Model)
+
+	// The operations width/height should be the overlay content size,
+	// which is smaller than the raw terminal dimensions due to border and padding
+	style := ui.DefaultOverlayStyle()
+	expectedWidth, expectedHeight := overlayContentSize(120, 50, style)
+
+	if model.operations.width != expectedWidth {
+		t.Errorf("expected operations width to be %d (overlay content size), got %d", expectedWidth, model.operations.width)
+	}
+	if model.operations.height != expectedHeight {
+		t.Errorf("expected operations height to be %d (overlay content size), got %d", expectedHeight, model.operations.height)
+	}
+
+	// Ensure the overlay content size is strictly less than raw terminal size
+	if expectedWidth >= 120 {
+		t.Errorf("expected overlay content width (%d) to be less than terminal width (120)", expectedWidth)
+	}
+	if expectedHeight >= 50 {
+		t.Errorf("expected overlay content height (%d) to be less than terminal height (50)", expectedHeight)
 	}
 }
