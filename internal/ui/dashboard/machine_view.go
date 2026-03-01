@@ -138,7 +138,11 @@ func (m *MachineView) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.currentForm.State == huh.StateCompleted {
 		// Collect values from persistent pointers
 		for id, ptr := range m.formStringPtrs {
-			m.formValues[id] = *ptr
+			val := *ptr
+			if id == "signing_key" {
+				val = machine.PostProcessSigningKey(val)
+			}
+			m.formValues[id] = val
 		}
 		for id, ptr := range m.formBoolPtrs {
 			if *ptr {
@@ -180,7 +184,9 @@ func (m *MachineView) startConfigForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	mc := &m.cfg.MachineConfig[m.selectedIdx]
+	// Resolve smart defaults (auto-detect git user, GPG keys) before building form
+	enriched := machine.ResolveDefaults(m.cfg.MachineConfig[m.selectedIdx])
+	mc := &enriched
 	m.currentConfig = mc
 	m.formValues = make(map[string]string)
 	m.formStringPtrs = make(map[string]*string)

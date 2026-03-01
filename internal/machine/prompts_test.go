@@ -153,7 +153,7 @@ func TestResolveDefaults_UserName(t *testing.T) {
 			{ID: "user_name", Type: "text", Default: ""},
 		},
 	}
-	result := resolveDefaults(mc)
+	result := ResolveDefaults(mc)
 	if len(result.Prompts) != 1 {
 		t.Fatalf("expected 1 prompt, got %d", len(result.Prompts))
 	}
@@ -172,7 +172,7 @@ func TestResolveDefaults_UserEmail(t *testing.T) {
 			{ID: "user_email", Type: "text", Default: ""},
 		},
 	}
-	result := resolveDefaults(mc)
+	result := ResolveDefaults(mc)
 	if len(result.Prompts) != 1 {
 		t.Fatalf("expected 1 prompt, got %d", len(result.Prompts))
 	}
@@ -191,7 +191,7 @@ func TestResolveDefaults_PreservesExisting(t *testing.T) {
 			{ID: "user_email", Default: "existing@email.com"},
 		},
 	}
-	result := resolveDefaults(mc)
+	result := ResolveDefaults(mc)
 	if result.Prompts[0].Default != "existing-name" {
 		t.Errorf("user_name default was overwritten: got %q", result.Prompts[0].Default)
 	}
@@ -208,7 +208,7 @@ func TestResolveDefaults_SigningKeyGPG(t *testing.T) {
 			{ID: "signing_key", Type: "text"},
 		},
 	}
-	result := resolveDefaults(mc)
+	result := ResolveDefaults(mc)
 	// Just verify no crash and signing_key field exists
 	if len(result.Prompts) != 1 {
 		t.Fatalf("expected 1 prompt, got %d", len(result.Prompts))
@@ -223,7 +223,7 @@ func TestResolveDefaults_UnknownPrompt(t *testing.T) {
 			{ID: "unknown_field", Default: "value", Type: "text"},
 		},
 	}
-	result := resolveDefaults(mc)
+	result := ResolveDefaults(mc)
 	if result.Prompts[0].Default != "value" {
 		t.Errorf("unknown prompt default changed: got %q", result.Prompts[0].Default)
 	}
@@ -233,14 +233,14 @@ func TestResolveDefaults_UnknownPrompt(t *testing.T) {
 }
 
 func TestResolveDefaults_DoesNotMutateInput(t *testing.T) {
-	// Verify resolveDefaults returns a copy and does not mutate the original
+	// Verify ResolveDefaults returns a copy and does not mutate the original
 	original := config.MachinePrompt{
 		ID: "test",
 		Prompts: []config.PromptField{
 			{ID: "user_name", Default: "", Options: []string{"a", "b"}},
 		},
 	}
-	result := resolveDefaults(original)
+	result := ResolveDefaults(original)
 	if original.Prompts[0].Default != "" {
 		t.Error("original Default was mutated")
 	}

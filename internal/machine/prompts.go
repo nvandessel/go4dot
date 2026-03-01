@@ -17,6 +17,21 @@ const (
 	signingKeyManual = "Enter manually..."
 )
 
+// PostProcessSigningKey extracts a raw GPG key ID from the formatted select
+// value "UserID <email> (KEYID)". Returns empty string for "None" or
+// "Enter manually..." selections.
+func PostProcessSigningKey(val string) string {
+	if val == signingKeyNone || val == signingKeyManual {
+		return ""
+	}
+	if start := strings.LastIndex(val, "("); start >= 0 {
+		if end := strings.LastIndex(val, ")"); end > start {
+			return val[start+1 : end]
+		}
+	}
+	return val
+}
+
 // PromptResult holds the collected values from prompts
 type PromptResult struct {
 	ID     string
@@ -83,9 +98,9 @@ func CollectSingleConfig(cfg *config.Config, id string, opts PromptOptions) (*Pr
 	return &result, nil
 }
 
-// resolveDefaults enriches machine config prompts with auto-detected values.
+// ResolveDefaults enriches machine config prompts with auto-detected values.
 // Returns a COPY — never mutates the input.
-func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
+func ResolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
 	enriched := mc
 	enriched.Prompts = make([]config.PromptField, len(mc.Prompts))
 	copy(enriched.Prompts, mc.Prompts)
@@ -122,7 +137,7 @@ func resolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
 
 // collectPrompts collects values for a single MachinePrompt using Huh forms
 func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, error) {
-	mc = resolveDefaults(mc) // enrich before building form
+	mc = ResolveDefaults(mc) // enrich before building form
 
 	result := PromptResult{
 		ID:     mc.ID,
@@ -222,17 +237,8 @@ func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, 
 		switch v := ptr.(type) {
 		case *string:
 			val := *v
-			// Post-process signing_key select values
 			if id == "signing_key" {
-				if val == signingKeyNone {
-					val = ""
-				} else if val == signingKeyManual {
-					val = "" // User chose manual entry; leave empty for manual configuration
-				} else if start := strings.LastIndex(val, "("); start >= 0 {
-					if end := strings.LastIndex(val, ")"); end > start {
-						val = val[start+1 : end] // Extract key ID from "UserID <email> (KEYID)"
-					}
-				}
+				val = PostProcessSigningKey(val)
 			}
 			result.Values[id] = val
 		case *bool:
