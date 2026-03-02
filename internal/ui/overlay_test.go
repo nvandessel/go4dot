@@ -853,6 +853,8 @@ func TestUpdateForegroundState(t *testing.T) {
 		{"non-SGR preserves state", "\x1b[2A", false, false},
 		{"default foreground clears", "\x1b[39m", true, false},
 		{"composite reset clears foreground", "\x1b[0;1m", true, false},
+		{"24-bit fg with 0 in RGB does not reset", "\x1b[38;2;0;39;0m", false, true},
+		{"256-color fg skips payload", "\x1b[38;5;39m", false, true},
 		{"empty string preserves", "", true, true},
 	}
 

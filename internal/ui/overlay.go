@@ -305,6 +305,18 @@ func updateForegroundState(seq string, current bool) bool {
 			next = false // default foreground
 			continue
 		}
+		if p == "38" && i+1 < len(params) {
+			if params[i+1] == "2" && i+4 < len(params) {
+				next = true // 24-bit foreground
+				i += 4      // consume "2;r;g;b"
+				continue
+			}
+			if params[i+1] == "5" && i+2 < len(params) {
+				next = true // 256-color foreground
+				i += 2      // consume "5;n"
+				continue
+			}
+		}
 		n, err := strconv.Atoi(p)
 		if err != nil {
 			continue
@@ -312,14 +324,6 @@ func updateForegroundState(seq string, current bool) bool {
 		if (n >= 30 && n <= 37) || (n >= 90 && n <= 97) {
 			next = true // basic foreground
 			continue
-		}
-		if p == "38" && i+1 < len(params) {
-			if params[i+1] == "2" && i+4 < len(params) {
-				next = true // 24-bit foreground
-			}
-			if params[i+1] == "5" && i+2 < len(params) {
-				next = true // 256-color foreground
-			}
 		}
 	}
 	return next
@@ -363,9 +367,9 @@ func parseEscapeSeq(runes []rune, pos int) (string, int) {
 //   - Basic 8/16 colors: ESC[30-37m, ESC[90-97m
 //   - Reset:             ESC[0m or ESC[m
 //
-// Background colors and non-color attributes (bold, underline, etc.) are
-// preserved unchanged. If a foreground color is not found in dimColorMap,
-// the fallback color is used.
+// Background colors are dropped to prevent visual artifacts in the dimmed
+// layer. Non-color attributes (bold, underline, etc.) are preserved.
+// If a foreground color is not found in dimColorMap, the fallback color is used.
 func dimSGRSequence(seq string, fallback lipgloss.Color) string {
 	// Strip ESC[ prefix and m suffix
 	if len(seq) < 3 || !strings.HasSuffix(seq, "m") {
