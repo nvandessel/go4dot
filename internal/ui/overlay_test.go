@@ -662,6 +662,14 @@ func TestDimAnsiColors(t *testing.T) {
 		if !strings.Contains(plain, "ok") {
 			t.Error("expected 'ok' text to be preserved")
 		}
+		// #f38ba8 -> #794554 => 121;69;84
+		if !strings.Contains(result, "\x1b[38;2;121;69;84m") {
+			t.Error("expected error color to be rewritten to its dimmed mapped value (121;69;84)")
+		}
+		// #a6e3a1 -> #536f50 => 83;111;80
+		if !strings.Contains(result, "\x1b[38;2;83;111;80m") {
+			t.Error("expected ok color to be rewritten to its dimmed mapped value (83;111;80)")
+		}
 	})
 
 	t.Run("cursor movement sequences are skipped", func(t *testing.T) {
@@ -825,5 +833,54 @@ func TestDimSGRSequence_HighIntensityBackground(t *testing.T) {
 	result := dimSGRSequence(seq, fallback)
 	if result != "" {
 		t.Errorf("dimSGRSequence(%q) = %q, want empty string", seq, result)
+	}
+}
+
+func TestUpdateForegroundState(t *testing.T) {
+	tests := []struct {
+		name    string
+		seq     string
+		current bool
+		want    bool
+	}{
+		{"reset clears foreground", "\x1b[0m", true, false},
+		{"empty reset clears foreground", "\x1b[m", true, false},
+		{"24-bit foreground activates", "\x1b[38;2;88;91;127m", false, true},
+		{"basic foreground activates", "\x1b[31m", false, true},
+		{"high-intensity foreground activates", "\x1b[91m", false, true},
+		{"bold alone preserves state", "\x1b[1m", false, false},
+		{"bold alone preserves active", "\x1b[1m", true, true},
+		{"non-SGR preserves state", "\x1b[2A", false, false},
+		{"default foreground clears", "\x1b[39m", true, false},
+		{"empty string preserves", "", true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := updateForegroundState(tt.seq, tt.current)
+			if got != tt.want {
+				t.Errorf("updateForegroundState(%q, %v) = %v, want %v", tt.seq, tt.current, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDimAnsiColors_ForegroundNotOverriddenByFallback(t *testing.T) {
+	fallback := lipgloss.Color("#45475a")
+
+	// After a dimmed foreground is set, text should NOT be wrapped in fallback
+	// This tests the critical fix: dimmed foreground → text → should use dimmed color
+	styled := "\x1b[38;2;180;190;254mhello"
+	result := dimAnsiColors(styled, fallback)
+
+	// The dimmed SGR for #b4befe → #585b7f (88;91;127) should appear
+	if !strings.Contains(result, "\x1b[38;2;88;91;127m") {
+		t.Errorf("expected dimmed foreground SGR in result, got %q", result)
+	}
+	// "hello" should NOT be wrapped in fallback style (which would add another SGR)
+	// Count SGR sequences — should be exactly one foreground SGR before "hello"
+	plain := stripAnsi(result)
+	if plain != "hello" {
+		t.Errorf("expected plain text 'hello', got %q", plain)
 	}
 }

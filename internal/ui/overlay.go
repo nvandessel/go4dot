@@ -220,22 +220,35 @@ func dimAnsiColors(s string, fallback lipgloss.Color) string {
 	var result strings.Builder
 	fallbackStyle := lipgloss.NewStyle().Foreground(fallback)
 	var plainBuf strings.Builder
+	hasActiveForeground := false
+
+	flushPlain := func() {
+		if plainBuf.Len() == 0 {
+			return
+		}
+		txt := plainBuf.String()
+		if hasActiveForeground {
+			// A dimmed foreground SGR is already active — emit raw text
+			result.WriteString(txt)
+		} else {
+			// No foreground set — apply fallback dim color
+			result.WriteString(fallbackStyle.Render(txt))
+		}
+		plainBuf.Reset()
+	}
 
 	i := 0
 	runes := []rune(s)
 	for i < len(runes) {
 		if runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
-			// Flush any accumulated plain text with fallback dim color
-			if plainBuf.Len() > 0 {
-				result.WriteString(fallbackStyle.Render(plainBuf.String()))
-				plainBuf.Reset()
-			}
+			flushPlain()
 
 			// Parse the full SGR escape sequence
 			seq, end := parseEscapeSeq(runes, i)
 			if end > i {
 				dimmed := dimSGRSequence(seq, fallback)
 				result.WriteString(dimmed)
+				hasActiveForeground = updateForegroundState(dimmed, hasActiveForeground)
 				i = end
 				continue
 			}
@@ -260,12 +273,48 @@ func dimAnsiColors(s string, fallback lipgloss.Color) string {
 		i++
 	}
 
-	// Flush remaining plain text
-	if plainBuf.Len() > 0 {
-		result.WriteString(fallbackStyle.Render(plainBuf.String()))
-	}
+	flushPlain()
 
 	return result.String()
+}
+
+// updateForegroundState tracks whether the active SGR state has an explicit foreground.
+// A reset (ESC[0m or ESC[m) clears the foreground. A foreground code (30-37, 90-97,
+// 38;2;r;g;b, or 38;5;n) activates it.
+func updateForegroundState(seq string, current bool) bool {
+	if len(seq) < 3 || !strings.HasPrefix(seq, "\x1b[") || !strings.HasSuffix(seq, "m") {
+		return current
+	}
+	inner := seq[2 : len(seq)-1]
+	if inner == "" || inner == "0" {
+		return false // reset clears foreground
+	}
+	next := current
+	params := strings.Split(inner, ";")
+	for i := 0; i < len(params); i++ {
+		p := params[i]
+		if p == "39" {
+			next = false // default foreground
+			continue
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			continue
+		}
+		if (n >= 30 && n <= 37) || (n >= 90 && n <= 97) {
+			next = true // basic foreground
+			continue
+		}
+		if p == "38" && i+1 < len(params) {
+			if params[i+1] == "2" && i+4 < len(params) {
+				next = true // 24-bit foreground
+			}
+			if params[i+1] == "5" && i+2 < len(params) {
+				next = true // 256-color foreground
+			}
+		}
+	}
+	return next
 }
 
 // parseEscapeSeq extracts an SGR escape sequence starting at position pos.
