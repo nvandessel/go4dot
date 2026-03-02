@@ -27,6 +27,59 @@ func TestOverlayHelpContent(t *testing.T) {
 	}
 }
 
+func TestOverlayMenuContent(t *testing.T) {
+	m := NewMenu()
+	m.SetSize(100, 40)
+
+	content := overlayMenuContent(&m)
+
+	if content == "" {
+		t.Fatal("expected non-empty menu overlay content")
+	}
+
+	// Should contain the "More Commands" title from the list
+	if !strings.Contains(content, "More Commands") {
+		t.Errorf("expected menu content to include 'More Commands' title")
+	}
+
+	// Should contain the ESC hint
+	if !strings.Contains(content, "ESC to close") {
+		t.Errorf("expected menu content to include 'ESC to close' hint")
+	}
+
+	// Should contain menu items
+	if !strings.Contains(content, "List Configs") {
+		t.Errorf("expected menu content to include 'List Configs' item")
+	}
+	if !strings.Contains(content, "External Dependencies") {
+		t.Errorf("expected menu content to include 'External Dependencies' item")
+	}
+	if !strings.Contains(content, "Uninstall") {
+		t.Errorf("expected menu content to include 'Uninstall' item")
+	}
+}
+
+func TestOverlayMenuContent_CompactWidth(t *testing.T) {
+	m := NewMenu()
+	m.SetSize(200, 80) // large terminal
+
+	content := overlayMenuContent(&m)
+	lines := strings.Split(content, "\n")
+
+	// The content should be constrained to menuMaxWidth, not full terminal width.
+	// Check that no line exceeds menuMaxWidth (with some tolerance for ANSI codes).
+	for _, line := range lines {
+		// Use lipgloss.Width which strips ANSI for visual width measurement.
+		// But since we can't easily import lipgloss in tests, just check
+		// that the plain text is reasonable.
+		plain := strings.TrimRight(line, " ")
+		if len(plain) > 0 && len(stripAnsiForTest(plain)) > menuMaxWidth+10 {
+			t.Errorf("line exceeds compact width: visual width of %q is %d (max %d)",
+				plain, len(stripAnsiForTest(plain)), menuMaxWidth)
+		}
+	}
+}
+
 func TestOverlayConfirmContent(t *testing.T) {
 	confirm := &Confirm{
 		title:       "Confirm Action",

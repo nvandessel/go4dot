@@ -12,8 +12,8 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
-		m.menu.SetSize(contentWidth, contentHeight)
+		// SetSize internally constrains to compact menu panel bounds
+		m.menu.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case tea.KeyMsg:
