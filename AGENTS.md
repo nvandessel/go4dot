@@ -359,88 +359,18 @@ make sandbox   # Run Docker/Podman container for isolated testing
 - Do not consider TUI work complete until screenshots confirm correct rendering
 - See "VHS Visual Testing" section above for detailed instructions
 
-## Issue Tracking with Beads
+## Issue Tracking
 
-This repository uses **Beads** for AI-native issue tracking. Issues live in `.beads/` and sync with git.
+This project uses **bd (beads)** for issue tracking.
+Run `bd prime` for workflow context, or install hooks (`bd hooks install`) for auto-injection.
 
-### Agent Warning: Interactive Commands
+**Quick reference:**
+- `bd ready` - Find unblocked work
+- `bd create "Title" --type task --priority 2` - Create issue
+- `bd close <id>` - Complete work
+- `bd dolt push` - Push beads to remote
 
-DO NOT use bd edit - it opens an interactive editor ($EDITOR) which AI agents cannot use.
-
-Use bd update with flags instead (see Basic Commands below).
-
-### Basic bd Commands
-
-**Listing Issues:**
-```bash
-bd list                     # List all open issues
-bd list --status closed     # List closed issues
-bd list --status all        # List all issues
-bd list --assigned me       # List issues assigned to you
-bd list --tag bug           # Filter by tag
-```
-
-**Creating Issues:**
-```bash
-bd create --title "Issue title" --description "Details"
-bd create --title "Bug fix" --description "Fix the thing" --tag bug --tag priority-high
-bd create --title "Feature" --design "Design notes" --acceptance "AC criteria"
-```
-
-**Viewing Issue Details:**
-```bash
-bd show <id>                # Show full issue details
-```
-
-**Updating Issues (Non-Interactive):**
-```bash
-bd update <id> --title "new title"
-bd update <id> --description "new description"
-bd update <id> --design "design notes"
-bd update <id> --notes "additional notes"
-bd update <id> --acceptance "acceptance criteria"
-bd update <id> --status in-progress
-bd update <id> --status closed
-bd update <id> --assigned username
-bd update <id> --tag new-tag
-```
-
-**Closing Issues:**
-```bash
-bd close <id>               # Mark issue as closed
-bd update <id> --status closed  # Alternative syntax
-```
-
-**Deleting Issues:**
-```bash
-bd delete <id>              # Permanently delete an issue
-```
-
-**Status Transitions:**
-- `open` → `in-progress` → `closed`
-- Use `--status` flag with bd update to change status
-
-### GitHub Integration
-
-- **Linking Issues:** When creating a Bead based on a GitHub issue, mention the GitHub issue number/URL in the Bead description.
-- **Closing Issues:** When opening a PR for a Bead that has a corresponding GitHub issue, use the `Closes #issue-number` notation in the PR description. This ensures the GitHub issue is automatically closed when the PR merges, maintaining sync and traceability.
-
-### Syncing
-
-Beads uses a **Dolt backend** with auto-sync. Changes are automatically exported to `.beads/issues.jsonl` after mutations (5s debounce) and imported from JSONL when newer (e.g., after `git pull`).
-
-```bash
-# Push Dolt changes to remote
-bd dolt push
-
-# Pull Dolt changes from remote
-bd dolt pull
-
-# Commit pending Dolt changes
-bd dolt commit -m "update issues"
-```
-
-The JSONL file (`.beads/issues.jsonl`) is committed to git as a portable backup. Dolt handles merging at the database level.
+For full workflow details: `bd prime`
 
 ## Landing the Plane (Session Completion)
 
