@@ -852,6 +852,7 @@ func TestUpdateForegroundState(t *testing.T) {
 		{"bold alone preserves active", "\x1b[1m", true, true},
 		{"non-SGR preserves state", "\x1b[2A", false, false},
 		{"default foreground clears", "\x1b[39m", true, false},
+		{"composite reset clears foreground", "\x1b[0;1m", true, false},
 		{"empty string preserves", "", true, true},
 	}
 
@@ -862,6 +863,23 @@ func TestUpdateForegroundState(t *testing.T) {
 				t.Errorf("updateForegroundState(%q, %v) = %v, want %v", tt.seq, tt.current, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDimAnsiColors_NonSGRCSIDropped(t *testing.T) {
+	fallback := lipgloss.Color("#45475a")
+
+	// Non-SGR CSI sequences like cursor movement (ESC[2A) should be dropped
+	// in dimmed content to prevent affecting cursor positioning
+	input := "hello\x1b[2Aworld"
+	result := dimAnsiColors(input, fallback)
+	plain := stripAnsi(result)
+	if plain != "helloworld" {
+		t.Errorf("expected 'helloworld', got %q", plain)
+	}
+	// The cursor movement sequence should NOT appear in the result
+	if strings.Contains(result, "\x1b[2A") {
+		t.Error("non-SGR CSI sequence should be dropped from dimmed content")
 	}
 }
 

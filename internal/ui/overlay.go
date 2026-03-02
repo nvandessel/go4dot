@@ -243,12 +243,16 @@ func dimAnsiColors(s string, fallback lipgloss.Color) string {
 		if runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
 			flushPlain()
 
-			// Parse the full SGR escape sequence
+			// Parse the escape sequence
 			seq, end := parseEscapeSeq(runes, i)
 			if end > i {
-				dimmed := dimSGRSequence(seq, fallback)
-				result.WriteString(dimmed)
-				hasActiveForeground = updateForegroundState(dimmed, hasActiveForeground)
+				// Only preserve SGR sequences (ending in 'm'); drop other
+				// CSI controls (cursor movement, etc.) in dimmed content.
+				if strings.HasSuffix(seq, "m") {
+					dimmed := dimSGRSequence(seq, fallback)
+					result.WriteString(dimmed)
+					hasActiveForeground = updateForegroundState(dimmed, hasActiveForeground)
+				}
 				i = end
 				continue
 			}
@@ -293,6 +297,10 @@ func updateForegroundState(seq string, current bool) bool {
 	params := strings.Split(inner, ";")
 	for i := 0; i < len(params); i++ {
 		p := params[i]
+		if p == "0" {
+			next = false // reset-all clears foreground even in composite SGR
+			continue
+		}
 		if p == "39" {
 			next = false // default foreground
 			continue
