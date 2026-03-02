@@ -61,9 +61,9 @@ type Model struct {
 	selectedConfigs map[string]bool
 	showHelp        bool
 	currentView     view
-	viewStack       []view        // Stack for navigation history
-	operationActive bool          // true when an operation is running in the output pane
-	program         *tea.Program  // reference for inline operations
+	viewStack       []view       // Stack for navigation history
+	operationActive bool         // true when an operation is running in the output pane
+	program         *tea.Program // reference for inline operations
 
 	// Multi-panel layout
 	focusManager *FocusManager
@@ -400,8 +400,6 @@ func (m Model) View() string {
 	switch m.currentView {
 	case viewNoConfig:
 		return m.noconfig.View()
-	case viewOperation:
-		return m.viewOperation()
 	}
 
 	// Render the dashboard as background for overlay compositing
@@ -414,6 +412,8 @@ func (m Model) View() string {
 
 	// Handle overlay-based modal views
 	switch m.currentView {
+	case viewOperation:
+		return ui.RenderOverlay(dashboardBg, overlayOperationContent(&m.operations), m.width, m.height, ui.DefaultOverlayStyle())
 	case viewMenu:
 		return ui.RenderOverlay(dashboardBg, overlayMenuContent(m.menu), m.width, m.height, ui.DefaultOverlayStyle())
 	case viewOnboarding:
@@ -556,32 +556,6 @@ func (m Model) viewDashboard() string {
 		mainContent,
 		filterBar,
 		m.footer.View(),
-	)
-}
-
-func (m Model) viewOperation() string {
-	safeWidth := m.width - 4
-	if safeWidth < 1 {
-		safeWidth = 1
-	}
-	safeHeight := m.height - 4
-	if safeHeight < 1 {
-		safeHeight = 1
-	}
-
-	containerStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ui.PrimaryColor).
-		Padding(1, 2).
-		Width(safeWidth).
-		Height(safeHeight)
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		containerStyle.Render(m.operations.View()),
 	)
 }
 
