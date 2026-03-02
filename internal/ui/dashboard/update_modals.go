@@ -107,7 +107,7 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 			"Would you like to run install now? This will set up dependencies and clone external repos.",
 		).WithLabels("Yes, install", "Skip for now")
 		m.confirm.selected = 0 // Default to "Yes, install"
-		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConfirmOverlayStyle())
 		m.confirm.SetSize(contentWidth, contentHeight)
 
 		// Switch from onboarding view to confirm view
@@ -134,7 +134,7 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.confirm != nil {
-			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.ConfirmOverlayStyle())
 			m.confirm.SetSize(contentWidth, contentHeight)
 		}
 
@@ -199,7 +199,7 @@ func (m *Model) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(conflicts) > 0 {
 					// Show conflict resolution modal
 					m.conflictView = NewConflictView(conflicts)
-					contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+					contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConflictOverlayStyle())
 					m.conflictView.SetSize(contentWidth, contentHeight)
 					m.pendingOperation = OpInstall
 					m.pendingConflicts = conflicts
@@ -402,7 +402,7 @@ func (m *Model) updateConflict(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.conflictView != nil {
-			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.WarningOverlayStyle())
+			contentWidth, contentHeight := overlayContentSize(msg.Width, msg.Height, ui.ConflictOverlayStyle())
 			m.conflictView.SetSize(contentWidth, contentHeight)
 		}
 

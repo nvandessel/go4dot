@@ -71,7 +71,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update other components
 		m.footer.width = msg.Width
-		helpWidth, helpHeight := overlayContentSize(msg.Width, msg.Height, ui.DefaultOverlayStyle())
+		helpWidth, helpHeight := overlayContentSize(msg.Width, msg.Height, ui.HelpOverlayStyle())
 		m.help.width = helpWidth
 		m.help.height = helpHeight
 
@@ -108,7 +108,7 @@ func (m *Model) updateDashboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			desc,
 		).WithLabels("Yes, set up", "Skip for now")
 		m.confirm.selected = 0
-		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.DefaultOverlayStyle())
+		contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConfirmOverlayStyle())
 		m.confirm.SetSize(contentWidth, contentHeight)
 		m.pushView(viewConfirm)
 		return m, nil
@@ -240,7 +240,7 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConflictOverlayStyle())
 				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpSync
 				m.pendingConflicts = conflicts
@@ -269,7 +269,7 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConflictOverlayStyle())
 				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpInstall
 				m.pendingConflicts = conflicts
@@ -355,7 +355,7 @@ func (m *Model) handlePanelActions(msg tea.KeyMsg) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConflictOverlayStyle())
 				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpBulkSync
 				m.pendingConfigNames = names
@@ -394,7 +394,7 @@ func (m *Model) handleEnterAction(focused PanelID) tea.Cmd {
 			if len(conflicts) > 0 {
 				// Show conflict resolution modal
 				m.conflictView = NewConflictView(conflicts)
-				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.WarningOverlayStyle())
+				contentWidth, contentHeight := overlayContentSize(m.width, m.height, ui.ConflictOverlayStyle())
 				m.conflictView.SetSize(contentWidth, contentHeight)
 				m.pendingOperation = OpSyncSingle
 				m.pendingConfigName = cfg.Name

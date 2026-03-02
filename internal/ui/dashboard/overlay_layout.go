@@ -6,13 +6,16 @@ import (
 )
 
 func overlayContentSize(width, height int, style ui.OverlayStyle) (int, int) {
+	// Apply percentage constraints before subtracting chrome.
+	w, h := ui.ClampToConstraints(width, height, style)
+
 	border := 0
 	if style.BorderStyle != (lipgloss.Border{}) {
 		border = 1
 	}
 
-	contentWidth := width - 2*(border+style.PaddingH)
-	contentHeight := height - 2*(border+style.PaddingV)
+	contentWidth := w - 2*(border+style.PaddingH)
+	contentHeight := h - 2*(border+style.PaddingV)
 
 	if contentWidth < 1 {
 		contentWidth = 1

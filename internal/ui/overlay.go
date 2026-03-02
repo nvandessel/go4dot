@@ -22,6 +22,12 @@ type OverlayStyle struct {
 	DimChar string
 	// DimColor is the foreground color for the dimmed background character
 	DimColor lipgloss.Color
+	// MaxWidthPct constrains the modal width as a fraction of terminal width (0.0-1.0).
+	// A value of 0 means no constraint (full width minus chrome).
+	MaxWidthPct float64
+	// MaxHeightPct constrains the modal height as a fraction of terminal height (0.0-1.0).
+	// A value of 0 means no constraint (full height minus chrome).
+	MaxHeightPct float64
 }
 
 // DefaultOverlayStyle returns the standard floating modal style.
@@ -29,13 +35,15 @@ type OverlayStyle struct {
 // purple-accented theme used throughout the dashboard.
 func DefaultOverlayStyle() OverlayStyle {
 	return OverlayStyle{
-		BorderStyle: lipgloss.RoundedBorder(),
-		BorderColor: PrimaryColor,
-		PaddingH:    2,
-		PaddingV:    1,
-		Background:  lipgloss.Color("#1e1e2e"), // Catppuccin Mocha Base
-		DimChar:     " ",
-		DimColor:    lipgloss.Color("#45475a"), // Catppuccin Mocha Surface1
+		BorderStyle:  lipgloss.RoundedBorder(),
+		BorderColor:  PrimaryColor,
+		PaddingH:     2,
+		PaddingV:     1,
+		Background:   lipgloss.Color("#1e1e2e"), // Catppuccin Mocha Base
+		DimChar:      " ",
+		DimColor:     lipgloss.Color("#45475a"), // Catppuccin Mocha Surface1
+		MaxWidthPct:  0.75,
+		MaxHeightPct: 0.65,
 	}
 }
 
@@ -44,6 +52,57 @@ func WarningOverlayStyle() OverlayStyle {
 	s := DefaultOverlayStyle()
 	s.BorderColor = WarningColor
 	return s
+}
+
+// HelpOverlayStyle returns an overlay style sized for the help text modal.
+func HelpOverlayStyle() OverlayStyle {
+	s := DefaultOverlayStyle()
+	s.MaxWidthPct = 0.60
+	s.MaxHeightPct = 0.70
+	return s
+}
+
+// ConfirmOverlayStyle returns a compact overlay style for confirmation dialogs.
+func ConfirmOverlayStyle() OverlayStyle {
+	s := DefaultOverlayStyle()
+	s.MaxWidthPct = 0.40
+	s.MaxHeightPct = 0.40
+	return s
+}
+
+// ConflictOverlayStyle returns an overlay style for the conflict resolution dialog.
+func ConflictOverlayStyle() OverlayStyle {
+	s := WarningOverlayStyle()
+	s.MaxWidthPct = 0.50
+	s.MaxHeightPct = 0.50
+	return s
+}
+
+// ClampToConstraints applies the MaxWidthPct/MaxHeightPct constraints to
+// terminal dimensions, returning the clamped width and height. If either
+// percentage is zero or negative, no constraint is applied on that axis.
+func ClampToConstraints(termWidth, termHeight int, style OverlayStyle) (int, int) {
+	w := termWidth
+	h := termHeight
+	if style.MaxWidthPct > 0 && style.MaxWidthPct < 1.0 {
+		maxW := int(float64(termWidth) * style.MaxWidthPct)
+		if w > maxW {
+			w = maxW
+		}
+	}
+	if style.MaxHeightPct > 0 && style.MaxHeightPct < 1.0 {
+		maxH := int(float64(termHeight) * style.MaxHeightPct)
+		if h > maxH {
+			h = maxH
+		}
+	}
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return w, h
 }
 
 // RenderOverlay composites a modal on top of a background view.
