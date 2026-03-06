@@ -117,3 +117,78 @@ func findOrphanedSymlinks(configPath, home string) []string {
 
 	return orphans
 }
+
+// findOrphanFiles finds files in home managed directories that aren't tracked
+// by the config source. Only checks directories where the config has files
+// (not parent traversal directories). Skips root directory to avoid scanning
+// the entire home.
+func findOrphanFiles(configPath, home string) []string {
+	var orphans []string
+
+	// Build set of expected file paths (relative to config root)
+	expectedFiles := make(map[string]bool)
+	_ = filepath.Walk(configPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		relPath, err := filepath.Rel(configPath, path)
+		if err == nil {
+			expectedFiles[relPath] = true
+		}
+		return nil
+	})
+
+	// Get directories that directly contain config files
+	fileDirs := make(map[string]bool)
+	for relPath := range expectedFiles {
+		dir := filepath.Dir(relPath)
+		fileDirs[dir] = true
+	}
+
+	// Walk these directories in home, find unmanaged files
+	for relDir := range fileDirs {
+		// Skip root directory to avoid scanning entire home
+		if relDir == "." {
+			continue
+		}
+
+		targetDir := filepath.Join(home, relDir)
+		entries, err := os.ReadDir(targetDir)
+		if err != nil {
+			continue
+		}
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+
+			entryRelPath := filepath.Join(relDir, entry.Name())
+
+			// Skip if this file is expected from the config
+			if expectedFiles[entryRelPath] {
+				continue
+			}
+
+			// Skip symlinks pointing into our config dir (handled by MissingFiles)
+			entryPath := filepath.Join(targetDir, entry.Name())
+			if entry.Type()&os.ModeSymlink != 0 {
+				linkDest, err := os.Readlink(entryPath)
+				if err == nil {
+					if !filepath.IsAbs(linkDest) {
+						linkDest = filepath.Join(targetDir, linkDest)
+					}
+					linkDest = filepath.Clean(linkDest)
+					relToConfig, err := filepath.Rel(configPath, linkDest)
+					if err == nil && !strings.HasPrefix(relToConfig, "..") && relToConfig != ".." {
+						continue
+					}
+				}
+			}
+
+			orphans = append(orphans, entryRelPath)
+		}
+	}
+
+	return orphans
+}

@@ -1,6 +1,7 @@
 package stow
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,23 +12,27 @@ import (
 
 // DriftResult represents the drift status for a single config.
 type DriftResult struct {
-	ConfigName    string   // Name of the config (e.g., "nvim")
-	ConfigPath    string   // Path within dotfiles (e.g., "nvim")
-	CurrentCount  int      // Current file count in the config directory
-	StoredCount   int      // File count stored in state
-	HasDrift      bool     // True if counts differ or files are missing/conflicting
-	NewFiles      []string // Files in dotfiles but not symlinked (populated by FullDriftCheck)
-	MissingFiles  []string // Symlinks pointing to deleted files
-	ConflictFiles []string // Files that exist in home but aren't symlinks
+	ConfigName        string   // Name of the config (e.g., "nvim")
+	ConfigPath        string   // Path within dotfiles (e.g., "nvim")
+	CurrentCount      int      // Current file count in the config directory
+	StoredCount       int      // File count stored in state
+	HasDrift          bool     // True if counts differ or files are missing/conflicting
+	NewFiles          []string // Files in dotfiles but not symlinked (populated by FullDriftCheck)
+	MissingFiles      []string // Symlinks pointing to deleted files
+	ConflictFiles     []string // Files that exist in home but aren't symlinks
+	ContentDriftFiles []string // Conflict files where dest content differs from source
+	OrphanFiles       []string // Files in dest managed dirs not tracked by source
 }
 
 // DriftSummary provides an overview of drift across all configs.
 type DriftSummary struct {
-	TotalConfigs   int           // Total number of configs analyzed
-	DriftedConfigs int           // Number of configs with detected drift
-	TotalNewFiles  int           // Total number of new files across all configs
-	Results        []DriftResult // Detailed results for each config
-	RemovedConfigs []string      // Configs in state but not in current config
+	TotalConfigs      int           // Total number of configs analyzed
+	DriftedConfigs    int           // Number of configs with detected drift
+	TotalNewFiles     int           // Total number of new files across all configs
+	TotalContentDrift int           // Total content-drifted conflict files
+	TotalOrphans      int           // Total untracked files in managed dirs
+	Results           []DriftResult // Detailed results for each config
+	RemovedConfigs    []string      // Configs in state but not in current config
 }
 
 // HasDrift returns true if any config has drift or if there are removed configs.
@@ -138,6 +143,9 @@ func FullDriftCheckWithHome(cfg *config.Config, dotfilesPath, home string, st *s
 
 				// File exists but is not a symlink - conflict
 				result.ConflictFiles = append(result.ConflictFiles, relPath)
+				if hasContentDrift(path, targetPath) {
+					result.ContentDriftFiles = append(result.ContentDriftFiles, relPath)
+				}
 				return nil
 			}
 
@@ -156,6 +164,9 @@ func FullDriftCheckWithHome(cfg *config.Config, dotfilesPath, home string, st *s
 			// If symlink points to wrong location, count as conflict
 			if linkDest != path {
 				result.ConflictFiles = append(result.ConflictFiles, relPath)
+				if hasContentDrift(path, targetPath) {
+					result.ContentDriftFiles = append(result.ContentDriftFiles, relPath)
+				}
 			}
 
 			return nil
@@ -169,6 +180,7 @@ func FullDriftCheckWithHome(cfg *config.Config, dotfilesPath, home string, st *s
 		// We can do this by walking the target directories that we know about
 		// from the current config structure.
 		result.MissingFiles = findOrphanedSymlinks(configPath, home)
+		result.OrphanFiles = findOrphanFiles(configPath, home)
 
 		result.HasDrift = len(result.NewFiles) > 0 || len(result.ConflictFiles) > 0 || len(result.MissingFiles) > 0
 		results = append(results, result)
@@ -197,10 +209,46 @@ func FullDriftCheckWithHome(cfg *config.Config, dotfilesPath, home string, st *s
 		if r.HasDrift {
 			summary.DriftedConfigs++
 			summary.TotalNewFiles += len(r.NewFiles)
+			summary.TotalContentDrift += len(r.ContentDriftFiles)
 		}
+		summary.TotalOrphans += len(r.OrphanFiles)
 	}
 
 	return summary, nil
+}
+
+// hasContentDrift compares the content of source and dest files.
+// Returns true if content differs, false if identical or on error.
+func hasContentDrift(sourcePath, destPath string) bool {
+	sourceInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		return false
+	}
+	destInfo, err := os.Stat(destPath)
+	if err != nil {
+		return false
+	}
+
+	// Different sizes means different content
+	if sourceInfo.Size() != destInfo.Size() {
+		return true
+	}
+
+	// Skip very large files (>10MB)
+	if sourceInfo.Size() > 10*1024*1024 {
+		return false
+	}
+
+	sourceContent, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return false
+	}
+	destContent, err := os.ReadFile(destPath)
+	if err != nil {
+		return false
+	}
+
+	return !bytes.Equal(sourceContent, destContent)
 }
 
 // GetDriftedConfigs returns only configs that have drift.

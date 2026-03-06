@@ -200,6 +200,36 @@ func (p *DetailsPanel) renderConfigDetails() string {
 		lines = append(lines, "")
 	}
 
+	// Get drift result for enhanced display
+	var driftResult *stow.DriftResult
+	if p.state.DriftSummary != nil {
+		driftResult = p.state.DriftSummary.ResultByName(cfg.Name)
+	}
+
+	// Show drift status summary
+	if driftResult != nil && (driftResult.HasDrift || len(driftResult.OrphanFiles) > 0) {
+		lines = append(lines, headerStyle.Render("DRIFT STATUS"))
+		var driftParts []string
+		if len(driftResult.NewFiles) > 0 {
+			driftParts = append(driftParts, okStyle.Render(fmt.Sprintf("+%d new", len(driftResult.NewFiles))))
+		}
+		if len(driftResult.MissingFiles) > 0 {
+			driftParts = append(driftParts, errStyle.Render(fmt.Sprintf("-%d missing", len(driftResult.MissingFiles))))
+		}
+		if len(driftResult.ConflictFiles) > 0 {
+			conflictText := fmt.Sprintf("!%d conflicts", len(driftResult.ConflictFiles))
+			if len(driftResult.ContentDriftFiles) > 0 {
+				conflictText += fmt.Sprintf(" (%d content differs)", len(driftResult.ContentDriftFiles))
+			}
+			driftParts = append(driftParts, warnStyle.Render(conflictText))
+		}
+		if len(driftResult.OrphanFiles) > 0 {
+			driftParts = append(driftParts, subtleStyle.Render(fmt.Sprintf("?%d untracked", len(driftResult.OrphanFiles))))
+		}
+		lines = append(lines, "  "+strings.Join(driftParts, ", "))
+		lines = append(lines, "")
+	}
+
 	if linkStatus != nil {
 		linked := linkStatus.LinkedCount
 		total := linkStatus.TotalCount
@@ -213,6 +243,13 @@ func (p *DetailsPanel) renderConfigDetails() string {
 
 		// Build and render file tree with proper connectors
 		tree := buildFileTree(linkStatus.Files)
+
+		// Augment tree with drift information
+		if driftResult != nil {
+			addOrphansToTree(tree, driftResult.OrphanFiles)
+			markContentDriftInTree(tree, driftResult.ContentDriftFiles)
+		}
+
 		treeLines := renderFileTree(tree, "", true, okStyle, warnStyle, errStyle, subtleStyle)
 		lines = append(lines, treeLines...)
 		lines = append(lines, "")
@@ -258,11 +295,13 @@ func (p *DetailsPanel) renderConfigDetails() string {
 
 // fileTreeNode represents a node in the file tree (either a directory or file)
 type fileTreeNode struct {
-	name     string
-	isDir    bool
-	isLinked bool
-	issue    string
-	children map[string]*fileTreeNode
+	name            string
+	isDir           bool
+	isLinked        bool
+	issue           string
+	isOrphan        bool // File in dest not tracked by source
+	hasContentDrift bool // Conflict file with different content from source
+	children        map[string]*fileTreeNode
 }
 
 // buildFileTree creates a tree structure from flat file paths
@@ -363,8 +402,12 @@ func renderFileTree(node *fileTreeNode, prefix string, isRoot bool, okStyle, war
 		} else {
 			// File node - choose status icon
 			var icon string
-			if child.isLinked {
+			if child.isOrphan {
+				icon = subtleStyle.Render("?")
+			} else if child.isLinked {
 				icon = okStyle.Render("✓")
+			} else if child.hasContentDrift {
+				icon = errStyle.Render("≠")
 			} else if strings.Contains(strings.ToLower(child.issue), "conflict") ||
 				strings.Contains(strings.ToLower(child.issue), "exists") ||
 				strings.Contains(strings.ToLower(child.issue), "elsewhere") {
@@ -375,9 +418,15 @@ func renderFileTree(node *fileTreeNode, prefix string, isRoot bool, okStyle, war
 
 			lines = append(lines, linePrefix+subtleStyle.Render(connector)+" "+icon+" "+name)
 
-			// Show issue description for unlinked files
-			if !child.isLinked && child.issue != "" {
-				lines = append(lines, subtleStyle.Render(childPrefix+"→ "+child.issue))
+			// Show issue description
+			if child.isOrphan {
+				lines = append(lines, subtleStyle.Render(childPrefix+"→ untracked (not in source)"))
+			} else if !child.isLinked && child.issue != "" {
+				issueText := child.issue
+				if child.hasContentDrift {
+					issueText += " [content differs]"
+				}
+				lines = append(lines, subtleStyle.Render(childPrefix+"→ "+issueText))
 			}
 		}
 	}
@@ -582,6 +631,68 @@ func (p *DetailsPanel) renderExternalDetails() string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// addOrphansToTree adds orphan file nodes to the file tree
+func addOrphansToTree(root *fileTreeNode, orphanFiles []string) {
+	for _, orphanPath := range orphanFiles {
+		parts := strings.Split(orphanPath, string(filepath.Separator))
+		current := root
+
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+			isLast := i == len(parts)-1
+
+			if current.children == nil {
+				current.children = make(map[string]*fileTreeNode)
+			}
+
+			child, exists := current.children[part]
+			if !exists {
+				child = &fileTreeNode{
+					name:     part,
+					isDir:    !isLast,
+					children: make(map[string]*fileTreeNode),
+				}
+				current.children[part] = child
+			}
+
+			if isLast {
+				child.isOrphan = true
+				child.isDir = false
+			}
+
+			current = child
+		}
+	}
+}
+
+// markContentDriftInTree marks nodes in the tree that have content drift
+func markContentDriftInTree(root *fileTreeNode, contentDriftFiles []string) {
+	if len(contentDriftFiles) == 0 {
+		return
+	}
+	driftSet := make(map[string]bool, len(contentDriftFiles))
+	for _, f := range contentDriftFiles {
+		driftSet[f] = true
+	}
+	markContentDriftRecursive(root, "", driftSet)
+}
+
+func markContentDriftRecursive(node *fileTreeNode, prefix string, driftSet map[string]bool) {
+	for name, child := range node.children {
+		fullPath := name
+		if prefix != "" {
+			fullPath = filepath.Join(prefix, name)
+		}
+		if child.isDir {
+			markContentDriftRecursive(child, fullPath, driftSet)
+		} else if driftSet[fullPath] {
+			child.hasContentDrift = true
+		}
+	}
 }
 
 // UpdateState updates the panel's state reference

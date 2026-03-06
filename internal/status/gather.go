@@ -29,6 +29,8 @@ type ConfigStatus struct {
 	NewFiles     int        `json:"new_files,omitempty"`
 	MissingFiles int        `json:"missing_files,omitempty"`
 	Conflicts    int        `json:"conflicts,omitempty"`
+	ContentDrift int        `json:"content_drift,omitempty"`
+	Orphans      int        `json:"orphans,omitempty"`
 }
 
 // DependencyStatus holds a summary of dependency checking.
@@ -167,8 +169,14 @@ func (g *Gatherer) Gather(opts GatherOptions) (*Overview, error) {
 			cs.NewFiles = len(dr.NewFiles)
 			cs.MissingFiles = len(dr.MissingFiles)
 			cs.Conflicts = len(dr.ConflictFiles)
+			cs.ContentDrift = len(dr.ContentDriftFiles)
 		} else {
 			cs.Status = SyncStatusSynced
+		}
+
+		// Orphans are informational - set regardless of drift status
+		if dr, ok := driftMap[c.Name]; ok {
+			cs.Orphans = len(dr.OrphanFiles)
 		}
 
 		overview.Configs = append(overview.Configs, cs)
