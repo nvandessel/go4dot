@@ -500,6 +500,16 @@ func (o Onboarding) View() string {
 	// Wrap content in styled container for clear visual boundaries
 	content = containerStyle.Render(content)
 
+	// Add progress indicator above the container for form steps
+	if progress := o.renderProgress(); progress != "" {
+		content = lipgloss.JoinVertical(
+			lipgloss.Center,
+			content,
+			"",
+			progress,
+		)
+	}
+
 	// Center content in available space
 	return lipgloss.Place(
 		o.width,
@@ -534,7 +544,7 @@ func (o *Onboarding) createMetadataForm() *huh.Form {
 				Title("Repository URL").
 				Value(&o.metadata.Repository),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createConfigsForm() *huh.Form {
@@ -550,7 +560,7 @@ func (o *Onboarding) createConfigsForm() *huh.Form {
 				Options(options...).
 				Value(&o.selectedConfigs),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createExternalPromptForm() *huh.Form {
@@ -565,7 +575,7 @@ func (o *Onboarding) createExternalPromptForm() *huh.Form {
 				Description("Git repos for plugins, themes, etc.").
 				Value(&o.addMoreExternal),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createExternalDetailsForm() *huh.Form {
@@ -603,7 +613,7 @@ func (o *Onboarding) createExternalDetailsForm() *huh.Form {
 				).
 				Value(&o.currentExternal.Method),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createDepsPromptForm() *huh.Form {
@@ -618,7 +628,7 @@ func (o *Onboarding) createDepsPromptForm() *huh.Form {
 				Description("Required packages (neovim, tmux, etc.)").
 				Value(&o.addMoreDeps),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createDepsDetailsForm() *huh.Form {
@@ -645,7 +655,7 @@ func (o *Onboarding) createDepsDetailsForm() *huh.Form {
 				Placeholder("0.11+").
 				Value(&o.currentDep.Version),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createMachinePromptForm() *huh.Form {
@@ -660,7 +670,7 @@ func (o *Onboarding) createMachinePromptForm() *huh.Form {
 				Description("Machine-specific settings (git signing, etc.)").
 				Value(&o.addMoreMachine),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createMachineDetailsForm() *huh.Form {
@@ -675,7 +685,7 @@ func (o *Onboarding) createMachineDetailsForm() *huh.Form {
 				).
 				Value(&o.machinePreset),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 func (o *Onboarding) createMachineCustomForm() *huh.Form {
@@ -711,7 +721,7 @@ func (o *Onboarding) createMachineCustomForm() *huh.Form {
 					return nil
 				}),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 // createGitSigningPreset returns a MachinePrompt for git signing configuration
@@ -761,7 +771,7 @@ func (o *Onboarding) createConfirmForm() *huh.Form {
 				Negative("Cancel").
 				Value(&o.confirmWrite),
 		),
-	).WithWidth(60).WithShowHelp(false)
+	).WithWidth(60).WithShowHelp(false).WithTheme(huh.ThemeCatppuccin())
 }
 
 // Helper methods
@@ -844,6 +854,54 @@ func (o *Onboarding) renderSummary() string {
 	lines = append(lines, labelStyle.Render("Machine configs: ")+valueStyle.Render(fmt.Sprintf("%d templates", len(o.machineConfigs))))
 
 	return strings.Join(lines, "\n")
+}
+
+// stepProgressLabel returns the user-facing step number and total for the progress indicator.
+// Transitional steps (scanning, writing, complete) don't show progress.
+func (o Onboarding) stepProgressLabel() (current int, total int, show bool) {
+	const totalSteps = 6
+	switch o.step {
+	case stepMetadata:
+		return 1, totalSteps, true
+	case stepConfigs:
+		return 2, totalSteps, true
+	case stepExternal, stepExternalDetails:
+		return 3, totalSteps, true
+	case stepDependencies, stepDependenciesDetails:
+		return 4, totalSteps, true
+	case stepMachine, stepMachineDetails, stepMachineCustom:
+		return 5, totalSteps, true
+	case stepConfirm:
+		return 6, totalSteps, true
+	default:
+		return 0, totalSteps, false
+	}
+}
+
+// renderProgress renders a step progress indicator like "Step 2 of 6  ● ● ○ ○ ○ ○"
+func (o Onboarding) renderProgress() string {
+	current, total, show := o.stepProgressLabel()
+	if !show {
+		return ""
+	}
+
+	filledDot := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Render("●")
+	emptyDot := lipgloss.NewStyle().Foreground(ui.SubtleColor).Render("○")
+
+	var dots []string
+	for i := 1; i <= total; i++ {
+		if i <= current {
+			dots = append(dots, filledDot)
+		} else {
+			dots = append(dots, emptyDot)
+		}
+	}
+
+	label := lipgloss.NewStyle().Foreground(ui.SubtleColor).Render(
+		fmt.Sprintf("Step %d of %d", current, total),
+	)
+
+	return label + "  " + strings.Join(dots, " ")
 }
 
 // scanDirectoryForConfigs scans a directory for potential dotfile configs
