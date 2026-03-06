@@ -354,11 +354,15 @@ func (o Onboarding) View() string {
 
 	titleStyle := lipgloss.NewStyle().
 		Foreground(ui.PrimaryColor).
-		Bold(true).
-		Padding(1, 0)
+		Bold(true)
 
 	subtitleStyle := lipgloss.NewStyle().
 		Foreground(ui.SubtleColor)
+
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ui.PrimaryColor).
+		Padding(1, 3)
 
 	var content string
 
@@ -492,6 +496,9 @@ func (o Onboarding) View() string {
 			o.form.View(),
 		)
 	}
+
+	// Wrap content in styled container for clear visual boundaries
+	content = containerStyle.Render(content)
 
 	// Center content in available space
 	return lipgloss.Place(
