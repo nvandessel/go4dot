@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -181,12 +182,38 @@ func (p *DetailsPanel) renderConfigDetails() string {
 		lines = append(lines, "")
 	}
 
-	if linkStatus != nil {
-		lines = append(lines, headerStyle.Render("FILESYSTEM MAPPINGS"))
+	// Show source and destination paths
+	if linkStatus != nil || cfg.Path != "" {
+		lines = append(lines, headerStyle.Render("PATHS"))
+		pathStyle := lipgloss.NewStyle().Foreground(ui.TextColor)
+		if cfg.Path != "" {
+			lines = append(lines, fmt.Sprintf("%s %s",
+				subtleStyle.Render("Source:"),
+				pathStyle.Render(filepath.Join(p.state.DotfilesPath, cfg.Path))))
+		}
+		home := os.Getenv("HOME")
+		if home != "" {
+			lines = append(lines, fmt.Sprintf("%s %s",
+				subtleStyle.Render("Dest:  "),
+				pathStyle.Render(home)))
+		}
+		lines = append(lines, "")
+	}
 
-		// Build and render file tree
+	if linkStatus != nil {
+		linked := linkStatus.LinkedCount
+		total := linkStatus.TotalCount
+		var statsTag string
+		if linked == total {
+			statsTag = okStyle.Render(fmt.Sprintf(" [%d/%d ✓]", linked, total))
+		} else {
+			statsTag = warnStyle.Render(fmt.Sprintf(" [%d/%d]", linked, total))
+		}
+		lines = append(lines, headerStyle.Render("FILESYSTEM MAPPINGS")+statsTag)
+
+		// Build and render file tree with proper connectors
 		tree := buildFileTree(linkStatus.Files)
-		treeLines := renderFileTree(tree, "", okStyle, warnStyle, errStyle, subtleStyle)
+		treeLines := renderFileTree(tree, "", true, okStyle, warnStyle, errStyle, subtleStyle)
 		lines = append(lines, treeLines...)
 		lines = append(lines, "")
 	}
@@ -204,27 +231,26 @@ func (p *DetailsPanel) renderConfigDetails() string {
 					}
 				}
 			}
-			lines = append(lines, fmt.Sprintf("• %s %s", depName, status))
+			lines = append(lines, fmt.Sprintf("  %s %s", depName, status))
 		}
 		lines = append(lines, "")
 	}
 
 	if len(cfg.ExternalDeps) > 0 {
 		lines = append(lines, headerStyle.Render("EXTERNAL REPOSITORIES"))
-		for _, extDep := range cfg.ExternalDeps {
-			lines = append(lines, fmt.Sprintf("• %s", extDep.URL))
-			lines = append(lines, subtleStyle.Render("  └─ "+extDep.Destination))
+		for i, extDep := range cfg.ExternalDeps {
+			connector := "├─"
+			if i == len(cfg.ExternalDeps)-1 {
+				connector = "└─"
+			}
+			lines = append(lines, fmt.Sprintf("  %s %s", subtleStyle.Render(connector), extDep.URL))
+			indent := "│ "
+			if i == len(cfg.ExternalDeps)-1 {
+				indent = "  "
+			}
+			lines = append(lines, subtleStyle.Render(fmt.Sprintf("  %s └─ %s", indent, extDep.Destination)))
 		}
 		lines = append(lines, "")
-	}
-
-	if linkStatus != nil {
-		statsLine := fmt.Sprintf("Total: %d files", linkStatus.TotalCount)
-		statsStyle := lipgloss.NewStyle().
-			Foreground(ui.SubtleColor).
-			Align(lipgloss.Right).
-			Width(p.ContentWidth())
-		lines = append(lines, statsStyle.Render(statsLine))
 	}
 
 	return strings.Join(lines, "\n")
@@ -285,8 +311,8 @@ func buildFileTree(files []stow.FileStatus) *fileTreeNode {
 	return root
 }
 
-// renderFileTree renders the tree structure as lines with proper indentation
-func renderFileTree(node *fileTreeNode, indent string, okStyle, warnStyle, errStyle, subtleStyle lipgloss.Style) []string {
+// renderFileTree renders the tree structure with proper tree connectors (├─, └─, │)
+func renderFileTree(node *fileTreeNode, prefix string, isRoot bool, okStyle, warnStyle, errStyle, subtleStyle lipgloss.Style) []string {
 	var lines []string
 
 	// Sort children: directories first, then files, both alphabetically
@@ -301,34 +327,58 @@ func renderFileTree(node *fileTreeNode, indent string, okStyle, warnStyle, errSt
 	sort.Strings(dirs)
 	sort.Strings(files)
 
-	// Render directories first
-	for _, name := range dirs {
-		child := node.children[name]
-		folderIcon := subtleStyle.Render("▼")
-		folderName := subtleStyle.Render(name + "/")
-		lines = append(lines, fmt.Sprintf("%s%s %s", indent, folderIcon, folderName))
-		childLines := renderFileTree(child, indent+"  ", okStyle, warnStyle, errStyle, subtleStyle)
-		lines = append(lines, childLines...)
-	}
+	// Combine into ordered list for proper connector rendering
+	allNames := append(dirs, files...)
+	totalChildren := len(allNames)
 
-	// Then render files
-	for _, name := range files {
+	for i, name := range allNames {
 		child := node.children[name]
-		var icon string
-		if child.isLinked {
-			icon = okStyle.Render("✓")
-		} else if strings.Contains(strings.ToLower(child.issue), "conflict") ||
-			strings.Contains(strings.ToLower(child.issue), "exists") ||
-			strings.Contains(strings.ToLower(child.issue), "elsewhere") {
-			icon = warnStyle.Render("⚠")
-		} else {
-			icon = errStyle.Render("✗")
+		isLast := i == totalChildren-1
+
+		// Choose connector
+		connector := "├─"
+		if isLast {
+			connector = "└─"
 		}
 
-		lines = append(lines, fmt.Sprintf("%s%s %s", indent, icon, name))
+		// Choose continuation prefix for children
+		childPrefix := prefix + "│  "
+		if isLast {
+			childPrefix = prefix + "   "
+		}
 
-		if !child.isLinked && child.issue != "" {
-			lines = append(lines, subtleStyle.Render(indent+"  └─ "+child.issue))
+		// Root-level items get a leading indent for visual padding
+		linePrefix := prefix
+		if isRoot {
+			linePrefix = "  "
+			childPrefix = "  " + childPrefix[len(prefix):]
+		}
+
+		if child.isDir {
+			// Directory node
+			dirLabel := subtleStyle.Render(connector) + " " + subtleStyle.Render(name+"/")
+			lines = append(lines, linePrefix+dirLabel)
+			childLines := renderFileTree(child, childPrefix, false, okStyle, warnStyle, errStyle, subtleStyle)
+			lines = append(lines, childLines...)
+		} else {
+			// File node - choose status icon
+			var icon string
+			if child.isLinked {
+				icon = okStyle.Render("✓")
+			} else if strings.Contains(strings.ToLower(child.issue), "conflict") ||
+				strings.Contains(strings.ToLower(child.issue), "exists") ||
+				strings.Contains(strings.ToLower(child.issue), "elsewhere") {
+				icon = warnStyle.Render("⚠")
+			} else {
+				icon = errStyle.Render("✗")
+			}
+
+			lines = append(lines, linePrefix+subtleStyle.Render(connector)+" "+icon+" "+name)
+
+			// Show issue description for unlinked files
+			if !child.isLinked && child.issue != "" {
+				lines = append(lines, subtleStyle.Render(childPrefix+"→ "+child.issue))
+			}
 		}
 	}
 
