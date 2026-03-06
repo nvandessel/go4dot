@@ -62,10 +62,17 @@ internal/
   doctor/                 # Health checking
     check.go              # Run health checks
     report.go             # Generate health report
+  print/                  # Formatted output helpers
+    printer.go            # Structured terminal printing
   state/                  # Installation state tracking
     state.go              # Load/Save ~/.config/gopherdot/state.json
+  status/                 # Status overview aggregation
+    gather.go             # Collect status from configs/state
+    render.go             # Render status output
   setup/                  # Install orchestration
     setup.go              # Full install flow coordination
+  validation/             # Input validation
+    validation.go         # Sanitize and validate user input
   ui/                     # TUI components (Charm libraries)
     styles.go             # Lipgloss styles and colors
     spinner.go, menu.go   # Interactive components
@@ -98,13 +105,17 @@ type PackageManager interface {
 - `g4d config {validate,show}` - Config operations
 - `g4d deps {check,install}` - Dependency management
 - `g4d stow {add,remove,refresh}` - Symlink management
+- `g4d sync [config-name]` - Sync symlinks for dotfiles configs
 - `g4d external {status,clone,update,remove}` - External dependency management
 - `g4d machine {info,status,configure,show,remove}` - Machine-specific config
 - `g4d doctor` - Health check with fix suggestions
 - `g4d list` - Show installed/available configs
+- `g4d status` - Show dotfiles status overview
 - `g4d update` - Pull latest and restow
+- `g4d adopt [config-path]` - Adopt existing stow symlinks into state
 - `g4d reconfigure` - Re-run machine config prompts
 - `g4d uninstall` - Remove symlinks and state
+- `g4d completion {bash,zsh,fish}` - Generate shell completions
 
 ## Testing Patterns
 
@@ -366,7 +377,7 @@ Run `bd prime` for workflow context, or install hooks (`bd hooks install`) for a
 
 **Quick reference:**
 - `bd ready` - Find unblocked work
-- `bd create "Title" --type task --priority 2` - Create issue
+- `bd create "Title" --type <bug|feature|task|epic|chore> --priority <0-4>` - Create issue
 - `bd close <id>` - Complete work
 - `bd dolt push` - Push beads to remote
 

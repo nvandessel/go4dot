@@ -53,3 +53,8 @@ test/e2e/reports/*.txt
 # Git worktrees for parallel development
 .worktrees/
 .floop/
+
+# Gas Town (added by gt)
+.runtime/
+.claude/commands/
+.logs/
