@@ -61,9 +61,12 @@ func Install(cfg *config.Config, dotfilesPath string, opts InstallOptions) (*Ins
 	result.Platform = p
 	progress(opts, fmt.Sprintf("✓ Platform: %s (%s)", p.OS, p.PackageManager))
 
+	// Filter config and dependencies for this machine
+	filteredCfg := filterConfigForPlatform(cfg, p)
+
 	// Step 2: Check and install dependencies
 	if !opts.SkipDeps {
-		if err := installDependencies(cfg, p, opts, result); err != nil {
+		if err := installDependencies(filteredCfg, p, opts, result); err != nil {
 			result.Errors = append(result.Errors, err)
 			// Don't return - continue with other steps
 		}
@@ -73,7 +76,7 @@ func Install(cfg *config.Config, dotfilesPath string, opts InstallOptions) (*Ins
 
 	// Step 3: Stow configs
 	if !opts.SkipStow {
-		if err := stowConfigs(cfg, dotfilesPath, opts, result); err != nil {
+		if err := stowConfigs(filteredCfg, dotfilesPath, opts, result); err != nil {
 			result.Errors = append(result.Errors, err)
 		}
 	} else {
@@ -82,7 +85,7 @@ func Install(cfg *config.Config, dotfilesPath string, opts InstallOptions) (*Ins
 
 	// Step 4: Clone external dependencies
 	if !opts.SkipExternal {
-		if err := cloneExternal(cfg, dotfilesPath, p, opts, result); err != nil {
+		if err := cloneExternal(filteredCfg, dotfilesPath, p, opts, result); err != nil {
 			result.Errors = append(result.Errors, err)
 		}
 	} else {
@@ -103,7 +106,7 @@ func Install(cfg *config.Config, dotfilesPath string, opts InstallOptions) (*Ins
 
 	// Step 6: Configure machine-specific settings
 	if !opts.SkipMachine {
-		if err := configureMachine(cfg, opts, result); err != nil {
+		if err := configureMachine(filteredCfg, p, opts, result); err != nil {
 			result.Errors = append(result.Errors, err)
 		}
 	} else {
@@ -159,7 +162,7 @@ func installDependencies(cfg *config.Config, p *platform.Platform, opts InstallO
 func stowConfigs(cfg *config.Config, dotfilesPath string, opts InstallOptions, result *InstallResult) error {
 	progress(opts, "\n── Configs ──")
 
-	// Get configs to stow
+	// Get configs to stow (already filtered by platform in Install())
 	var configs []config.ConfigItem
 	if opts.Minimal {
 		configs = cfg.Configs.Core
@@ -307,7 +310,7 @@ func setupKeys(opts InstallOptions, result *InstallResult) error {
 }
 
 // configureMachine configures machine-specific settings
-func configureMachine(cfg *config.Config, opts InstallOptions, result *InstallResult) error {
+func configureMachine(cfg *config.Config, p *platform.Platform, opts InstallOptions, result *InstallResult) error {
 	if len(cfg.MachineConfig) == 0 {
 		return nil
 	}
@@ -334,8 +337,18 @@ func configureMachine(cfg *config.Config, opts InstallOptions, result *InstallRe
 
 	progress(opts, fmt.Sprintf("Configuring %d machine settings...", len(needsConfig)))
 
+	// Get machine profile defaults if available
+	var profileDefaults map[string]string
+	if profile := cfg.GetMachineProfile(p.Hostname); profile != nil {
+		profileDefaults = profile.Defaults
+		if profile.Name != "" {
+			progress(opts, fmt.Sprintf("Machine profile: %s", profile.Name))
+		}
+	}
+
 	promptOpts := machine.PromptOptions{
-		SkipPrompts: opts.Auto,
+		SkipPrompts:     opts.Auto,
+		ProfileDefaults: profileDefaults,
 		ProgressFunc: func(current, total int, msg string) {
 			progressWithCount(opts, current, total, "  "+msg)
 		},
@@ -384,6 +397,28 @@ func progressWithCount(opts InstallOptions, current, total int, msg string) {
 	if opts.ProgressFunc != nil {
 		opts.ProgressFunc(current, total, msg)
 	}
+}
+
+// filterConfigForPlatform returns a copy of the config with deps and configs filtered for the current platform.
+func filterConfigForPlatform(cfg *config.Config, p *platform.Platform) *config.Config {
+	filtered := *cfg
+	filtered.Dependencies = cfg.GetDepsForPlatform(p)
+	filteredConfigs := cfg.GetConfigsForPlatform(p)
+
+	// Rebuild core/optional split
+	coreNames := make(map[string]bool)
+	for _, c := range cfg.Configs.Core {
+		coreNames[c.Name] = true
+	}
+	filtered.Configs = config.ConfigGroups{}
+	for _, c := range filteredConfigs {
+		if coreNames[c.Name] {
+			filtered.Configs.Core = append(filtered.Configs.Core, c)
+		} else {
+			filtered.Configs.Optional = append(filtered.Configs.Optional, c)
+		}
+	}
+	return &filtered
 }
 
 // Summary returns a human-readable summary of the installation result

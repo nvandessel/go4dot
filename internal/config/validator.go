@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nvandessel/go4dot/internal/platform"
 	"github.com/nvandessel/go4dot/internal/validation"
 )
 
@@ -230,6 +231,108 @@ func (c *Config) GetConfigByName(name string) *ConfigItem {
 		}
 	}
 	return nil
+}
+
+// GetConfigsForPlatform returns configs filtered by platform conditions and machine profile.
+// It checks both the legacy Platforms field and the new Condition field.
+func (c *Config) GetConfigsForPlatform(p *platform.Platform) []ConfigItem {
+	all := c.GetAllConfigs()
+	profile := c.GetMachineProfile(p.Hostname)
+
+	var filtered []ConfigItem
+	for _, cfg := range all {
+		if !configMatchesPlatform(cfg, p) {
+			continue
+		}
+		if profile != nil && !profileIncludesConfig(profile, cfg.Name) {
+			continue
+		}
+		filtered = append(filtered, cfg)
+	}
+	return filtered
+}
+
+// GetDepsForPlatform returns dependencies filtered by platform conditions.
+func (c *Config) GetDepsForPlatform(p *platform.Platform) Dependencies {
+	return Dependencies{
+		Critical: filterDeps(c.Dependencies.Critical, p),
+		Core:     filterDeps(c.Dependencies.Core, p),
+		Optional: filterDeps(c.Dependencies.Optional, p),
+	}
+}
+
+// GetMachineProfile returns the machine profile matching the given hostname, or nil.
+func (c *Config) GetMachineProfile(hostname string) *MachineProfile {
+	if hostname == "" {
+		return nil
+	}
+	for i, m := range c.Machines {
+		// Support comma-separated hostnames in the profile
+		for _, h := range strings.Split(m.Hostname, ",") {
+			if strings.TrimSpace(h) == hostname {
+				return &c.Machines[i]
+			}
+		}
+	}
+	return nil
+}
+
+// configMatchesPlatform checks if a config matches the current platform.
+// Checks both legacy Platforms field and Condition field.
+func configMatchesPlatform(cfg ConfigItem, p *platform.Platform) bool {
+	// Check legacy Platforms field
+	if len(cfg.Platforms) > 0 {
+		matched := false
+		for _, plat := range cfg.Platforms {
+			if plat == p.OS || plat == "all" || plat == p.Distro {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	// Check Condition field
+	if len(cfg.Condition) > 0 {
+		if !platform.CheckCondition(cfg.Condition, p) {
+			return false
+		}
+	}
+	return true
+}
+
+// profileIncludesConfig checks if a machine profile includes the given config.
+func profileIncludesConfig(profile *MachineProfile, configName string) bool {
+	// If exclude list has this config, reject it
+	for _, name := range profile.ExcludeConfigs {
+		if name == configName {
+			return false
+		}
+	}
+	// If include list is empty, include all (minus excludes)
+	if len(profile.IncludeConfigs) == 0 {
+		return true
+	}
+	// Check include list
+	for _, name := range profile.IncludeConfigs {
+		if name == configName {
+			return true
+		}
+	}
+	return false
+}
+
+// filterDeps filters a dependency slice by platform conditions.
+func filterDeps(deps []DependencyItem, p *platform.Platform) []DependencyItem {
+	var filtered []DependencyItem
+	for _, dep := range deps {
+		if len(dep.Condition) > 0 && !platform.CheckCondition(dep.Condition, p) {
+			continue
+		}
+		filtered = append(filtered, dep)
+	}
+	return filtered
 }
 
 // validateConfigPath validates a single config path

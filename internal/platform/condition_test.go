@@ -126,6 +126,42 @@ func TestCheckCondition(t *testing.T) {
 			want:      false,
 		},
 		{
+			name:      "matching hostname",
+			condition: map[string]string{"hostname": "my-laptop"},
+			platform:  &Platform{OS: "linux", Hostname: "my-laptop"},
+			want:      true,
+		},
+		{
+			name:      "non-matching hostname",
+			condition: map[string]string{"hostname": "my-laptop"},
+			platform:  &Platform{OS: "linux", Hostname: "work-desktop"},
+			want:      false,
+		},
+		{
+			name:      "comma-separated hostname match",
+			condition: map[string]string{"hostname": "laptop-1,laptop-2"},
+			platform:  &Platform{OS: "linux", Hostname: "laptop-2"},
+			want:      true,
+		},
+		{
+			name:      "hostname with other conditions",
+			condition: map[string]string{"os": "linux", "hostname": "my-laptop"},
+			platform:  &Platform{OS: "linux", Hostname: "my-laptop"},
+			want:      true,
+		},
+		{
+			name:      "hostname match but os mismatch",
+			condition: map[string]string{"os": "darwin", "hostname": "my-laptop"},
+			platform:  &Platform{OS: "linux", Hostname: "my-laptop"},
+			want:      false,
+		},
+		{
+			name:      "empty hostname never matches",
+			condition: map[string]string{"hostname": "my-laptop"},
+			platform:  &Platform{OS: "linux", Hostname: ""},
+			want:      false,
+		},
+		{
 			name:      "unknown condition key ignored",
 			condition: map[string]string{"unknown_key": "value"},
 			platform:  &Platform{OS: "linux"},

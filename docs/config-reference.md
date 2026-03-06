@@ -31,6 +31,10 @@ machine_config:
   # Prompts and templates for machine-specific files
   ...
 
+machines:
+  # Per-machine profiles for multi-machine setups
+  ...
+
 archived:
   # Old configs kept for documentation
   ...
@@ -101,13 +105,36 @@ configs:
       description: Git config
       platforms: [linux, macos]
       requires_machine_config: true  # Wait for machine config before stowing?
-      
+
   optional:
     - name: i3
       path: i3
       description: i3 Window Manager
       platforms: [linux]      # Only show on Linux
       depends_on: [xorg]      # informational dependency
+
+    - name: kde
+      path: kde
+      description: KDE Plasma settings
+      condition:              # Fine-grained conditions (more flexible than platforms)
+        hostname: fedora-workstation
+```
+
+**Condition vs Platforms:** The `platforms` field is a simple OS filter. The `condition` field supports all condition keys (os, distro, hostname, arch, wsl, package_manager) and can be combined. Both are checked if present.
+
+### Dependencies (Conditional)
+
+Dependencies can have conditions to only install on specific platforms or machines:
+
+```yaml
+dependencies:
+  core:
+    - name: plasma-desktop
+      condition:
+        distro: fedora
+    - name: hyprland
+      condition:
+        hostname: cachyos-laptop
 ```
 
 ### External
@@ -125,6 +152,7 @@ external:
     condition:                # Optional conditions
       os: linux
       distro: fedora
+      hostname: my-laptop     # Machine-specific
       wsl: true
       architecture: amd64
 ```
@@ -167,6 +195,46 @@ machine_config:
 - `text`: Free-form text input (default).
 - `confirm`: Yes/no boolean prompt.
 - `select`: Selection from predefined options (falls back to text input).
+
+### Machines
+
+Define per-machine profiles for multi-machine dotfiles setups. Each profile matches by hostname and can override which configs to install and provide default values for machine_config prompts.
+
+```yaml
+machines:
+  - name: Fedora Workstation        # Human-readable name
+    hostname: fedora-workstation    # Matches os.Hostname()
+    exclude_configs: [hyprland]     # Don't install these configs
+    defaults:                       # Default values for machine_config prompts
+      user_email: work@example.com
+
+  - name: CachyOS Laptop
+    hostname: cachyos-laptop
+    exclude_configs: [kde]
+    defaults:
+      user_email: personal@example.com
+
+  - name: MacBook
+    hostname: macbook-pro
+    include_configs: [git, tmux, nvim]  # Only install these configs
+    defaults:
+      user_email: work@example.com
+```
+
+**Fields:**
+- `name`: Human-readable machine name (shown during install).
+- `hostname`: Machine hostname to match. Supports comma-separated values for multiple hostnames.
+- `include_configs`: If set, only these configs are installed. If empty, all configs are included.
+- `exclude_configs`: These configs are never installed on this machine.
+- `defaults`: Key-value map of default values for machine_config prompts. Overrides auto-detected defaults but still allows user to change interactively.
+
+**Condition keys** (used in `condition` maps on configs, dependencies, and external deps):
+- `os` / `platform`: linux, darwin, windows
+- `distro`: fedora, ubuntu, cachyos, arch, etc.
+- `hostname`: Machine hostname (supports comma-separated list)
+- `arch` / `architecture`: amd64, arm64, etc.
+- `package_manager`: dnf, apt, brew, pacman, etc.
+- `wsl`: true, false
 
 ### Post Install
 

@@ -11,6 +11,7 @@ import (
 // - package_manager: dnf, apt, brew, pacman, etc.
 // - wsl: true, false
 // - arch, architecture: amd64, arm64, etc.
+// - hostname: machine hostname (supports comma-separated list)
 func CheckCondition(condition map[string]string, p *Platform) bool {
 	if len(condition) == 0 {
 		return true // No condition means always true
@@ -39,6 +40,10 @@ func CheckCondition(condition map[string]string, p *Platform) bool {
 			}
 		case "arch", "architecture":
 			if !matchesValue(p.Architecture, value) {
+				return false
+			}
+		case "hostname":
+			if !matchesValue(p.Hostname, value) {
 				return false
 			}
 		}
