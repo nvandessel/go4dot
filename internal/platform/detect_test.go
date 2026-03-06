@@ -35,6 +35,12 @@ func TestDetect(t *testing.T) {
 	if p.Architecture != runtime.GOARCH {
 		t.Errorf("Architecture mismatch: got %s, want %s", p.Architecture, runtime.GOARCH)
 	}
+
+	// Verify hostname is detected
+	expectedHostname, _ := os.Hostname()
+	if p.Hostname != expectedHostname {
+		t.Errorf("Hostname mismatch: got %s, want %s", p.Hostname, expectedHostname)
+	}
 }
 
 func TestPlatformString(t *testing.T) {
@@ -45,12 +51,13 @@ func TestPlatformString(t *testing.T) {
 		IsWSL:          false,
 		PackageManager: "dnf",
 		Architecture:   "amd64",
+		Hostname:       "my-workstation",
 	}
 
 	s := p.String()
 
 	// Check that output contains key information
-	expectedStrings := []string{"linux", "fedora", "43", "dnf", "amd64"}
+	expectedStrings := []string{"linux", "fedora", "43", "dnf", "amd64", "my-workstation"}
 	for _, expected := range expectedStrings {
 		if !strings.Contains(s, expected) {
 			t.Errorf("String() output missing '%s': %s", expected, s)

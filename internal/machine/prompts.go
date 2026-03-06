@@ -40,10 +40,11 @@ type PromptResult struct {
 
 // PromptOptions configures prompt behavior
 type PromptOptions struct {
-	In           io.Reader                            // Input source (defaults to os.Stdin)
-	Out          io.Writer                            // Output destination (defaults to os.Stdout)
-	ProgressFunc func(current, total int, msg string) // Called for progress updates with item counts
-	SkipPrompts  bool                                 // Use defaults without prompting
+	In              io.Reader                            // Input source (defaults to os.Stdin)
+	Out             io.Writer                            // Output destination (defaults to os.Stdout)
+	ProgressFunc    func(current, total int, msg string) // Called for progress updates with item counts
+	SkipPrompts     bool                                 // Use defaults without prompting
+	ProfileDefaults map[string]string                    // Per-machine default values from machine profile
 }
 
 // CollectMachineConfig prompts the user for all machine-specific values
@@ -138,6 +139,15 @@ func ResolveDefaults(mc config.MachinePrompt) config.MachinePrompt {
 // collectPrompts collects values for a single MachinePrompt using Huh forms
 func collectPrompts(mc config.MachinePrompt, opts PromptOptions) (PromptResult, error) {
 	mc = ResolveDefaults(mc) // enrich before building form
+
+	// Apply machine profile defaults (override auto-detected defaults)
+	if len(opts.ProfileDefaults) > 0 {
+		for i := range mc.Prompts {
+			if val, ok := opts.ProfileDefaults[mc.Prompts[i].ID]; ok {
+				mc.Prompts[i].Default = val
+			}
+		}
+	}
 
 	result := PromptResult{
 		ID:     mc.ID,

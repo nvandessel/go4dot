@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/nvandessel/go4dot/internal/platform"
 )
 
 func TestValidate(t *testing.T) {
@@ -474,6 +476,238 @@ func TestValidate_SecurityValidConfigsStillPass(t *testing.T) {
 
 	if err := cfg.Validate(tempDir); err != nil {
 		t.Errorf("Validate() unexpected error for valid config: %v", err)
+	}
+}
+
+func TestGetConfigsForPlatform(t *testing.T) {
+	cfg := &Config{
+		Configs: ConfigGroups{
+			Core: []ConfigItem{
+				{Name: "git", Path: "git"},
+				{Name: "kde", Path: "kde", Condition: map[string]string{"hostname": "fedora-laptop"}},
+			},
+			Optional: []ConfigItem{
+				{Name: "i3", Path: "i3", Platforms: []string{"linux"}},
+				{Name: "nvim", Path: "nvim"},
+				{Name: "hyprland", Path: "hyprland", Condition: map[string]string{"distro": "cachyos"}},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		platform *platform.Platform
+		want     []string
+	}{
+		{
+			name:     "fedora laptop gets git, kde, i3, nvim",
+			platform: &platform.Platform{OS: "linux", Distro: "fedora", Hostname: "fedora-laptop"},
+			want:     []string{"git", "kde", "i3", "nvim"},
+		},
+		{
+			name:     "cachyos laptop gets git, i3, nvim, hyprland",
+			platform: &platform.Platform{OS: "linux", Distro: "cachyos", Hostname: "cachyos-laptop"},
+			want:     []string{"git", "i3", "nvim", "hyprland"},
+		},
+		{
+			name:     "macos gets git and nvim only",
+			platform: &platform.Platform{OS: "darwin", Hostname: "macbook"},
+			want:     []string{"git", "nvim"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetConfigsForPlatform(tt.platform)
+			var names []string
+			for _, c := range got {
+				names = append(names, c.Name)
+			}
+			if len(names) != len(tt.want) {
+				t.Errorf("GetConfigsForPlatform() got %v, want %v", names, tt.want)
+				return
+			}
+			for i, name := range names {
+				if name != tt.want[i] {
+					t.Errorf("GetConfigsForPlatform() got %v, want %v", names, tt.want)
+					return
+				}
+			}
+		})
+	}
+}
+
+func TestGetConfigsForPlatform_WithMachineProfile(t *testing.T) {
+	cfg := &Config{
+		Configs: ConfigGroups{
+			Core: []ConfigItem{
+				{Name: "git", Path: "git"},
+				{Name: "zsh", Path: "zsh"},
+			},
+			Optional: []ConfigItem{
+				{Name: "i3", Path: "i3"},
+				{Name: "nvim", Path: "nvim"},
+			},
+		},
+		Machines: []MachineProfile{
+			{
+				Name:           "Work Laptop",
+				Hostname:       "work-laptop",
+				IncludeConfigs: []string{"git", "zsh", "nvim"},
+			},
+			{
+				Name:           "Home Desktop",
+				Hostname:       "home-desktop",
+				ExcludeConfigs: []string{"i3"},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		platform *platform.Platform
+		want     []string
+	}{
+		{
+			name:     "work laptop gets only included configs",
+			platform: &platform.Platform{OS: "linux", Hostname: "work-laptop"},
+			want:     []string{"git", "zsh", "nvim"},
+		},
+		{
+			name:     "home desktop gets all except excluded",
+			platform: &platform.Platform{OS: "linux", Hostname: "home-desktop"},
+			want:     []string{"git", "zsh", "nvim"},
+		},
+		{
+			name:     "unknown machine gets all configs",
+			platform: &platform.Platform{OS: "linux", Hostname: "unknown"},
+			want:     []string{"git", "zsh", "i3", "nvim"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetConfigsForPlatform(tt.platform)
+			var names []string
+			for _, c := range got {
+				names = append(names, c.Name)
+			}
+			if len(names) != len(tt.want) {
+				t.Errorf("GetConfigsForPlatform() got %v, want %v", names, tt.want)
+				return
+			}
+			for i, name := range names {
+				if name != tt.want[i] {
+					t.Errorf("GetConfigsForPlatform() got %v, want %v", names, tt.want)
+					return
+				}
+			}
+		})
+	}
+}
+
+func TestGetDepsForPlatform(t *testing.T) {
+	cfg := &Config{
+		Dependencies: Dependencies{
+			Critical: []DependencyItem{
+				{Name: "git"},
+				{Name: "stow"},
+			},
+			Core: []DependencyItem{
+				{Name: "zsh"},
+				{Name: "plasma-desktop", Condition: map[string]string{"distro": "fedora"}},
+				{Name: "hyprland", Condition: map[string]string{"hostname": "cachyos-laptop"}},
+			},
+			Optional: []DependencyItem{
+				{Name: "ripgrep"},
+				{Name: "brew-only", Condition: map[string]string{"os": "darwin"}},
+			},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		platform      *platform.Platform
+		wantCritical  int
+		wantCore      int
+		wantOptional  int
+	}{
+		{
+			name:         "fedora laptop",
+			platform:     &platform.Platform{OS: "linux", Distro: "fedora", Hostname: "fedora-laptop"},
+			wantCritical: 2,
+			wantCore:     2, // zsh + plasma-desktop
+			wantOptional: 1, // ripgrep (not brew-only)
+		},
+		{
+			name:         "cachyos laptop",
+			platform:     &platform.Platform{OS: "linux", Distro: "cachyos", Hostname: "cachyos-laptop"},
+			wantCritical: 2,
+			wantCore:     2, // zsh + hyprland
+			wantOptional: 1,
+		},
+		{
+			name:         "macOS",
+			platform:     &platform.Platform{OS: "darwin", Hostname: "macbook"},
+			wantCritical: 2,
+			wantCore:     1, // just zsh
+			wantOptional: 2, // ripgrep + brew-only
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetDepsForPlatform(tt.platform)
+			if len(got.Critical) != tt.wantCritical {
+				t.Errorf("critical deps: got %d, want %d", len(got.Critical), tt.wantCritical)
+			}
+			if len(got.Core) != tt.wantCore {
+				t.Errorf("core deps: got %d, want %d", len(got.Core), tt.wantCore)
+			}
+			if len(got.Optional) != tt.wantOptional {
+				t.Errorf("optional deps: got %d, want %d", len(got.Optional), tt.wantOptional)
+			}
+		})
+	}
+}
+
+func TestGetMachineProfile(t *testing.T) {
+	cfg := &Config{
+		Machines: []MachineProfile{
+			{Name: "Laptop", Hostname: "my-laptop"},
+			{Name: "Both", Hostname: "desktop-1,desktop-2"},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		hostname string
+		wantName string
+		wantNil  bool
+	}{
+		{name: "exact match", hostname: "my-laptop", wantName: "Laptop"},
+		{name: "comma first", hostname: "desktop-1", wantName: "Both"},
+		{name: "comma second", hostname: "desktop-2", wantName: "Both"},
+		{name: "no match", hostname: "unknown", wantNil: true},
+		{name: "empty hostname", hostname: "", wantNil: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetMachineProfile(tt.hostname)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("GetMachineProfile() = %v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("GetMachineProfile() = nil, want non-nil")
+			}
+			if got.Name != tt.wantName {
+				t.Errorf("GetMachineProfile().Name = %s, want %s", got.Name, tt.wantName)
+			}
+		})
 	}
 }
 

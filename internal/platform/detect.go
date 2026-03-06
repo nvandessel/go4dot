@@ -17,6 +17,7 @@ type Platform struct {
 	IsWSL          bool   // true if running under WSL
 	PackageManager string // dnf, apt, brew, pacman, etc.
 	Architecture   string // amd64, arm64, etc.
+	Hostname       string // machine hostname
 }
 
 // Detect returns the current platform information
@@ -27,6 +28,8 @@ func Detect() (*Platform, error) {
 	}
 
 	p.IsWSL = detectWSL()
+	p.Hostname, _ = os.Hostname()
+
 	switch p.OS {
 	case "linux":
 		if err := detectLinuxDistro(p); err != nil {
@@ -166,6 +169,9 @@ func (p *Platform) String() string {
 
 	fmt.Fprintf(&sb, "\nArchitecture: %s", p.Architecture)
 	fmt.Fprintf(&sb, "\nPackage Manager: %s", p.PackageManager)
+	if p.Hostname != "" {
+		fmt.Fprintf(&sb, "\nHostname: %s", p.Hostname)
+	}
 
 	return sb.String()
 }

@@ -41,7 +41,7 @@ configs:
       description: Git configuration
       platforms: [linux, darwin]
       requires_machine_config: true
-    
+
     - name: tmux
       path: tmux
       description: Tmux configuration
@@ -54,6 +54,38 @@ configs:
       description: Neovim configuration (IDE-like)
       platforms: [linux, darwin]
       depends_on: [neovim, ripgrep, fd]
+
+    - name: kde
+      path: kde
+      description: KDE Plasma settings
+      condition:
+        hostname: fedora-workstation
+
+    - name: hyprland
+      path: hyprland
+      description: Hyprland window manager
+      condition:
+        distro: cachyos
+
+# Machine profiles for per-host overrides
+machines:
+  - name: Fedora Workstation
+    hostname: fedora-workstation
+    exclude_configs: [hyprland]
+    defaults:
+      user_email: work@example.com
+
+  - name: CachyOS Laptop
+    hostname: cachyos-laptop
+    exclude_configs: [kde]
+    defaults:
+      user_email: personal@example.com
+
+  - name: MacBook
+    hostname: macbook-pro
+    include_configs: [git, tmux, nvim]
+    defaults:
+      user_email: work@example.com
 
 external:
   - name: Tmux Plugin Manager

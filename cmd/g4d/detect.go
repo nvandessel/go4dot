@@ -28,7 +28,11 @@ var detectCmd = &cobra.Command{
 		if p.DistroVersion != "" {
 			fmt.Printf("Version:         %s\n", p.DistroVersion)
 		}
+		fmt.Printf("Architecture:    %s\n", p.Architecture)
 		fmt.Printf("Package Manager: %s\n", p.PackageManager)
+		if p.Hostname != "" {
+			fmt.Printf("Hostname:        %s\n", p.Hostname)
+		}
 		if p.IsWSL {
 			ui.Info("Running inside WSL")
 		}
