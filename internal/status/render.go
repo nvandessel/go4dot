@@ -187,6 +187,12 @@ func driftDetails(cs ConfigStatus) string {
 	if cs.Conflicts > 0 {
 		parts = append(parts, fmt.Sprintf("!%d conflicts", cs.Conflicts))
 	}
+	if cs.ContentDrift > 0 {
+		parts = append(parts, fmt.Sprintf("≠%d content drift", cs.ContentDrift))
+	}
+	if cs.Orphans > 0 {
+		parts = append(parts, fmt.Sprintf("?%d untracked", cs.Orphans))
+	}
 	if len(parts) == 0 {
 		return ""
 	}
