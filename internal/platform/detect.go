@@ -18,6 +18,7 @@ type Platform struct {
 	PackageManager string // dnf, apt, brew, pacman, etc.
 	Architecture   string // amd64, arm64, etc.
 	Hostname       string // machine hostname
+	DisplayServer  string // wayland, x11, or "" (Linux only)
 }
 
 // Detect returns the current platform information
@@ -36,6 +37,7 @@ func Detect() (*Platform, error) {
 			return nil, fmt.Errorf("failed to detect Linux distro: %w", err)
 		}
 		detectLinuxPackageManager(p)
+		p.DisplayServer = DetectDisplayServer()
 	case "darwin":
 		detectMacOSPackageManager(p)
 	case "windows":

@@ -484,6 +484,7 @@ var machineKeysRegisterCmd = &cobra.Command{
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not detect GPG keys: %v\n", err)
 		}
+		gpgRunner := &machine.ExecGPGRunner{}
 		for _, key := range gpgKeys {
 			registered, err := client.IsGPGKeyRegistered(key.KeyID)
 			if err != nil {
@@ -491,6 +492,25 @@ var machineKeysRegisterCmd = &cobra.Command{
 				continue
 			}
 			if registered {
+				// Check if subkeys have changed and need re-upload
+				localSubkeys, subErr := machine.ListLocalSubkeys(gpgRunner, key.KeyID)
+				if subErr != nil {
+					fmt.Fprintf(os.Stderr, "  Warning: could not list local subkeys for %s: %v\n", key.KeyID, subErr)
+				} else if len(localSubkeys) > 0 {
+					needsReupload, reErr := client.NeedsGPGKeyReupload(key.KeyID, localSubkeys)
+					if reErr != nil {
+						fmt.Fprintf(os.Stderr, "  Warning: could not check subkey status for %s: %v\n", key.KeyID, reErr)
+					} else if needsReupload {
+						fmt.Printf("  New subkeys detected for GPG key %s, re-uploading...\n", key.KeyID)
+						if err := client.ReuploadGPGKey(key.KeyID); err != nil {
+							fmt.Fprintf(os.Stderr, "  Error re-uploading: %v\n", err)
+						} else {
+							fmt.Printf("  Re-uploaded GPG key %s with updated subkeys\n", key.KeyID)
+							gpgRegistered++
+						}
+						continue
+					}
+				}
 				fmt.Printf("  Already registered on GitHub: GPG key %s\n", key.KeyID)
 				continue
 			}
@@ -505,6 +525,142 @@ var machineKeysRegisterCmd = &cobra.Command{
 		}
 
 		fmt.Printf("\nRegistered %d SSH keys, %d GPG keys\n", sshRegistered, gpgRegistered)
+	},
+}
+
+var machineKeysStripMasterCmd = &cobra.Command{
+	Use:   "strip-master <key-id>",
+	Short: "Remove primary secret key, keeping only subkeys",
+	Long: `Strip the master (primary) secret key from the local keyring while preserving
+all subkeys. After stripping, the master key will show as "sec#" (stub).
+
+This is a destructive operation. The master secret key material will be permanently
+removed from this machine. Ensure you have a backup (e.g., on a USB drive or
+air-gapped machine) before proceeding.
+
+Safety measures:
+  - Refuses to strip if no subkeys exist
+  - Exports subkeys to a temp file before deleting anything
+  - Uses full fingerprint for deletion (prevents wrong-key accidents)
+  - Preserves temp file with recovery instructions if import fails`,
+	Args: cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		keyID := args[0]
+
+		if err := validation.ValidateGPGKeyID(keyID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Confirm with user
+		fmt.Printf("WARNING: This will permanently remove the master secret key for %s from this machine.\n", keyID)
+		fmt.Printf("Subkeys will be preserved. Ensure you have a backup of the master key.\n\n")
+
+		force, _ := cmd.Flags().GetBool("force")
+		if !force {
+			fmt.Print("Type 'yes' to proceed: ")
+			var confirm string
+			if _, err := fmt.Scanln(&confirm); err != nil || confirm != "yes" {
+				fmt.Println("Aborted.")
+				return
+			}
+		}
+
+		runner := &machine.ExecGPGRunner{}
+		result, err := machine.StripMasterKey(runner, keyID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("\n✓ Master key stripped successfully\n")
+		fmt.Printf("  Fingerprint: %s\n", result.Fingerprint)
+		fmt.Printf("  Subkeys preserved: %d\n", result.SubkeysPreserved)
+		fmt.Printf("\n  The master key now shows as sec# (stub). Signing and encryption\n")
+		fmt.Printf("  still work via your subkeys.\n")
+	},
+}
+
+var machineKeysNewSigningCmd = &cobra.Command{
+	Use:   "new-signing",
+	Short: "Run a new-signing key ceremony",
+	Long: `Orchestrate the full ceremony for setting up a new GPG signing subkey:
+
+  1. Pre-flight checks (gpg installed, gh authenticated)
+  2. Import master key from USB/file
+  3. Interactive gpg --edit-key to add subkeys
+  4. Strip master secret key (keep only subkeys)
+  5. Set ultimate trust on the key
+  6. Upload/re-upload to GitHub
+  7. Configure git signing in ~/.gitconfig.local
+
+This command is interactive and requires terminal access for the gpg --edit-key step.`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Get flags
+		keyID, _ := cmd.Flags().GetString("key-id")
+		fingerprint, _ := cmd.Flags().GetString("fingerprint")
+		masterKeyPath, _ := cmd.Flags().GetString("master-key")
+		email, _ := cmd.Flags().GetString("email")
+		skipEditKey, _ := cmd.Flags().GetBool("skip-edit-key")
+
+		// Validate required flags
+		if keyID == "" {
+			fmt.Fprintln(os.Stderr, "Error: --key-id is required")
+			os.Exit(1)
+		}
+		if fingerprint == "" {
+			fmt.Fprintln(os.Stderr, "Error: --fingerprint is required")
+			os.Exit(1)
+		}
+		if masterKeyPath == "" {
+			fmt.Fprintln(os.Stderr, "Error: --master-key is required (path to master secret key file)")
+			os.Exit(1)
+		}
+
+		if err := validation.ValidateGPGKeyID(keyID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		runner := &machine.ExecGPGRunner{}
+		var ghClient *machine.GitHubClient
+		if machine.HasGHCLI() {
+			ghClient = machine.NewGitHubClient()
+		}
+
+		cfg := machine.CeremonyConfig{
+			GPGRunner:    runner,
+			GitHubClient: ghClient,
+			KeyID:        keyID,
+			Fingerprint:  fingerprint,
+		}
+
+		fmt.Println("── New Signing Key Ceremony ──")
+		fmt.Println()
+
+		result, err := machine.RunNewSigningCeremony(cfg, masterKeyPath, email, skipEditKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\nError: %v\n", err)
+		}
+
+		// Print step results
+		if result != nil {
+			fmt.Println()
+			for _, step := range result.Steps {
+				icon := "✓"
+				if !step.Success {
+					icon = "✗"
+				}
+				fmt.Printf("  %s %s: %s\n", icon, step.Name, step.Message)
+			}
+		}
+
+		if err != nil {
+			os.Exit(1)
+		}
+
+		fmt.Println("\n✓ Ceremony complete")
 	},
 }
 
@@ -557,6 +713,8 @@ func init() {
 	machineKeysCmd.AddCommand(machineKeysListCmd)
 	machineKeysCmd.AddCommand(machineKeysGenerateSSHCmd)
 	machineKeysCmd.AddCommand(machineKeysRegisterCmd)
+	machineKeysCmd.AddCommand(machineKeysStripMasterCmd)
+	machineKeysCmd.AddCommand(machineKeysNewSigningCmd)
 	machineKeysCmd.AddCommand(machineKeysVerifyCmd)
 
 	// Flags for machine configure
@@ -566,4 +724,14 @@ func init() {
 	// Flags for generate-ssh
 	machineKeysGenerateSSHCmd.Flags().String("email", "", "Email for key comment")
 	machineKeysGenerateSSHCmd.Flags().String("name", "id_ed25519", "Key filename")
+
+	// Flags for strip-master
+	machineKeysStripMasterCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+
+	// Flags for new-signing ceremony
+	machineKeysNewSigningCmd.Flags().String("key-id", "", "GPG key ID (required)")
+	machineKeysNewSigningCmd.Flags().String("fingerprint", "", "Full 40-char GPG fingerprint (required)")
+	machineKeysNewSigningCmd.Flags().String("master-key", "", "Path to master secret key file (required)")
+	machineKeysNewSigningCmd.Flags().String("email", "", "Email for git signing config")
+	machineKeysNewSigningCmd.Flags().Bool("skip-edit-key", false, "Skip interactive gpg --edit-key step")
 }

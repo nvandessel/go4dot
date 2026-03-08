@@ -427,6 +427,48 @@ func TestValidateGPGKeyID(t *testing.T) {
 	}
 }
 
+func TestValidateGPGFingerprint(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// Valid inputs
+		{name: "valid 40-char uppercase", input: "ABCDEF0123456789ABCDEF0123456789ABCDEF01", wantErr: false},
+		{name: "valid 40-char lowercase", input: "abcdef0123456789abcdef0123456789abcdef01", wantErr: false},
+		{name: "valid 40-char mixed case", input: "AbCdEf0123456789AbCdEf0123456789AbCdEf01", wantErr: false},
+		{name: "valid all digits", input: "1234567890123456789012345678901234567890", wantErr: false},
+
+		// Empty string
+		{name: "empty string", input: "", wantErr: true},
+
+		// Too short (valid key ID but not fingerprint)
+		{name: "8 chars", input: "ABCDEF01", wantErr: true},
+		{name: "16 chars", input: "ABCDEF0123456789", wantErr: true},
+		{name: "39 chars", input: "ABCDEF0123456789ABCDEF0123456789ABCDEF0", wantErr: true},
+
+		// Too long
+		{name: "41 chars", input: "ABCDEF0123456789ABCDEF0123456789ABCDEF012", wantErr: true},
+
+		// Non-hex characters
+		{name: "non-hex G", input: "GHIJKLMN0123456789ABCDEF0123456789ABCDEF", wantErr: true},
+		{name: "special chars", input: "ABCDEF0123456789ABCDEF0123456789ABCDEF!@", wantErr: true},
+		{name: "spaces", input: "ABCD EF01 2345 6789 ABCD EF01 2345 6789", wantErr: true},
+
+		// Leading hyphen
+		{name: "leading hyphen", input: "-BCDEF0123456789ABCDEF0123456789ABCDEF01", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGPGFingerprint(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateGPGFingerprint(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateKeyTitle(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -110,11 +110,18 @@ func (c *GitHubClient) AddGPGKey(keyID string) error {
 	return nil
 }
 
-// GitHubGPGKey represents a GPG key registered on GitHub.
-type GitHubGPGKey struct {
+// GitHubGPGSubkey represents a subkey within a GitHub GPG key.
+type GitHubGPGSubkey struct {
 	ID    json.Number `json:"id"`
 	KeyID string      `json:"key_id"`
-	Email string      `json:"email"`
+}
+
+// GitHubGPGKey represents a GPG key registered on GitHub.
+type GitHubGPGKey struct {
+	ID      json.Number       `json:"id"`
+	KeyID   string            `json:"key_id"`
+	Email   string            `json:"email"`
+	Subkeys []GitHubGPGSubkey `json:"subkeys"`
 }
 
 // ListGPGKeys returns GPG keys registered on GitHub.
@@ -152,6 +159,104 @@ func (c *GitHubClient) IsGPGKeyRegistered(keyID string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// NeedsGPGKeyReupload checks if the local key has subkeys not yet on GitHub.
+// Returns true if local subkeys don't match what GitHub has registered.
+func (c *GitHubClient) NeedsGPGKeyReupload(localKeyID string, localSubkeyIDs []string) (bool, error) {
+	if err := validation.ValidateGPGKeyID(localKeyID); err != nil {
+		return false, fmt.Errorf("invalid GPG key ID: %w", err)
+	}
+
+	ghKeys, err := c.ListGPGKeys()
+	if err != nil {
+		return false, fmt.Errorf("list GitHub GPG keys: %w", err)
+	}
+
+	// Find the matching GitHub key
+	normalizedKeyID := strings.ToUpper(localKeyID)
+	var matchingKey *GitHubGPGKey
+	for i, ghKey := range ghKeys {
+		if strings.ToUpper(ghKey.KeyID) == normalizedKeyID {
+			matchingKey = &ghKeys[i]
+			break
+		}
+	}
+
+	if matchingKey == nil {
+		// Key not on GitHub at all — needs upload, not re-upload
+		return false, nil
+	}
+
+	// Build set of GitHub subkey IDs (uppercase)
+	ghSubkeySet := make(map[string]bool)
+	for _, sub := range matchingKey.Subkeys {
+		ghSubkeySet[strings.ToUpper(sub.KeyID)] = true
+	}
+
+	// Check if any local subkey is missing from GitHub
+	for _, localSubFP := range localSubkeyIDs {
+		// Extract the short key ID (last 16 chars) from fingerprint for comparison
+		// GitHub returns short key IDs, local gpg returns full fingerprints
+		localID := strings.ToUpper(localSubFP)
+		if len(localID) > 16 {
+			localID = localID[len(localID)-16:]
+		}
+		if !ghSubkeySet[localID] {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// DeleteGPGKey removes a GPG key from GitHub by its GitHub key ID.
+func (c *GitHubClient) DeleteGPGKey(githubKeyID string) error {
+	output, err := c.getCommander().Run("gh", "api", "-X", "DELETE",
+		fmt.Sprintf("/user/gpg_keys/%s", githubKeyID))
+	if err != nil {
+		return fmt.Errorf("failed to delete GitHub GPG key %s: %w\nOutput: %s", githubKeyID, err, string(output))
+	}
+	return nil
+}
+
+// ReuploadGPGKey deletes and re-adds a GPG key on GitHub.
+// GitHub's API doesn't support updating GPG keys, so we delete and re-add.
+func (c *GitHubClient) ReuploadGPGKey(keyID string) error {
+	if err := validation.ValidateGPGKeyID(keyID); err != nil {
+		return fmt.Errorf("invalid GPG key ID: %w", err)
+	}
+
+	// Find the GitHub key ID for this GPG key
+	ghKeys, err := c.ListGPGKeys()
+	if err != nil {
+		return fmt.Errorf("list GitHub GPG keys: %w", err)
+	}
+
+	normalizedKeyID := strings.ToUpper(keyID)
+	var githubID string
+	for _, ghKey := range ghKeys {
+		if strings.ToUpper(ghKey.KeyID) == normalizedKeyID {
+			githubID = ghKey.ID.String()
+			break
+		}
+	}
+
+	if githubID == "" {
+		return fmt.Errorf("GPG key %s not found on GitHub", keyID)
+	}
+
+	// Delete existing
+	if err := c.DeleteGPGKey(githubID); err != nil {
+		return fmt.Errorf("delete existing key: %w", err)
+	}
+
+	// Re-add
+	if err := c.AddGPGKey(keyID); err != nil {
+		return fmt.Errorf("re-add key after delete: %w", err)
+	}
+
+	return nil
 }
 
 // ListSSHKeys returns SSH keys registered on GitHub.

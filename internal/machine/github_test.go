@@ -388,6 +388,84 @@ func TestGitHubClient_IsGPGKeyRegistered_BadKeyID(t *testing.T) {
 	}
 }
 
+func TestGitHubClient_NeedsGPGKeyReupload(t *testing.T) {
+	tests := []struct {
+		name           string
+		keyID          string
+		localSubkeyIDs []string
+		ghJSON         string
+		wantReupload   bool
+		wantErr        bool
+	}{
+		{
+			name:           "all subkeys present on GitHub",
+			keyID:          "ABCDEF1234567890",
+			localSubkeyIDs: []string{"1111222233334444AABBCCDD1111222233334444"},
+			ghJSON:         `[{"id": 1, "key_id": "ABCDEF1234567890", "subkeys": [{"id": 10, "key_id": "1111222233334444"}]}]`,
+			wantReupload:   false,
+		},
+		{
+			name:           "new subkey not on GitHub",
+			keyID:          "ABCDEF1234567890",
+			localSubkeyIDs: []string{"1111222233334444AABBCCDD1111222233334444", "5555666677778888AABBCCDD5555666677778888"},
+			ghJSON:         `[{"id": 1, "key_id": "ABCDEF1234567890", "subkeys": [{"id": 10, "key_id": "1111222233334444"}]}]`,
+			wantReupload:   true,
+		},
+		{
+			name:           "key not on GitHub at all",
+			keyID:          "ABCDEF1234567890",
+			localSubkeyIDs: []string{"1111222233334444AABBCCDD1111222233334444"},
+			ghJSON:         `[]`,
+			wantReupload:   false,
+		},
+		{
+			name:    "invalid key ID",
+			keyID:   "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &GitHubClient{Commander: &mockCommander{output: []byte(tt.ghJSON)}}
+			result, err := client.NeedsGPGKeyReupload(tt.keyID, tt.localSubkeyIDs)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NeedsGPGKeyReupload() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && result != tt.wantReupload {
+				t.Errorf("NeedsGPGKeyReupload() = %v, want %v", result, tt.wantReupload)
+			}
+		})
+	}
+}
+
+func TestGitHubClient_DeleteGPGKey(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		mock := &mockCommander{output: []byte("")}
+		client := &GitHubClient{Commander: mock}
+		err := client.DeleteGPGKey("12345")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(mock.calls) != 1 {
+			t.Fatalf("expected 1 call, got %d", len(mock.calls))
+		}
+		args := mock.calls[0].args
+		if args[0] != "api" || args[1] != "-X" || args[2] != "DELETE" {
+			t.Errorf("unexpected args: %v", args)
+		}
+	})
+
+	t.Run("command error", func(t *testing.T) {
+		client := &GitHubClient{Commander: &mockCommander{err: fmt.Errorf("gh failed")}}
+		err := client.DeleteGPGKey("12345")
+		if err == nil {
+			t.Error("expected error for command failure")
+		}
+	})
+}
+
 func TestGitHubClient_ListSSHKeys_MultipleKeys(t *testing.T) {
 	jsonData := `[
 		{"id": 1, "key": "ssh-ed25519 AAAA first@example.com", "title": "key-1"},

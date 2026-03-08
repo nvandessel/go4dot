@@ -44,6 +44,9 @@ var emailRegexp = regexp.MustCompile(`^[a-zA-Z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]
 // gpgKeyIDRegexp matches valid GPG key IDs: 8-40 hex characters.
 var gpgKeyIDRegexp = regexp.MustCompile(`^[A-Fa-f0-9]{8,40}$`)
 
+// gpgFingerprintRegexp matches valid GPG fingerprints: exactly 40 hex characters.
+var gpgFingerprintRegexp = regexp.MustCompile(`^[A-Fa-f0-9]{40}$`)
+
 // keyTitleRegexp matches safe key titles: starts with alphanumeric,
 // then allows alphanumeric, space, dot, underscore, hyphen, parentheses, at-sign.
 var keyTitleRegexp = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 ._\-()@]*$`)
@@ -293,6 +296,18 @@ func ValidateGPGKeyID(keyID string) error {
 	}
 	if !gpgKeyIDRegexp.MatchString(keyID) {
 		return fmt.Errorf("GPG key ID must be 8-40 hex characters: %q", keyID)
+	}
+	return nil
+}
+
+// ValidateGPGFingerprint rejects: empty, non-hex, not exactly 40 chars.
+// This is stricter than ValidateGPGKeyID which allows 8-40 chars.
+func ValidateGPGFingerprint(fingerprint string) error {
+	if fingerprint == "" {
+		return fmt.Errorf("GPG fingerprint must not be empty")
+	}
+	if !gpgFingerprintRegexp.MatchString(fingerprint) {
+		return fmt.Errorf("GPG fingerprint must be exactly 40 hex characters: %q", fingerprint)
 	}
 	return nil
 }
