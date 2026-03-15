@@ -5,11 +5,11 @@ go 1.24.13
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/charmbracelet/huh v0.8.0
+	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260122224438-b01af16209d9
 	github.com/mattn/go-isatty v0.0.20
-	github.com/mattn/go-runewidth v0.0.20
+	github.com/mattn/go-runewidth v0.0.21
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )
